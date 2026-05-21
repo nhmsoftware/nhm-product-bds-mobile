@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Zentrix",
+    "slug": "nhm-zentrix-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "zentrix",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#07120f"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Zentrix cần quyền chọn ảnh để gửi hồ sơ KYC."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
