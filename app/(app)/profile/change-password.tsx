@@ -26,8 +26,8 @@ export default function ChangePasswordScreen() {
       notifyError("Vui lòng nhập đầy đủ mật khẩu cũ, mật khẩu mới và xác nhận mật khẩu.");
       return;
     }
-    if (newPassword.length < 6) {
-      notifyError("Mật khẩu mới phải chứa ít nhất 6 ký tự.");
+    if (newPassword.length < 8) {
+      notifyError("Mật khẩu mới phải chứa ít nhất 8 ký tự, bao gồm số và ký tự đặc biệt.");
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -37,7 +37,11 @@ export default function ChangePasswordScreen() {
 
     setLoading(true);
     try {
-      const response = await authApi.changePassword({ currentPassword, newPassword });
+      const response = await authApi.changePassword({
+        currentPassword,
+        newPassword,
+        newPasswordConfirmation: confirmNewPassword
+      });
       notifySuccess({ message: response.message || "Cập nhật mật khẩu thành công." });
       await signOut();
       router.replace("/(auth)/login");
@@ -54,7 +58,7 @@ export default function ChangePasswordScreen() {
         title="Đổi mật khẩu"
         subtitle="Cập nhật thông tin mật khẩu đăng nhập bảo mật. Sau khi đổi mật khẩu, hệ thống sẽ yêu cầu bạn đăng nhập lại."
       />
-      <Card style={styles.card} variant="glass">
+      <Card style={styles.card}>
         <View style={styles.formCol}>
           <PasswordField
             autoCapitalize="none"

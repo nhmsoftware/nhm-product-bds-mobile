@@ -1,62 +1,195 @@
-import { getData, postData } from "@/libs/api";
+import { getData, postData, putData } from "@/libs/api";
 import type {
   AuthResponse,
+  AuthRole,
   AuthUser,
-  EmailVerificationResponse,
   ForgotPasswordResponse,
   RegisterResponse,
   VerifyResetCodeResponse
 } from "@/services/auth/types";
 
+type BackendUser = {
+  id: string;
+  staff_code?: string | null;
+  name?: string | null;
+  fullName?: string | null;
+  email: string;
+  phone?: string | null;
+  address?: string | null;
+  avatar?: string | null;
+  department?: string | null;
+  job_position?: string | null;
+  area?: string | null;
+  role?: AuthRole | null;
+  is_active?: boolean | number;
+  email_verified_at?: string | null;
+};
+
+type BackendLoginResponse = {
+  access_token: string;
+  token_type?: string;
+  expires_in?: number;
+  user: BackendUser;
+};
+
+function mapUser(user: BackendUser): AuthUser {
+  return {
+    id: String(user.id),
+    staffCode: user.staff_code ?? undefined,
+    fullName: user.fullName || user.name || user.email,
+    email: user.email,
+    phone: user.phone ?? undefined,
+    address: user.address ?? null,
+    avatar: user.avatar ?? null,
+    department: user.department ?? null,
+    jobPosition: user.job_position ?? null,
+    area: user.area ?? null,
+    role: mapBackendRole(user.role),
+    isActive: user.is_active === undefined ? true : Boolean(user.is_active),
+    emailVerified: Boolean(user.email_verified_at)
+  };
+}
+
+function mapBackendRole(role?: AuthRole | null): AuthRole {
+  const normalized = typeof role === "string" ? role.toLowerCase() : role;
+
+  if (normalized === 1 || normalized === "1") {
+    return "employee";
+  }
+
+  if (normalized === 2 || normalized === "2") {
+    return "manager";
+  }
+
+  if (normalized === 3 || normalized === "3") {
+    return "director";
+  }
+
+  if (normalized === 4 || normalized === "4") {
+    return "ceo";
+  }
+
+  if (normalized === 5 || normalized === "5") {
+    return "super_admin";
+  }
+
+  if (normalized === 6 || normalized === "6") {
+    return "buyer";
+  }
+
+  if (
+    normalized === "employee" ||
+    normalized === "manager" ||
+    normalized === "director" ||
+    normalized === "ceo" ||
+    normalized === "super_admin" ||
+    normalized === "buyer" ||
+    normalized === "customer" ||
+    // Legacy role names kept for old local sessions/test data.
+    normalized === "admin" ||
+    normalized === "agent" ||
+    normalized === "broker"
+  ) {
+    return normalized;
+  }
+
+  return "buyer";
+}
+
+function expiresAtFromSeconds(seconds?: number) {
+  return new Date(Date.now() + (seconds ?? 60 * 60) * 1000).toISOString();
+}
+
+function mapLogin(data: BackendLoginResponse): AuthResponse {
+  return {
+    accessToken: data.access_token,
+    expiresAtUtc: expiresAtFromSeconds(data.expires_in),
+    user: mapUser(data.user)
+  };
+}
+
 export const authApi = {
-  register(input: {
+  async login(input: { username: string; password: string; remember?: boolean }) {
+    const response = await postData<BackendLoginResponse>("/api/v1/auth/login", input);
+    return {
+      ...response,
+      data: mapLogin(response.data)
+    };
+  },
+
+  async register(input: {
     fullName: string;
     email: string;
+    phone?: string;
     password: string;
     referralCode?: string;
+    agreeTerms?: boolean;
   }) {
-    return postData<RegisterResponse>("/api/auth/register", input);
+    const response = await postData<BackendUser>("/api/v1/auth/register", {
+      name: input.fullName,
+      email: input.email,
+      phone: input.phone,
+      password: input.password,
+      referral_code: input.referralCode || undefined,
+      agree_terms: input.agreeTerms ?? true
+    });
+
+    return {
+      ...response,
+      data: {
+        user: mapUser(response.data),
+        emailVerificationRequired: false,
+        verificationCodeExpiresAtUtc: null
+      } satisfies RegisterResponse
+    };
   },
 
-  verifyEmail(input: { email: string; code: string }) {
-    return postData<EmailVerificationResponse>("/api/auth/verify-email", input);
-  },
-
-  resendVerificationEmail(input: { email: string }) {
-    return postData<EmailVerificationResponse>(
-      "/api/auth/resend-verification-email",
-      input
-    );
-  },
-
-  login(input: { email: string; password: string }) {
-    return postData<AuthResponse>("/api/auth/login", input);
-  },
-
-  me() {
-    return getData<AuthUser>("/api/auth/me");
+  async me() {
+    const response = await getData<BackendUser>("/api/v1/auth/profile");
+    return {
+      ...response,
+      data: mapUser(response.data)
+    };
   },
 
   logout() {
-    return postData<{ success: boolean }>("/api/auth/logout");
+    return postData<{ success: boolean } | null>("/api/v1/auth/logout");
   },
 
-  forgotPassword(input: { email: string }) {
-    return postData<ForgotPasswordResponse>("/api/auth/forgot-password", input);
+  forgotPassword(input: { username: string }) {
+    return postData<ForgotPasswordResponse>("/api/v1/auth/forgot-password", input);
   },
 
-  verifyResetCode(input: { email: string; code: string }) {
-    return postData<VerifyResetCodeResponse>("/api/auth/verify-reset-code", input);
+  verifyResetCode(input: { username: string; code: string }) {
+    return postData<VerifyResetCodeResponse>("/api/v1/auth/verify-otp", {
+      username: input.username,
+      otp: input.code
+    });
   },
 
   resetPassword(input: {
-    resetToken: string;
+    username: string;
+    otp: string;
     password: string;
+    passwordConfirmation: string;
   }) {
-    return postData<{ success: boolean }>("/api/auth/reset-password", input);
+    return postData<null>("/api/v1/auth/reset-password", {
+      username: input.username,
+      otp: input.otp,
+      password: input.password,
+      password_confirmation: input.passwordConfirmation
+    });
   },
 
-  changePassword(input: { currentPassword: string; newPassword: string }) {
-    return postData<{ success: boolean }>("/api/auth/change-password", input);
+  changePassword(input: {
+    currentPassword: string;
+    newPassword: string;
+    newPasswordConfirmation: string;
+  }) {
+    return putData<null>("/api/v1/auth/change-password", {
+      current_password: input.currentPassword,
+      new_password: input.newPassword,
+      new_password_confirmation: input.newPasswordConfirmation
+    });
   }
 };

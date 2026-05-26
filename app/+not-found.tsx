@@ -1,26 +1,28 @@
-import { Link } from "expo-router";
-import { StyleSheet, Text } from "react-native";
+import { router } from "expo-router";
+import { StyleSheet } from "react-native";
 
 import { Button } from "@/components/Button";
+import { EmptyState } from "@/components/EmptyState";
 import { Screen } from "@/components/Screen";
-import { colors } from "@/libs/theme";
+import { useI18n } from "@/libs/i18n";
 
-export default function NotFound() {
+export default function NotFoundScreen() {
+  const { t } = useI18n();
+
   return (
-    <Screen>
-      <Text style={styles.title}>Không tìm thấy màn hình</Text>
-      <Link href="/(app)/(tabs)" asChild>
-        <Button title="Về trang chính" />
-      </Link>
+    <Screen scroll={false}>
+      <EmptyState
+        title={t("notFound.title")}
+        description={t("notFound.description")}
+        icon="alert-circle-outline"
+      />
+      <Button title={t("notFound.action")} onPress={() => router.replace("/")} style={styles.button} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "800",
-    marginBottom: 20
+  button: {
+    marginHorizontal: 24
   }
 });

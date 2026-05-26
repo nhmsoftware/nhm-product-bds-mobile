@@ -1,4 +1,11 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleProp,
+  StyleSheet,
+  Text,
+  ViewStyle
+} from "react-native";
 
 import { useAppTheme } from "@/libs/layout-mode";
 
@@ -8,7 +15,7 @@ type ButtonProps = {
   loading?: boolean;
   variant?: "primary" | "secondary" | "danger" | "ghost";
   disabled?: boolean;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 };
 
 export function Button({
@@ -64,7 +71,7 @@ export function Button({
         styles.base,
         {
           borderRadius: theme.radius.md,
-          minHeight: theme.compact ? 44 : 48
+          minHeight: theme.compact ? 42 : 48
         },
         variantStyles[variant],
         (disabled || loading) && styles.disabled,
@@ -75,11 +82,14 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={indicatorColor} />
       ) : (
-        <Text style={[
-          styles.text,
-          theme.compact && styles.textCompact,
-          textStyles[variant]
-        ]}>
+        <Text
+          style={[
+            styles.text,
+            theme.compact && styles.textCompact,
+            textStyles[variant]
+          ]}
+          numberOfLines={1}
+        >
           {title}
         </Text>
       )}
@@ -95,17 +105,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16
   },
   disabled: {
-    opacity: 0.4
+    opacity: 0.45
   },
   pressed: {
-    opacity: 0.8
+    opacity: 0.82
   },
   text: {
     fontSize: 15,
     fontWeight: "700"
   },
   textCompact: {
-    fontSize: 14,
-    letterSpacing: 0.3
+    fontSize: 14
   }
 });

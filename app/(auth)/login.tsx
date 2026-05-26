@@ -1,162 +1,155 @@
-import { Link, router } from "expo-router";
+import { router } from "expo-router";
 import { useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
-import { PageTitle } from "@/components/PageTitle";
-import { PasswordField } from "@/components/PasswordField";
-import { Screen } from "@/components/Screen";
-import { TextField } from "@/components/TextField";
-import { ApiRequestError } from "@/libs/api";
-import { colors } from "@/libs/theme";
-import { notifyError } from "@/libs/notify";
+import {
+  AuthButton,
+  AuthCheckbox,
+  AuthField,
+  AuthFooterCta,
+  AuthMethodTabs,
+  AuthPasswordField,
+  AuthScreen,
+  type AuthContactMethod
+} from "@/components/AuthChrome";
+import { employeePalette } from "@/libs/employee-theme";
+import { useI18n } from "@/libs/i18n";
+import { notifyError, notifySuccess } from "@/libs/notify";
+import { appFonts } from "@/libs/typography";
 import { authApi } from "@/services/auth/api";
+import {
+  DEMO_AUTH_ENABLED,
+  DEMO_LOGIN_OPTIONS,
+  type DemoLoginRole
+} from "@/services/auth/demo";
+import { getHomeHrefForRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 
 export default function LoginScreen() {
-  const { signIn } = useAuth();
-  const [email, setEmail] = useState("");
+  const { t } = useI18n();
+  const { signIn, signInWithDemo } = useAuth();
+  const [method, setMethod] = useState<AuthContactMethod>("email");
+  const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [demoRole, setDemoRole] = useState<DemoLoginRole | null>(null);
 
-  const showVerifyEmailPrompt = () => {
-    setTimeout(() => {
-      Alert.alert("Thông báo", "Tài khoản chưa được xác minh.", [
-        {
-          text: "Xác minh lại",
-          onPress: () => {
-            router.push({
-              pathname: "/(auth)/verify-email",
-              params: { autoResend: "1", email: email.trim() }
-            });
-          }
-        }
-      ]);
-    }, 350);
-  };
-
-  const submit = async () => {
-    if (!email || !password) {
-      notifyError("Vui lòng điền đầy đủ Email và Mật khẩu.");
-      return;
-    }
-    setLoading(true);
+  async function handleLogin() {
+    setSubmitting(true);
     try {
-      const response = await authApi.login({ email, password });
+      const response = await authApi.login({ username: identity, password, remember });
       await signIn(response.data);
-      router.replace("/(app)/(tabs)");
+      notifySuccess({ message: response.message || t("notifications.loginSuccess") });
+      router.replace(getHomeHrefForRole(response.data.user.role));
     } catch (error) {
-      notifyError(error);
-      if (isUnverifiedEmailError(error)) {
-        showVerifyEmailPrompt();
-      }
+      notifyError(error, t("notifications.loginError"));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
-  };
+  }
+
+  async function handleDemoLogin(role: DemoLoginRole) {
+    setDemoRole(role);
+    try {
+      await signInWithDemo(role);
+    } finally {
+      setDemoRole(null);
+    }
+  }
 
   return (
-    <Screen>
-      <View style={styles.header}>
-        <Text style={styles.brandLogo}>ZENTRIX</Text>
-      </View>
-      
-      <PageTitle
-        title="Đăng nhập"
-        subtitle="Truy cập hệ thống Zentrix Pro Terminal để theo dõi ví, KYC và bắt đầu giao dịch."
+    <AuthScreen
+      title={t("auth.login.title")}
+      brandGap={20}
+      footerMode="bar"
+      footer={
+        <AuthFooterCta
+          prompt={t("auth.footer.noAccount")}
+          action={t("auth.action.registerNow")}
+          onPress={() => router.replace("/(auth)/register")}
+        />
+      }
+    >
+      <AuthMethodTabs value={method} onChange={setMethod} />
+
+      <AuthField
+        label={method === "email" ? t("auth.label.emailAddress") : t("auth.label.phone")}
+        icon={method === "email" ? "mail-outline" : "call-outline"}
+        autoCapitalize="none"
+        keyboardType={method === "email" ? "email-address" : "phone-pad"}
+        value={identity}
+        onChangeText={setIdentity}
+        placeholder={method === "email" ? t("auth.placeholder.email") : t("auth.placeholder.phone")}
       />
-      
-      <Card style={styles.card} variant="glass">
-        <TextField
-          autoCapitalize="none"
-          keyboardType="email-address"
-          label="Địa chỉ Email"
-          onChangeText={setEmail}
-          placeholder="yourname@domain.com"
-          value={email}
+
+      <AuthPasswordField
+        label={t("auth.label.password")}
+        icon="lock-closed-outline"
+        value={password}
+        onChangeText={setPassword}
+        placeholder={t("auth.placeholder.password")}
+      />
+
+      <View style={styles.optionRow}>
+        <AuthCheckbox
+          checked={remember}
+          onChange={setRemember}
+          label={t("auth.login.remember")}
+          style={styles.remember}
         />
-        <PasswordField
-          autoCapitalize="none"
-          autoComplete="current-password"
-          autoCorrect={false}
-          label="Mật khẩu"
-          onChangeText={setPassword}
-          placeholder="Nhập mật khẩu của bạn"
-          textContentType="password"
-          value={password}
-        />
-        <Button 
-          loading={loading} 
-          onPress={submit} 
-          title="ĐĂNG NHẬP TERM" 
-          variant="primary"
-          style={styles.submitBtn}
-        />
-      </Card>
-      
-      <View style={styles.links}>
-        <Link href="/(auth)/forgot-password" style={styles.link}>
-          Quên mật khẩu?
-        </Link>
-        <View style={styles.row}>
-          <Text style={styles.muted}>Chưa có tài khoản?</Text>
-          <Link href="/(auth)/register" style={styles.linkHighlight}>
-            Đăng ký ngay
-          </Link>
-        </View>
+        <Pressable onPress={() => router.push("/(auth)/forgot-password")}>
+          <Text style={styles.forgotText}>{t("auth.action.forgotPassword")}</Text>
+        </Pressable>
       </View>
-    </Screen>
+
+      <AuthButton
+        title={t("auth.login.submit")}
+        rightIcon="arrow-forward"
+        loading={submitting}
+        disabled={!identity || !password || demoRole !== null}
+        onPress={handleLogin}
+        style={styles.primaryButton}
+      />
+
+      {DEMO_AUTH_ENABLED ? (
+        <View style={styles.demoActions}>
+          {DEMO_LOGIN_OPTIONS.map((option) => (
+            <AuthButton
+              key={option.role}
+              title={t(option.labelKey)}
+              variant="secondary"
+              loading={demoRole === option.role}
+              disabled={submitting || demoRole !== null}
+              onPress={() => handleDemoLogin(option.role)}
+            />
+          ))}
+        </View>
+      ) : null}
+    </AuthScreen>
   );
 }
 
-function isUnverifiedEmailError(error: unknown) {
-  if (!(error instanceof ApiRequestError)) {
-    return false;
-  }
-
-  return /email.*chưa.*xác minh|chưa.*xác minh.*email/i.test(error.message);
-}
-
 const styles = StyleSheet.create({
-  header: {
+  optionRow: {
     alignItems: "center",
-    marginVertical: 24
-  },
-  brandLogo: {
-    color: colors.primary,
-    fontSize: 24,
-    fontWeight: "900",
-    letterSpacing: 4
-  },
-  card: {
-    gap: 16,
-    padding: 24
-  },
-  submitBtn: {
-    marginTop: 8
-  },
-  links: {
-    alignItems: "center",
-    gap: 16,
-    marginTop: 32
-  },
-  row: {
     flexDirection: "row",
-    gap: 6
+    justifyContent: "space-between"
   },
-  link: {
-    color: colors.muted,
-    fontWeight: "500",
-    fontSize: 14
+  remember: {
+    flex: 1
   },
-  linkHighlight: {
-    color: colors.primary,
-    fontWeight: "700",
-    fontSize: 14
+  forgotText: {
+    color: employeePalette.red,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 25.6
   },
-  muted: {
-    color: colors.muted,
-    fontSize: 14
+  primaryButton: {
+    marginTop: 0
+  },
+  demoActions: {
+    gap: 10,
+    marginTop: -10
   }
 });

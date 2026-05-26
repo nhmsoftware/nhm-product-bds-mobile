@@ -1,114 +1,55 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TextInputProps,
-  View
-} from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
+import { TextField } from "@/components/TextField";
+import { useI18n } from "@/libs/i18n";
 import { useAppTheme } from "@/libs/layout-mode";
 
-type PasswordFieldProps = Omit<TextInputProps, "secureTextEntry"> & {
-  label: string;
-  error?: string;
-};
+type PasswordFieldProps = React.ComponentProps<typeof TextField>;
 
-export function PasswordField({
-  label,
-  error,
-  style,
-  onFocus,
-  onBlur,
-  ...props
-}: PasswordFieldProps) {
+export function PasswordField(props: PasswordFieldProps) {
   const theme = useAppTheme();
-  const [focused, setFocused] = useState(false);
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
 
   return (
-    <View style={styles.wrap}>
-      <Text style={[styles.label, { color: theme.colors.muted }]}>{label}</Text>
-      <View
-        style={[
-          styles.inputWrap,
-          {
-            backgroundColor: theme.colors.surfaceDark,
-            borderColor: focused ? theme.colors.primary : theme.colors.border,
-            borderRadius: theme.radius.md,
-            minHeight: theme.compact ? 44 : 48
-          },
-          error && { borderColor: theme.colors.danger }
-        ]}
+    <View>
+      <TextField
+        {...props}
+        secureTextEntry={!visible}
+        style={[styles.input, props.style]}
+      />
+      <Pressable
+        accessibilityLabel={
+          visible
+            ? t("auth.accessibility.hidePassword")
+            : t("auth.accessibility.showPassword")
+        }
+        onPress={() => setVisible((value) => !value)}
+        style={styles.toggle}
       >
-        <TextInput
-          placeholderTextColor="#6b7a70"
-          secureTextEntry={!visible}
-          style={[
-            styles.input,
-            {
-              color: theme.colors.text,
-              minHeight: theme.compact ? 44 : 48
-            },
-            style
-          ]}
-          onFocus={(event) => {
-            setFocused(true);
-            onFocus?.(event);
-          }}
-          onBlur={(event) => {
-            setFocused(false);
-            onBlur?.(event);
-          }}
-          {...props}
+        <Ionicons
+          name={visible ? "eye-off-outline" : "eye-outline"}
+          size={20}
+          color={theme.colors.muted}
         />
-        <Pressable
-          accessibilityLabel={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-          hitSlop={10}
-          onPress={() => setVisible((value) => !value)}
-          style={styles.eyeButton}
-        >
-          <Ionicons
-            color={focused ? theme.colors.primary : theme.colors.muted}
-            name={visible ? "eye-off-outline" : "eye-outline"}
-            size={20}
-          />
-        </Pressable>
-      </View>
-      {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    gap: 6
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600"
-  },
-  inputWrap: {
-    alignItems: "center",
-    borderWidth: 1,
-    flexDirection: "row",
-    minHeight: 48
-  },
   input: {
-    flex: 1,
-    fontSize: 15,
-    paddingLeft: 14,
-    paddingRight: 8
+    paddingRight: 44
   },
-  eyeButton: {
+  toggle: {
     alignItems: "center",
+    bottom: 0,
     height: 48,
     justifyContent: "center",
-    width: 48
-  },
-  error: {
-    fontSize: 12
+    position: "absolute",
+    right: 4,
+    width: 42
   }
 });

@@ -10,6 +10,7 @@ export type ThemeColors = {
   border: string;
   primary: string;
   primaryDark: string;
+  accent: string;
   danger: string;
   warning: string;
   success: string;
@@ -50,32 +51,33 @@ export type AppTheme = {
   };
 };
 
-const baseColors = {
-  danger: "#f6465d",
-  warning: "#e9c320",
-  success: "#0ecb81"
+const feedbackColors = {
+  danger: "#d14343",
+  warning: "#c27803",
+  success: "#16835c"
 };
 
 export const appThemes: Record<LayoutMode, AppTheme> = {
   default: {
     mode: "default",
     label: "Default",
-    description: "Bố cục mặc định theo bản chuyên nghiệp trong Stitch.",
-    compact: true,
+    description: "Bố cục sáng cho khách hàng tìm kiếm bất động sản.",
+    compact: false,
     colors: {
-      ...baseColors,
-      bg: "#0b0e14",
-      surface: "#161a1e",
-      surfaceAlt: "#22272d",
-      surfaceDark: "#070a0f",
-      text: "#f5f5f5",
-      muted: "#8b8e95",
-      border: "rgba(252, 213, 53, 0.22)",
-      primary: "#fcd535",
-      primaryDark: "#e9c320",
-      ink: "#05070a",
-      glassBackground: "rgba(22, 26, 30, 0.82)",
-      glassBorder: "rgba(255, 255, 255, 0.1)"
+      ...feedbackColors,
+      bg: "#f6f8f7",
+      surface: "#ffffff",
+      surfaceAlt: "#eef2f0",
+      surfaceDark: "#e4e9e6",
+      text: "#17211f",
+      muted: "#66736f",
+      border: "#dce4e0",
+      primary: "#0f766e",
+      primaryDark: "#0b5f59",
+      accent: "#d97706",
+      ink: "#ffffff",
+      glassBackground: "rgba(255, 255, 255, 0.86)",
+      glassBorder: "rgba(15, 118, 110, 0.18)"
     },
     radius: {
       sm: 4,
@@ -87,59 +89,62 @@ export const appThemes: Record<LayoutMode, AppTheme> = {
     spacing: {
       xs: 4,
       sm: 8,
-      md: 12,
+      md: 14,
       lg: 20,
       xl: 28,
-      screenPadding: 16
+      screenPadding: 18
     },
     shadow: {
-      shadowColor: "#000",
-      shadowOpacity: 0.18,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 10,
+      shadowColor: "#0f172a",
+      shadowOpacity: 0.08,
+      shadowOffset: { width: 0, height: 6 },
+      shadowRadius: 12,
       elevation: 3
     }
   },
   pro: {
     mode: "pro",
-    label: "Pro Style",
-    description: "Bố cục xanh/demo từ Stitch sau khi đổi lại hai chế độ.",
-    compact: false,
+    label: "Pro",
+    description: "Bố cục tối, dày thông tin cho môi giới và vận hành.",
+    compact: true,
     colors: {
-      ...baseColors,
-      bg: "#101419",
-      surface: "#1c2025",
-      surfaceAlt: "#272a30",
-      surfaceDark: "#0b0e14",
-      text: "#e0e2ea",
-      muted: "#999079",
-      border: "#4d4633",
-      primary: "#38bdf8",
-      primaryDark: "#0ea5e9",
-      ink: "#0b0e14",
-      glassBackground: "rgba(255, 255, 255, 0.04)",
+      danger: "#fb7185",
+      warning: "#fbbf24",
+      success: "#34d399",
+      bg: "#0e1412",
+      surface: "#151d1a",
+      surfaceAlt: "#1f2a26",
+      surfaceDark: "#09100e",
+      text: "#f4f7f5",
+      muted: "#94a39e",
+      border: "rgba(148, 163, 158, 0.22)",
+      primary: "#37b38d",
+      primaryDark: "#1d8f73",
+      accent: "#f59e0b",
+      ink: "#07100d",
+      glassBackground: "rgba(21, 29, 26, 0.82)",
       glassBorder: "rgba(255, 255, 255, 0.08)"
     },
     radius: {
-      sm: 8,
-      md: 12,
-      lg: 16,
-      xl: 24,
+      sm: 4,
+      md: 8,
+      lg: 10,
+      xl: 14,
       full: 9999
     },
     spacing: {
       xs: 4,
       sm: 8,
-      md: 16,
-      lg: 24,
-      xl: 32,
-      screenPadding: 20
+      md: 12,
+      lg: 18,
+      xl: 24,
+      screenPadding: 14
     },
     shadow: {
-      shadowColor: "#000",
-      shadowOpacity: 0.3,
-      shadowOffset: { width: 0, height: 6 },
-      shadowRadius: 12,
+      shadowColor: "#000000",
+      shadowOpacity: 0.28,
+      shadowOffset: { width: 0, height: 8 },
+      shadowRadius: 14,
       elevation: 5
     }
   }
@@ -152,11 +157,3 @@ export function getAppTheme(mode: LayoutMode) {
 export const colors = appThemes.default.colors;
 export const radius = appThemes.default.radius;
 export const shadow = appThemes.default.shadow;
-
-export const glassShadow = {
-  shadowColor: colors.primary,
-  shadowOpacity: 0.1,
-  shadowOffset: { width: 0, height: 4 },
-  shadowRadius: 10,
-  elevation: 2
-};

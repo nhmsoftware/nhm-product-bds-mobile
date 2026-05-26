@@ -1,6 +1,7 @@
 import { showMessage } from "react-native-flash-message";
 
 import { validationMessage } from "@/libs/format";
+import { translate } from "@/libs/i18n";
 
 const DEFAULT_DURATION_MS = 3000;
 
@@ -23,10 +24,10 @@ export function notifySuccess({
   });
 }
 
-export function notifyError(error: unknown, fallback = "Đã xảy ra lỗi.") {
+export function notifyError(error: unknown, fallback = translate("errors.generic")) {
   showMessage({
     duration: DEFAULT_DURATION_MS,
-    message: typeof error === "string" ? error : validationMessage(error) || fallback,
+    message: validationMessage(error) || fallback,
     type: "danger"
   });
 }

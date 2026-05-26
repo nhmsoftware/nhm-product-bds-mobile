@@ -3,21 +3,23 @@ import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { APP_NAME } from "@/libs/env";
-import { colors } from "@/libs/theme";
+import { useAppTheme } from "@/libs/layout-mode";
+import { getHomeHrefForSession } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 
 export default function Index() {
-  const { loading, signedIn } = useAuth();
+  const theme = useAppTheme();
+  const { loading, session, signedIn } = useAuth();
 
   useEffect(() => {
     if (loading) return;
-    router.replace(signedIn ? "/(app)/(tabs)" : "/(auth)/login");
-  }, [loading, signedIn]);
+    router.replace(signedIn ? getHomeHrefForSession(session) : "/(auth)/login");
+  }, [loading, session, signedIn]);
 
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.logo}>{APP_NAME}</Text>
-      <ActivityIndicator color={colors.primary} />
+    <View style={[styles.wrap, { backgroundColor: theme.colors.bg }]}>
+      <Text style={[styles.logo, { color: theme.colors.text }]}>{APP_NAME}</Text>
+      <ActivityIndicator color={theme.colors.primary} />
     </View>
   );
 }
@@ -25,13 +27,11 @@ export default function Index() {
 const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
-    backgroundColor: colors.bg,
     flex: 1,
     gap: 18,
     justifyContent: "center"
   },
   logo: {
-    color: colors.text,
     fontSize: 34,
     fontWeight: "900"
   }

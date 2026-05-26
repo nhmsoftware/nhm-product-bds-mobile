@@ -12,10 +12,11 @@ export default function AppLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="kyc/index" />
-      <Stack.Screen name="support/index" />
+      <Stack.Screen name="employee" />
+      <Stack.Screen name="market-news" />
+      <Stack.Screen name="listings/[id]" />
       <Stack.Screen name="profile/edit" />
-      <Stack.Screen name="profile/change-password" />
+      <Stack.Screen name="forbidden" />
     </Stack>
   );
 }

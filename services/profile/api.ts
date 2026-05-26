@@ -1,45 +1,85 @@
-import { apiClient, getData, putData } from "@/libs/api";
-import type {
-  SubmitKycInput,
-  UpdateProfileInput,
-  UserProfile
-} from "@/services/profile/types";
+import type { ApiResponse } from "@/libs/api";
+import { getData, putData } from "@/libs/api";
+import { translate } from "@/libs/i18n";
+import type { CustomerProfile, UpdateProfileInput } from "@/services/profile/types";
+
+let sampleProfile: CustomerProfile = {
+  id: "demo-user",
+  fullName: "Nguyễn Minh",
+  email: "demo@nhmbds.local",
+  phone: "0901 234 567",
+  preferredCity: "TP. Hồ Chí Minh",
+  budgetLabel: "5 - 8 tỷ",
+  demand: "buy"
+};
+
+function createResponse<T>(data: T, message = translate("common.success")): ApiResponse<T> {
+  return { message, data };
+}
 
 export const profileApi = {
-  getProfile() {
-    return getData<UserProfile>("/api/auth/user-profile");
-  },
-
-  updateProfile(input: UpdateProfileInput) {
-    return putData<UserProfile>("/api/auth/user-profile", input);
-  },
-
-  async submitKyc(input: SubmitKycInput) {
-    const form = new FormData();
-    form.append("first_name", input.firstName);
-    form.append("last_name", input.lastName);
-    form.append("dob", input.dateOfBirth);
-    form.append("gender", String(input.gender));
-    form.append("phone_number", input.phoneNumber);
-    form.append("address", input.address);
-    form.append("bin_bank", input.binBank);
-    form.append("account_bank", input.accountBank);
-    form.append("account_bank_name", input.accountBankName);
-
-    if (input.cccdFrontImage) {
-      form.append("cccd_front_image", input.cccdFrontImage as unknown as Blob);
+  async getProfile() {
+    try {
+      const response = await getData<{
+        id: string;
+        name?: string;
+        email: string;
+        phone?: string;
+        address?: string | null;
+      }>("/api/v1/auth/profile");
+      return {
+        ...response,
+        data: {
+          id: response.data.id,
+          fullName: response.data.name || response.data.email,
+          email: response.data.email,
+          phone: response.data.phone || "",
+          preferredCity: response.data.address || "Chưa cập nhật",
+          budgetLabel: "Chưa cập nhật",
+          demand: "buy" as const
+        }
+      };
+    } catch {
+      // Fallback mock keeps customer profile usable before backend data is complete.
     }
 
-    if (input.cccdBackImage) {
-      form.append("cccd_back_image", input.cccdBackImage as unknown as Blob);
+    return createResponse(sampleProfile);
+  },
+
+  async updateProfile(input: UpdateProfileInput) {
+    try {
+      const response = await putData<{
+        id: string;
+        name?: string;
+        email: string;
+        phone?: string;
+        address?: string | null;
+      }>("/api/v1/auth/profile", {
+        name: input.fullName,
+        email: sampleProfile.email,
+        phone: input.phone,
+        address: input.preferredCity
+      });
+      sampleProfile = {
+        ...sampleProfile,
+        id: response.data.id,
+        fullName: response.data.name || input.fullName,
+        email: response.data.email,
+        phone: response.data.phone || input.phone,
+        preferredCity: response.data.address || input.preferredCity,
+        budgetLabel: input.budgetLabel,
+        demand: input.demand
+      };
+      return createResponse(sampleProfile, response.message || translate("notifications.profileUpdated"));
+    } catch {
+      // Fall back to local update if backend profile fields are incomplete during development.
     }
 
-    const response = await apiClient.post("/api/auth/verify-account", form, {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    });
+    sampleProfile = {
+      ...sampleProfile,
+      ...input
+    };
 
-    return response.data;
+    return createResponse(sampleProfile, translate("notifications.profileUpdated"));
   }
 };

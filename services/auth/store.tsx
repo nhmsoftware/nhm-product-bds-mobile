@@ -10,17 +10,21 @@ import {
   useState
 } from "react";
 
-import { STORAGE_KEYS } from "@/libs/env";
 import { setUnauthorizedHandler } from "@/libs/api";
+import { STORAGE_KEYS } from "@/libs/env";
+import { useI18n } from "@/libs/i18n";
 import { notifyInfo } from "@/libs/notify";
 import { authApi } from "@/services/auth/api";
-import type { AuthSession } from "@/services/auth/types";
+import { createDemoSession, DEMO_AUTH_ENABLED, isDemoSession, type DemoLoginRole } from "@/services/auth/demo";
+import { getHomeHrefForRole } from "@/services/auth/roles";
+import type { AppAccessRole, AuthSession } from "@/services/auth/types";
 
 type AuthContextValue = {
   session: AuthSession | null;
   loading: boolean;
   signedIn: boolean;
   signIn: (session: AuthSession) => Promise<void>;
+  signInWithDemo: (role?: DemoLoginRole) => Promise<void>;
   signOut: () => Promise<void>;
   refreshMe: () => Promise<void>;
 };
@@ -41,6 +45,7 @@ function isExpiredSession(session: AuthSession | null) {
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const { t } = useI18n();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -79,12 +84,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     setUnauthorizedHandler(() =>
       clearLocalSession({
-        message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        message: t("notifications.sessionExpired")
       })
     );
 
     return () => setUnauthorizedHandler(null);
-  }, [clearLocalSession]);
+  }, [clearLocalSession, t]);
 
   useEffect(() => {
     if (!session?.expiresAtUtc) {
@@ -99,36 +104,49 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const timeoutMs = expiresAt - Date.now();
     if (timeoutMs <= 0) {
       clearLocalSession({
-        message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        message: t("notifications.sessionExpired")
       });
       return undefined;
     }
 
     const timer = setTimeout(() => {
       clearLocalSession({
-        message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        message: t("notifications.sessionExpired")
       });
     }, Math.min(timeoutMs, 2147483647));
 
     return () => clearTimeout(timer);
-  }, [clearLocalSession, session?.expiresAtUtc]);
+  }, [clearLocalSession, session?.expiresAtUtc, t]);
 
   const signIn = useCallback(async (nextSession: AuthSession) => {
     setSession(nextSession);
     await AsyncStorage.setItem(STORAGE_KEYS.auth, JSON.stringify(nextSession));
   }, []);
 
-  const signOut = useCallback(async () => {
-    try {
-      await authApi.logout();
-    } catch {
-      // Local logout still clears stale tokens if the backend already revoked them.
+  const signInWithDemo = useCallback(async (role: DemoLoginRole = "customer") => {
+    if (!DEMO_AUTH_ENABLED) {
+      throw new Error("Demo auth is disabled");
     }
+
+    const demoSession = createDemoSession(role);
+    await signIn(demoSession);
+    router.replace(getHomeHrefForRole(demoSession.user.role));
+  }, [signIn]);
+
+  const signOut = useCallback(async () => {
+    if (!isDemoSession(session)) {
+      try {
+        await authApi.logout();
+      } catch {
+        // Local logout still clears stale tokens if the backend already revoked them.
+      }
+    }
+
     await clearLocalSession();
-  }, [clearLocalSession]);
+  }, [clearLocalSession, session]);
 
   const refreshMe = useCallback(async () => {
-    if (!session) return;
+    if (!session || isDemoSession(session)) return;
     const response = await authApi.me();
     const nextSession = {
       ...session,
@@ -144,10 +162,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       loading,
       signedIn: Boolean(session?.accessToken) && !isExpiredSession(session),
       signIn,
+      signInWithDemo,
       signOut,
       refreshMe
     }),
-    [loading, refreshMe, session, signIn, signOut]
+    [loading, refreshMe, session, signIn, signInWithDemo, signOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,4 +1,4 @@
-import { PropsWithChildren } from "react";
+import type { ComponentProps, PropsWithChildren } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,9 +13,10 @@ import { useAppTheme } from "@/libs/layout-mode";
 type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
   padded?: boolean;
+  edges?: ComponentProps<typeof SafeAreaView>["edges"];
 }>;
 
-export function Screen({ children, scroll = true, padded = true }: ScreenProps) {
+export function Screen({ children, scroll = true, padded = true, edges }: ScreenProps) {
   const theme = useAppTheme();
   const content = (
     <View
@@ -29,7 +30,7 @@ export function Screen({ children, scroll = true, padded = true }: ScreenProps) 
   );
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.bg }]}>
+    <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor: theme.colors.bg }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.flex}

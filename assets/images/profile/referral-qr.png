@@ -1,0 +1,21 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="SVG - Placeholder QR Code" clip-path="url(#clip0_0_8)">
+<path id="Vector" d="M0 0H70V70H0V0V0M10 10V60H60V10H10V10" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_2" d="M20 20H50V50H20V20V20" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_3" d="M90 0H160V70H90V0V0M100 10V60H150V10H100V10" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_4" d="M110 20H140V50H110V20V20" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_5" d="M0 90H70V160H0V90V90M10 100V150H60V100H10V100" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_6" d="M20 110H50V140H20V110V110" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_7" d="M90 90H110V110H90V90V90" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_8" d="M120 90H140V110H120V90V90" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_9" d="M140 110H160V130H140V110V110" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_10" d="M110 120H130V140H110V120V120" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_11" d="M90 140H110V160H90V140V140" fill="var(--fill-0, #191C1D)"/>
+<path id="Vector_12" d="M130 140H160V160H130V140V140" fill="var(--fill-0, #191C1D)"/>
+</g>
+<defs>
+<clipPath id="clip0_0_8">
+<rect width="160" height="160" fill="white"/>
+</clipPath>
+</defs>
+</svg>

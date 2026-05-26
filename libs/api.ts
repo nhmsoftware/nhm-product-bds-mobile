@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios, { AxiosError } from "axios";
 
 import { API_URL, STORAGE_KEYS } from "@/libs/env";
+import { translate } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
 import type { AuthSession } from "@/services/auth/types";
 
@@ -70,7 +71,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string; errors?: ApiValidationErrors }>) => {
     if (error.response) {
-      const message = error.response.data?.message || "Đã xảy ra lỗi.";
+      const message = error.response.data?.message || translate("errors.generic");
       const status = error.response.status;
 
       appLogger.error("api.response", message, {
@@ -89,7 +90,7 @@ apiClient.interceptors.response.use(
     }
 
     if (error.request) {
-      appLogger.error("api.network", "Không nhận được phản hồi từ máy chủ.", {
+      appLogger.error("api.network", translate("errors.networkNoResponse"), {
         method: error.config?.method?.toUpperCase(),
         url: error.config?.url,
         baseURL: error.config?.baseURL,
@@ -98,12 +99,12 @@ apiClient.interceptors.response.use(
       });
 
       throw new ApiRequestError(
-        "Không nhận được phản hồi từ máy chủ. Vui lòng kiểm tra backend/API URL.",
+        translate("errors.networkNoResponseWithHint"),
         0
       );
     }
 
-    appLogger.error("api.request", "Không thể gửi yêu cầu.", {
+    appLogger.error("api.request", translate("errors.requestFailed"), {
       method: error.config?.method?.toUpperCase(),
       url: error.config?.url,
       baseURL: error.config?.baseURL,
@@ -111,7 +112,7 @@ apiClient.interceptors.response.use(
       message: error.message
     });
 
-    throw new ApiRequestError("Không thể gửi yêu cầu.", 0);
+    throw new ApiRequestError(translate("errors.requestFailed"), 0);
   }
 );
 
@@ -127,5 +128,10 @@ export async function postData<T>(url: string, body?: unknown) {
 
 export async function putData<T>(url: string, body?: unknown) {
   const response = await apiClient.put<ApiResponse<T>>(url, body);
+  return response.data;
+}
+
+export async function deleteData<T>(url: string) {
+  const response = await apiClient.delete<ApiResponse<T>>(url);
   return response.data;
 }

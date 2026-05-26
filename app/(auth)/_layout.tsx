@@ -1,14 +1,20 @@
-import { Stack } from "expo-router";
+import { Redirect, Stack } from "expo-router";
+
+import { getHomeHrefForSession } from "@/services/auth/roles";
+import { useAuth } from "@/services/auth/store";
 
 export default function AuthLayout() {
+  const { loading, session, signedIn } = useAuth();
+
+  if (!loading && signedIn) {
+    return <Redirect href={getHomeHrefForSession(session)} />;
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
-      <Stack.Screen name="verify-email" />
       <Stack.Screen name="forgot-password" />
-      <Stack.Screen name="verify-reset-code" />
-      <Stack.Screen name="reset-password" />
     </Stack>
   );
 }

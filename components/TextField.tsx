@@ -16,26 +16,26 @@ export function TextField({ label, error, style, onFocus, onBlur, ...props }: Te
     <View style={styles.wrap}>
       <Text style={[styles.label, { color: theme.colors.muted }]}>{label}</Text>
       <TextInput
-        placeholderTextColor="#6b7a70"
+        placeholderTextColor={theme.colors.muted}
         style={[
           styles.input,
           {
-            backgroundColor: theme.colors.surfaceDark,
+            backgroundColor: theme.colors.surface,
             borderColor: focused ? theme.colors.primary : theme.colors.border,
             borderRadius: theme.radius.md,
             color: theme.colors.text,
-            minHeight: theme.compact ? 44 : 48
+            minHeight: theme.compact ? 42 : 48
           },
           error && { borderColor: theme.colors.danger },
           style
         ]}
-        onFocus={(e) => {
+        onFocus={(event) => {
           setFocused(true);
-          onFocus?.(e);
+          onFocus?.(event);
         }}
-        onBlur={(e) => {
+        onBlur={(event) => {
           setFocused(false);
-          onBlur?.(e);
+          onBlur?.(event);
         }}
         {...props}
       />

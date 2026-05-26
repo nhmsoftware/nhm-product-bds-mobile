@@ -2,36 +2,36 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "@/libs/layout-mode";
 
-type Tone = "success" | "warning" | "danger" | "neutral";
+type StatusBadgeProps = {
+  label: string;
+  tone?: "neutral" | "success" | "warning" | "danger" | "primary";
+};
 
-export function StatusBadge({ label, tone = "neutral" }: { label: string; tone?: Tone }) {
+export function StatusBadge({ label, tone = "neutral" }: StatusBadgeProps) {
   const theme = useAppTheme();
-  const toneColors = {
+  const colorMap = {
+    neutral: theme.colors.muted,
     success: theme.colors.success,
     warning: theme.colors.warning,
     danger: theme.colors.danger,
-    neutral: theme.colors.muted
+    primary: theme.colors.primary
   };
-  const color = toneColors[tone];
+  const color = colorMap[tone];
 
   return (
     <View
       style={[
         styles.badge,
         {
-          backgroundColor: tone === "neutral" ? theme.colors.surfaceAlt : `${color}26`,
-          borderColor: tone === "neutral" ? theme.colors.border : `${color}4d`,
-          borderRadius: theme.radius.sm
+          borderColor: color,
+          backgroundColor: `${color}1f`,
+          borderRadius: theme.radius.full
         }
       ]}
     >
-      <Text style={[
-        styles.text,
-        {
-          color,
-          fontSize: theme.compact ? 11 : 12
-        }
-      ]}>{label}</Text>
+      <Text style={[styles.label, { color }]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -41,9 +41,10 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     borderWidth: 1,
     paddingHorizontal: 10,
-    paddingVertical: 4
+    paddingVertical: 5
   },
-  text: {
-    fontWeight: "700"
+  label: {
+    fontSize: 12,
+    fontWeight: "800"
   }
 });
