@@ -1,11 +1,11 @@
 import { translate, type Language } from "@/libs/i18n";
 import type { AppAccessRole, AuthRole, AuthSession } from "@/services/auth/types";
 
-export type RoleHomeHref = "/(app)/(tabs)" | "/(app)/employee" | "/(app)/forbidden";
+export type RoleHomeHref = "/(app)/(tabs)" | "/employee" | "/(app)/forbidden";
 
 const roleHomeHref: Record<AppAccessRole, RoleHomeHref> = {
   customer: "/(app)/(tabs)",
-  employee: "/(app)/employee"
+  employee: "/employee"
 };
 
 export function normalizeAccessRole(role?: AuthRole | null): AppAccessRole | null {
@@ -64,6 +64,29 @@ export function isManagerAccessRole(role?: AuthRole | null) {
     normalized === "4" ||
     normalized === "5" ||
     normalized === 2 ||
+    normalized === 3 ||
+    normalized === 4 ||
+    normalized === 5
+  );
+}
+
+export function isBaseEmployeeRole(role?: AuthRole | null) {
+  const normalized = typeof role === "string" ? role.toLowerCase() : role;
+
+  return normalized === "employee" || normalized === "1" || normalized === 1;
+}
+
+export function isDepartmentTransferApproverRole(role?: AuthRole | null) {
+  const normalized = typeof role === "string" ? role.toLowerCase() : role;
+
+  return (
+    normalized === "director" ||
+    normalized === "ceo" ||
+    normalized === "super_admin" ||
+    normalized === "admin" ||
+    normalized === "3" ||
+    normalized === "4" ||
+    normalized === "5" ||
     normalized === 3 ||
     normalized === 4 ||
     normalized === 5

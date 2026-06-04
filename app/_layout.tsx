@@ -10,6 +10,7 @@ import { AppFlashMessage } from "@/components/AppFlashMessage";
 import { LanguageProvider } from "@/libs/i18n";
 import { LayoutModeProvider } from "@/libs/layout-mode";
 import { AuthProvider } from "@/services/auth/store";
+import { NotificationProvider } from "@/services/notifications/provider";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -36,13 +37,15 @@ export default function RootLayout() {
         <LayoutModeProvider>
           <LanguageProvider>
             <AuthProvider>
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="index" />
-                <Stack.Screen name="(auth)" />
-                <Stack.Screen name="(app)" />
-                <Stack.Screen name="+not-found" />
-              </Stack>
-              <AppFlashMessage />
+              <NotificationProvider>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="(auth)" />
+                  <Stack.Screen name="(app)" />
+                  <Stack.Screen name="+not-found" />
+                </Stack>
+                <AppFlashMessage />
+              </NotificationProvider>
             </AuthProvider>
           </LanguageProvider>
         </LayoutModeProvider>

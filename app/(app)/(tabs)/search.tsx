@@ -1,12 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
+import { appLogger } from "@/libs/logger";
+import { mediaSource } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
+import { customerPublicApi, publicNewsDetailParams, type PublicNews, type PublicProject } from "@/services/customer/api";
 
 const palette = {
   background: "#f8f9fa",
@@ -55,15 +58,40 @@ const projects = [
 
 export default function CustomerNewsScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
+  const [apiNews, setApiNews] = useState<PublicNews[]>([]);
+  const [apiProjects, setApiProjects] = useState<PublicProject[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    Promise.all([
+      customerPublicApi.news({ page: 1, per_page: 3 }),
+      customerPublicApi.projects({ per_page: 3 })
+    ])
+      .then(([newsResponse, projectResponse]) => {
+        if (!active) return;
+        setApiNews([...(newsResponse.data.featured ?? []), ...(newsResponse.data.list ?? [])].slice(0, 3));
+        setApiProjects(projectResponse.data.data ?? []);
+      })
+      .catch((error) => {
+        appLogger.warn("customer.search", "Không thể tải dữ liệu tin tức/dự án.", { error });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const featuredNews = apiNews[0];
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar backgroundColor={palette.background} style="dark" />
       <View style={styles.topBar}>
-        <View style={styles.brandRow}>
+        <Pressable accessibilityRole="button" onPress={() => router.push("/(app)/(tabs)")} style={styles.brandRow}>
           <Image source={newsImages.logo} style={styles.logoImage} />
           <Text style={styles.brandText}>KHỞI NGUYÊN LAND</Text>
-        </View>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => setAccountMenuVisible(true)}
@@ -75,9 +103,9 @@ export default function CustomerNewsScreen() {
       <CustomerAccountMenu onClose={() => setAccountMenuVisible(false)} visible={accountMenuVisible} />
 
       <ScrollView
-        bounces={false}
+        bounces
         contentContainerStyle={styles.scroll}
-        overScrollMode="never"
+        overScrollMode="always"
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
@@ -101,19 +129,23 @@ export default function CustomerNewsScreen() {
           </View>
 
           <View style={styles.newsCard}>
-            <Image source={newsImages.news} style={styles.newsImage} />
+              <Image source={mediaSource(featuredNews?.thumbnail, newsImages.news)} style={styles.newsImage} />
             <View style={styles.newsBody}>
               <View style={styles.newsCategory}>
                 <Ionicons name="newspaper-outline" size={13} color={palette.darkRed} />
                 <Text style={styles.newsCategoryText}>TIN TỨC THỊ TRƯỜNG</Text>
               </View>
-              <Text style={styles.newsTitle}>Cập nhật xu hướng bất{"\n"}động sản cao cấp</Text>
+              <Text style={styles.newsTitle}>{featuredNews?.title || "Cập nhật xu hướng bất\nđộng sản cao cấp"}</Text>
               <Text style={styles.newsDescription}>
-                Phân tích chuyên sâu về sự biến động của phân khúc biệt thự nghỉ dưỡng và căn hộ hạng sang tại các đô thị lớn.
+                {featuredNews?.summary || "Phân tích chuyên sâu về sự biến động của phân khúc biệt thự nghỉ dưỡng và căn hộ hạng sang tại các đô thị lớn."}
               </Text>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push("/(app)/market-news")}
+                onPress={() =>
+                  featuredNews
+                    ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(featuredNews) })
+                    : router.push("/(app)/market-news")
+                }
                 style={styles.readMore}
               >
                 <Text style={styles.readMoreText}>Xem tất cả bài viết</Text>
@@ -144,38 +176,60 @@ export default function CustomerNewsScreen() {
               <Text style={styles.projectsLink}>Xem tất cả</Text>
             </View>
             <View style={styles.projectList}>
-              {projects.map((project) => (
-                <View key={project.title} style={styles.projectItem}>
+              {(apiProjects.length > 0 ? apiProjects : projects).map((project, index) => {
+                const isApiProject = "id" in project;
+                return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={isApiProject ? project.id : project.title}
+                  onPress={() =>
+                    isApiProject
+                      ? router.push({ pathname: "/(app)/project-detail", params: { id: project.id } })
+                      : undefined
+                  }
+                  style={styles.projectItem}
+                >
                   <View style={styles.projectImageWrap}>
-                    <Image source={project.image} style={styles.projectImage} />
+                    <Image
+                      source={isApiProject ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image) : project.image}
+                      style={styles.projectImage}
+                    />
                     <View
                       style={[
                         styles.projectBadge,
-                        project.badgeTone === "red" && styles.projectBadgeRed,
-                        project.badgeTone === "neutral" && styles.projectBadgeNeutral
+                        !isApiProject && project.badgeTone === "red" && styles.projectBadgeRed,
+                        (isApiProject || project.badgeTone === "neutral") && styles.projectBadgeNeutral
                       ]}
                     >
                       <Text
                         style={[
                           styles.projectBadgeText,
-                          project.badgeTone === "red" && styles.projectBadgeTextLight,
-                          project.badgeTone === "neutral" && styles.projectBadgeTextNeutral
+                          !isApiProject && project.badgeTone === "red" && styles.projectBadgeTextLight,
+                          (isApiProject || project.badgeTone === "neutral") && styles.projectBadgeTextNeutral
                         ]}
                       >
-                        {project.badge}
+                        {isApiProject ? projectStatusLabel(project.status) : project.badge}
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.projectTitle}>{project.title}</Text>
-                  <Text style={styles.projectLocation}>{project.location}</Text>
-                </View>
-              ))}
+                  <Text style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.title}</Text>
+                  <Text style={styles.projectLocation}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
+                </Pressable>
+                );
+              })}
             </View>
           </View>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function projectStatusLabel(status?: string | number | null) {
+  if (status === 1 || status === "1" || status === "available") return "MỞ BÁN";
+  if (status === 2 || status === "2" || status === "reserved") return "ĐANG NHẬN CỌC";
+  if (status === 3 || status === "3" || status === "sold_out") return "HẾT HÀNG";
+  return "ĐANG CẬP NHẬT";
 }
 
 const styles = StyleSheet.create({

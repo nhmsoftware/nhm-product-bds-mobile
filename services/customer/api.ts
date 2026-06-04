@@ -1,20 +1,160 @@
 import { getData, postData } from "@/libs/api";
 
+export type NewsLikeData = {
+  is_liked?: boolean;
+  liked?: boolean;
+  likes_count?: number;
+};
+
+export type PaginatedData<T> = {
+  data?: T[];
+  list?: T[];
+  current_page?: number;
+  last_page?: number;
+  total?: number;
+  pagination?: {
+    total?: number;
+    per_page?: number;
+    current_page?: number;
+    last_page?: number;
+  };
+};
+
+export type PublicProject = {
+  id: string;
+  name?: string | null;
+  location?: string | null;
+  image?: string | null;
+  banner?: string | null;
+  price?: string | number | null;
+  status?: string | number | null;
+  type?: string | null;
+  description?: string | null;
+  amenities?: unknown;
+  floor_plans?: unknown;
+  legal_info?: unknown;
+  brochure?: string | null;
+  contact_info?: unknown;
+  google_maps_url?: string | null;
+  planning_info?: unknown;
+  branch?: string | null;
+  total_lots?: number | null;
+  remaining_lots?: number | null;
+  is_featured?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type PublicPlanning = {
+  id: string;
+  title?: string | null;
+  map_image?: string | null;
+  status?: string | number | null;
+  updated_year?: number | string | null;
+  description?: string | null;
+  city?: string | null;
+  district?: string | null;
+  sub_area?: string | null;
+  symbol?: string | null;
+  density?: string | null;
+  max_height?: string | null;
+  land_use_ratio?: string | null;
+  setback?: string | null;
+  land_type_notes?: string | null;
+  pdf_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  content?: string | null;
+  updated_at?: string | null;
+};
+
+export type PublicNews = {
+  id: string;
+  title?: string | null;
+  slug?: string | null;
+  summary?: string | null;
+  content?: string | null;
+  thumbnail?: string | null;
+  category?: string | null;
+  likes_count?: number | null;
+  is_liked?: boolean | null;
+  liked?: boolean | null;
+  published_at?: string | null;
+};
+
+export function publicNewsDetailParams(news: PublicNews) {
+  const id = news.slug || news.id;
+
+  return {
+    id,
+    ...(typeof news.likes_count === "number" ? { likes_count: String(news.likes_count) } : {}),
+    ...(typeof news.is_liked === "boolean" ? { is_liked: String(news.is_liked) } : {}),
+    ...(typeof news.liked === "boolean" ? { liked: String(news.liked) } : {})
+  };
+}
+
+export type NewsListData = {
+  featured?: PublicNews[];
+  list?: PublicNews[];
+  pagination?: PaginatedData<PublicNews>["pagination"];
+  categories?: unknown[];
+};
+
+export type NewsDetailData = {
+  detail?: PublicNews;
+  related?: PublicNews[];
+};
+
+export type LegalVideo = {
+  id: string;
+  title?: string | null;
+  slug?: string | null;
+  category?: string | null;
+  short_description?: string | null;
+  description?: string | null;
+  thumbnail?: string | null;
+  duration?: string | number | null;
+  video_url?: string | null;
+  created_at?: string | null;
+  published_at?: string | null;
+};
+
+export type LegalVideoListData = {
+  list?: LegalVideo[];
+  pagination?: PaginatedData<LegalVideo>["pagination"];
+  categories?: unknown[];
+};
+
+export type ConsultationSetting = {
+  hotline?: string | null;
+  callback_title?: string | null;
+  callback_description?: string | null;
+  form_title?: string | null;
+  office_name?: string | null;
+  office_address?: string | null;
+  working_hours?: string | null;
+  email?: string | null;
+};
+
 export const customerPublicApi = {
-  news(params?: { category?: string; search?: string; page?: number }) {
-    return getData("/api/v1/news", params);
+  news(params?: { category?: string; search?: string; page?: number; per_page?: number }) {
+    return getData<NewsListData>("/api/v1/news", params);
   },
 
   newsDetail(idOrSlug: string) {
-    return getData(`/api/v1/news/${encodeURIComponent(idOrSlug)}`);
+    return getData<NewsDetailData>(`/api/v1/news/${encodeURIComponent(idOrSlug)}`);
   },
 
-  projects(params?: { search?: string; location?: string; type?: string; page?: number }) {
-    return getData("/api/v1/public/projects", params);
+  likeNews(id: string) {
+    return postData<NewsLikeData>(`/api/v1/news/${encodeURIComponent(id)}/like`, {});
+  },
+
+  projects(params?: { search?: string; location?: string; type?: string; status?: string; page?: number; per_page?: number }) {
+    return getData<PaginatedData<PublicProject>>("/api/v1/public/projects", params);
   },
 
   projectDetail(id: string) {
-    return getData(`/api/v1/public/projects/${encodeURIComponent(id)}`);
+    return getData<PublicProject>(`/api/v1/public/projects/${encodeURIComponent(id)}`);
   },
 
   projectBrochure(id: string) {
@@ -25,23 +165,34 @@ export const customerPublicApi = {
     return getData(`/api/v1/public/projects/${encodeURIComponent(id)}/hotline`);
   },
 
-  plannings(params?: { search?: string; city?: string; page?: number }) {
-    return getData("/api/v1/public/plannings", params);
+  plannings(params?: { search?: string; city?: string; page?: number; per_page?: number }) {
+    return getData<PaginatedData<PublicPlanning>>("/api/v1/public/plannings", params);
+  },
+
+  planningCities() {
+    return getData<string[]>("/api/v1/public/plannings/cities");
   },
 
   planningDetail(id: string) {
-    return getData(`/api/v1/public/plannings/${encodeURIComponent(id)}`);
+    return getData<PublicPlanning>(`/api/v1/public/plannings/${encodeURIComponent(id)}`);
   },
 
-  legalVideos(params?: { search?: string; page?: number }) {
-    return getData("/api/v1/legal-videos", params);
+  legalVideos(params?: { category?: string; search?: string; page?: number; per_page?: number }) {
+    return getData<LegalVideoListData>("/api/v1/legal-videos", params);
   },
 
   consultationSetting() {
-    return getData("/api/v1/public/consultation/setting");
+    return getData<ConsultationSetting>("/api/v1/public/consultation/setting");
   },
 
-  submitConsultation(input: { name: string; phone: string; message?: string; project_id?: string }) {
+  submitConsultation(input: {
+    full_name: string;
+    phone: string;
+    email?: string;
+    project_id?: string;
+    project_name?: string;
+    content?: string;
+  }) {
     return postData("/api/v1/public/consultation/submit", input);
   }
 };

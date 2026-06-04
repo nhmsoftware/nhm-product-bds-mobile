@@ -1,5 +1,5 @@
-import { Redirect } from "expo-router";
-import { useEffect, useState } from "react";
+import { router } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 
 import { LearningHomeScreen } from "@/components/EmployeeScreens";
 import { LoadingState } from "@/components/LoadingState";
@@ -12,6 +12,7 @@ export default function EmployeeLearningRoute() {
   const { session, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
+  const openedRequiredLearning = useRef(false);
 
   useEffect(() => {
     if (authLoading) {
@@ -45,6 +46,18 @@ export default function EmployeeLearningRoute() {
     };
   }, [authLoading, session]);
 
+  useEffect(() => {
+    if (authLoading || loading || allowed || openedRequiredLearning.current) return;
+
+    openedRequiredLearning.current = true;
+    router.replace("/employee");
+    const timer = setTimeout(() => {
+      router.push("/employee/required-learning");
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [allowed, authLoading, loading]);
+
   if (authLoading || loading) {
     return (
       <Screen edges={["top", "left", "right"]} scroll={false}>
@@ -54,7 +67,11 @@ export default function EmployeeLearningRoute() {
   }
 
   if (!allowed) {
-    return <Redirect href="/(app)/employee/required-learning" />;
+    return (
+      <Screen edges={["top", "left", "right"]} scroll={false}>
+        <LoadingState />
+      </Screen>
+    );
   }
 
   return <LearningHomeScreen />;

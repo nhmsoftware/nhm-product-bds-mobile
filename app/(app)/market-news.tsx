@@ -1,11 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
+import { appLogger } from "@/libs/logger";
+import { mediaSource } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
+import { customerPublicApi, publicNewsDetailParams, type PublicNews } from "@/services/customer/api";
 
 const palette = {
   background: "#f8f9fa",
@@ -42,17 +46,66 @@ const sideArticles = [
   }
 ] as const;
 
+type ApiRecord = Record<string, unknown>;
+
+function isApiRecord(value: unknown): value is ApiRecord {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 export default function MarketNewsScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
+  const [featuredNewsParams, setFeaturedNewsParams] = useState<Record<string, string>>({});
+  const [newsItems, setNewsItems] = useState<PublicNews[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    customerPublicApi
+      .news({ page: 1, per_page: 1 })
+      .then((response) => {
+        if (!active || !isApiRecord(response.data)) return;
+
+        const featured = Array.isArray(response.data.featured) ? response.data.featured.filter(isApiRecord) as PublicNews[] : [];
+        const list = Array.isArray(response.data.list) ? response.data.list.filter(isApiRecord) as PublicNews[] : [];
+        const mergedNews = [...featured, ...list];
+        setNewsItems(mergedNews);
+        const news = mergedNews[0];
+        if (news?.id) {
+          setFeaturedNewsParams(publicNewsDetailParams(news));
+        }
+      })
+      .catch((error) => {
+        appLogger.warn("customer.news", "Không thể tải ID tin tức để thực hiện like.", { error });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const featuredArticle = newsItems[0];
+  const displaySideArticles = newsItems.length > 1 ? newsItems.slice(1, 3) : sideArticles;
+
+  function openFeaturedNews() {
+    if (featuredNewsParams.id) {
+      router.push({
+        pathname: "/(app)/news-detail",
+        params: featuredNewsParams
+      });
+      return;
+    }
+
+    router.push("/(app)/news-detail");
+  }
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar backgroundColor={palette.background} style="dark" />
       <View style={styles.topBar}>
-        <View style={styles.brandRow}>
+        <Pressable accessibilityRole="button" onPress={() => router.push("/(app)/(tabs)")} style={styles.brandRow}>
           <Image source={marketImages.logo} style={styles.logoImage} />
           <Text style={styles.brandText}>KHỞI NGUYÊN LAND</Text>
-        </View>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => setAccountMenuVisible(true)}
@@ -64,9 +117,9 @@ export default function MarketNewsScreen() {
       <CustomerAccountMenu onClose={() => setAccountMenuVisible(false)} visible={accountMenuVisible} />
 
       <ScrollView
-        bounces={false}
+        bounces
         contentContainerStyle={styles.scroll}
-        overScrollMode="never"
+        overScrollMode="always"
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerSection}>
@@ -98,39 +151,64 @@ export default function MarketNewsScreen() {
 
         <View style={styles.newsGrid}>
           <View style={styles.featuredArticle}>
-            <View style={styles.featuredImageWrap}>
-              <Image source={marketImages.hot} style={styles.articleImage} />
+            <Pressable
+              accessibilityLabel="Mở chi tiết tin tức bất động sản hạng sang"
+              accessibilityRole="button"
+              onPress={openFeaturedNews}
+              style={styles.featuredImageWrap}
+            >
+              <Image source={mediaSource(featuredArticle?.thumbnail, marketImages.hot)} style={styles.articleImage} />
               <View style={styles.hotBadge}>
                 <Text style={styles.badgeText}>HOT</Text>
               </View>
-            </View>
+            </Pressable>
 
-            <View style={styles.featuredCopy}>
+            <Pressable
+              accessibilityLabel="Mở chi tiết tin tức bất động sản hạng sang"
+              accessibilityRole="button"
+              onPress={openFeaturedNews}
+              style={styles.featuredCopy}
+            >
               <View style={styles.metaRow}>
-                <Text style={styles.categoryText}>THỊ TRƯỜNG</Text>
+                <Text style={styles.categoryText}>{featuredArticle?.category || "THỊ TRƯỜNG"}</Text>
                 <View style={styles.metaDot} />
-                <Text style={styles.featuredDate}>24 Tháng 5, 2024</Text>
+                <Text style={styles.featuredDate}>{formatNewsDate(featuredArticle?.published_at) || "24 Tháng 5, 2024"}</Text>
               </View>
-              <Text style={styles.featuredTitle}>Bất động sản hạng sang: Xu hướng đầu tư bền vững năm 2024</Text>
-              <Text style={styles.featuredExcerpt}>Phân khúc bất động sản cao cấp đang chứng kiến sự chuyển dịch mạnh mẽ...</Text>
-            </View>
+              <Text style={styles.featuredTitle}>{featuredArticle?.title || "Bất động sản hạng sang: Xu hướng đầu tư bền vững năm 2024"}</Text>
+              <Text style={styles.featuredExcerpt}>{featuredArticle?.summary || "Phân khúc bất động sản cao cấp đang chứng kiến sự chuyển dịch mạnh mẽ..."}</Text>
+            </Pressable>
           </View>
 
           <View style={styles.sideFeed}>
-            {sideArticles.map((article) => (
-              <View key={article.title} style={styles.article}>
+            {displaySideArticles.map((article, index) => {
+              const isApiNews = "id" in article;
+              return (
+              <Pressable
+                accessibilityRole="button"
+                key={isApiNews ? article.id : article.title}
+                onPress={() =>
+                  isApiNews
+                    ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(article) })
+                    : undefined
+                }
+                style={styles.article}
+              >
                 <View style={styles.articleImageWrap}>
-                  <Image source={article.image} style={styles.articleImage} />
-                  {article.badge ? (
+                  <Image
+                    source={isApiNews ? mediaSource(article.thumbnail, sideArticles[index % sideArticles.length].image) : article.image}
+                    style={styles.articleImage}
+                  />
+                  {(!isApiNews && article.badge) ? (
                     <View style={styles.newBadge}>
                       <Text style={styles.badgeText}>{article.badge}</Text>
                     </View>
                   ) : null}
                 </View>
-                <Text style={styles.articleDate}>{article.date}</Text>
-                <Text style={styles.articleTitle}>{article.title}</Text>
-              </View>
-            ))}
+                <Text style={styles.articleDate}>{isApiNews ? formatNewsDate(article.published_at) || "Đang cập nhật" : article.date}</Text>
+                <Text style={styles.articleTitle}>{isApiNews ? article.title || "Tin tức đang cập nhật" : article.title}</Text>
+              </Pressable>
+              );
+            })}
           </View>
         </View>
 
@@ -142,6 +220,13 @@ export default function MarketNewsScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function formatNewsDate(value?: string | null) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
 }
 
 const styles = StyleSheet.create({

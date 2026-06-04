@@ -14,9 +14,10 @@ type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
   padded?: boolean;
   edges?: ComponentProps<typeof SafeAreaView>["edges"];
+  safeBackgroundColor?: string;
 }>;
 
-export function Screen({ children, scroll = true, padded = true, edges }: ScreenProps) {
+export function Screen({ children, scroll = true, padded = true, edges, safeBackgroundColor }: ScreenProps) {
   const theme = useAppTheme();
   const content = (
     <View
@@ -30,7 +31,7 @@ export function Screen({ children, scroll = true, padded = true, edges }: Screen
   );
 
   return (
-    <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor: theme.colors.bg }]}>
+    <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor: safeBackgroundColor || theme.colors.bg }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.flex}

@@ -17,7 +17,7 @@ import { notifyInfo } from "@/libs/notify";
 import { authApi } from "@/services/auth/api";
 import { createDemoSession, DEMO_AUTH_ENABLED, isDemoSession, type DemoLoginRole } from "@/services/auth/demo";
 import { getHomeHrefForRole } from "@/services/auth/roles";
-import type { AppAccessRole, AuthSession } from "@/services/auth/types";
+import type { AuthSession } from "@/services/auth/types";
 
 type AuthContextValue = {
   session: AuthSession | null;

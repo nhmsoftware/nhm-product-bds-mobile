@@ -9,6 +9,7 @@ type NotifyOptions = {
   message: string;
   description?: string;
   duration?: number;
+  onPress?: () => void;
 };
 
 export function notifySuccess({
@@ -35,12 +36,15 @@ export function notifyError(error: unknown, fallback = translate("errors.generic
 export function notifyInfo({
   message,
   description,
-  duration = DEFAULT_DURATION_MS
+  duration = DEFAULT_DURATION_MS,
+  onPress
 }: NotifyOptions) {
   showMessage({
     description,
     duration,
+    hideOnPress: true,
     message,
+    onPress,
     type: "info"
   });
 }

@@ -1,4 +1,5 @@
 import { getData, postData, putData } from "@/libs/api";
+import { appLogger } from "@/libs/logger";
 import type {
   AuthResponse,
   AuthRole,
@@ -100,6 +101,21 @@ function expiresAtFromSeconds(seconds?: number) {
   return new Date(Date.now() + (seconds ?? 60 * 60) * 1000).toISOString();
 }
 
+function logDevOtp(username: string, data: ForgotPasswordResponse) {
+  const otpCode = data.otp_code;
+
+  if (!__DEV__ || otpCode === undefined || otpCode === null || otpCode === "") {
+    return;
+  }
+
+  appLogger.info("auth.otp.dev", `[DEV ONLY] OTP for ${username}: ${String(otpCode)}`, {
+    username,
+    otp_code: String(otpCode),
+    expires_at: data.expires_at ?? null,
+    retry_after_seconds: data.retry_after_seconds ?? null
+  });
+}
+
 function mapLogin(data: BackendLoginResponse): AuthResponse {
   return {
     accessToken: data.access_token,
@@ -156,8 +172,10 @@ export const authApi = {
     return postData<{ success: boolean } | null>("/api/v1/auth/logout");
   },
 
-  forgotPassword(input: { username: string }) {
-    return postData<ForgotPasswordResponse>("/api/v1/auth/forgot-password", input);
+  async forgotPassword(input: { username: string }) {
+    const response = await postData<ForgotPasswordResponse>("/api/v1/auth/forgot-password", input);
+    logDevOtp(input.username, response.data);
+    return response;
   },
 
   verifyResetCode(input: { username: string; code: string }) {
@@ -190,6 +208,12 @@ export const authApi = {
       current_password: input.currentPassword,
       new_password: input.newPassword,
       new_password_confirmation: input.newPasswordConfirmation
+    });
+  },
+
+  updatePushToken(token: string | null) {
+    return putData<{ fcm_token: string | null }>("/api/v1/auth/fcm-token", {
+      fcm_token: token
     });
   }
 };

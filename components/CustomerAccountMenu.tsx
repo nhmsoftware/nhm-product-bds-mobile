@@ -15,7 +15,6 @@ type MenuItem = {
 };
 
 const menuItems: MenuItem[] = [
-  { icon: "home-outline", label: "Trang chủ", route: "/(app)/(tabs)" },
   { icon: "person-outline", label: "Thông tin cá nhân", route: "/(app)/(tabs)/profile" },
   { icon: "create-outline", label: "Chỉnh sửa hồ sơ", route: "/(app)/profile/edit" },
   { icon: "heart-outline", label: "Dự án đã lưu / đã quan tâm", route: "/(app)/(tabs)/saved" },

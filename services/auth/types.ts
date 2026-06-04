@@ -67,7 +67,10 @@ export type RegisterResponse = {
 };
 
 export type ForgotPasswordResponse = {
-  username: string;
+  username?: string;
+  retry_after_seconds?: number;
+  expires_at?: string | null;
+  otp_code?: string | number | null;
 };
 
 export type VerifyResetCodeResponse = {

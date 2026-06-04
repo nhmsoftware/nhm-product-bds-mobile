@@ -25,6 +25,25 @@ import {
 import { getHomeHrefForRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 
+const apiDemoCredentials: Partial<Record<DemoLoginRole, { username: string; password: string }>> = {
+  customer: {
+    username: "maiducduong050820041@gmail.com",
+    password: "Duong2004@"
+  },
+  employee: {
+    username: "maiducduong05082004@gmail.com",
+    password: "Duong2004@"
+  },
+  manager: {
+    username: "maiducduong201@gmail.com",
+    password: "Duong2004@"
+  },
+  director: {
+    username: "director@gmail.com",
+    password: "Duong2004@"
+  }
+};
+
 export default function LoginScreen() {
   const { t } = useI18n();
   const { signIn, signInWithDemo } = useAuth();
@@ -52,7 +71,22 @@ export default function LoginScreen() {
   async function handleDemoLogin(role: DemoLoginRole) {
     setDemoRole(role);
     try {
+      const credentials = apiDemoCredentials[role];
+
+      if (credentials) {
+        const response = await authApi.login({
+          ...credentials,
+          remember: true
+        });
+        await signIn(response.data);
+        notifySuccess({ message: response.message || t("notifications.loginSuccess") });
+        router.replace(getHomeHrefForRole(response.data.user.role));
+        return;
+      }
+
       await signInWithDemo(role);
+    } catch (error) {
+      notifyError(error, t("notifications.loginError"));
     } finally {
       setDemoRole(null);
     }
@@ -98,7 +132,7 @@ export default function LoginScreen() {
           label={t("auth.login.remember")}
           style={styles.remember}
         />
-        <Pressable onPress={() => router.push("/(auth)/forgot-password")}>
+        <Pressable onPress={() => router.push("/(auth)/forgot-password-otp")}>
           <Text style={styles.forgotText}>{t("auth.action.forgotPassword")}</Text>
         </Pressable>
       </View>

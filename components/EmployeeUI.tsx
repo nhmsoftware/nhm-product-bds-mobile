@@ -1,13 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
+import { router, usePathname } from "expo-router";
 import type { ComponentProps, PropsWithChildren, ReactNode } from "react";
-import { Pressable, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
+import { Image, Pressable, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle, type ImageSourcePropType } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { employeePalette } from "@/libs/employee-theme";
 import { appFonts } from "@/libs/typography";
 import { useAuth } from "@/services/auth/store";
+import { useNotificationState } from "@/services/notifications/provider";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
+
+export const EMPLOYEE_HEADER_HEIGHT = 60;
 
 type EmployeePageProps = PropsWithChildren<{
   title?: string;
@@ -61,13 +65,15 @@ export function EmployeePage({
   return (
     <SafeAreaView edges={edges} style={styles.safe}>
       <EmployeeTopBar back={back} backType={backType} title={headerTitle} right={right} />
-      {scroll ? (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          {body}
-        </ScrollView>
-      ) : (
-        body
-      )}
+      <View style={styles.bodyArea}>
+        {scroll ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll} style={styles.bodyArea}>
+            {body}
+          </ScrollView>
+        ) : (
+          body
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -84,8 +90,10 @@ export function EmployeeTopBar({
   right?: ReactNode;
 }) {
   const { session } = useAuth();
+  const pathname = usePathname();
   const name = session?.user.fullName || "N";
   const backIcon = backType === "home" ? "home-outline" : "arrow-back";
+  const longTitle = title ? title.length > 25 : false;
 
   return (
     <View style={styles.topBar}>
@@ -94,14 +102,79 @@ export function EmployeeTopBar({
           <Ionicons name={backIcon} size={22} color={employeePalette.text} />
         </Pressable>
       ) : (
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{name.slice(0, 1)}</Text>
-        </View>
+        <EmployeeAvatarButton label={name} />
       )}
-      {title ? <Text style={styles.topTitle}>{title}</Text> : null}
+      {title ? (
+        <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.topTitle, longTitle && styles.topTitleLong]}>
+          {title}
+        </Text>
+      ) : null}
       <View style={styles.topSpacer} />
-      {right ?? <Ionicons name="notifications-outline" size={20} color={employeePalette.text} />}
+      {right ?? <EmployeeNotificationButton returnTo={pathname} />}
     </View>
+  );
+}
+
+export function EmployeeAvatarButton({
+  imageSource,
+  imageUri,
+  label,
+  onPress
+}: {
+  imageSource?: ImageSourcePropType;
+  imageUri?: string | null;
+  label?: string | null;
+  onPress?: () => void;
+}) {
+  const initial = (label || "N").slice(0, 1).toUpperCase();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress || (() => router.push("/employee/personal-info"))}
+      style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}
+    >
+      {imageUri ? (
+        <Image source={{ uri: imageUri }} style={styles.avatarImage} />
+      ) : imageSource ? (
+        <Image source={imageSource} style={styles.avatarImage} />
+      ) : (
+        <Text style={styles.avatarText}>{initial}</Text>
+      )}
+    </Pressable>
+  );
+}
+
+export function EmployeeNotificationButton({
+  color = employeePalette.text,
+  returnTo,
+  size = 20
+}: {
+  color?: string;
+  returnTo: string;
+  size?: number;
+}) {
+  const { unreadCount } = useNotificationState();
+  const showBadge = unreadCount > 0;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() =>
+        router.push({
+          pathname: "/employee/notifications",
+          params: { returnTo }
+        })
+      }
+      style={({ pressed }) => [styles.notificationButton, pressed && styles.pressed]}
+    >
+      <Ionicons name="notifications-outline" size={size} color={color} />
+      {showBadge ? (
+        <View style={styles.notificationBadge}>
+          <Text style={styles.notificationBadgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -267,16 +340,18 @@ export function EmployeeMetric({
 
 const styles = StyleSheet.create({
   safe: {
+    backgroundColor: "#ffffff",
+    flex: 1
+  },
+  bodyArea: {
     backgroundColor: employeePalette.bg,
     flex: 1
   },
   topBar: {
     alignItems: "center",
     backgroundColor: "#ffffff",
-    borderBottomColor: "#f1f5f9",
-    borderBottomWidth: 1,
     flexDirection: "row",
-    minHeight: 57,
+    height: EMPLOYEE_HEADER_HEIGHT,
     paddingHorizontal: 20
   },
   avatar: {
@@ -285,7 +360,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     height: 32,
     justifyContent: "center",
+    overflow: "hidden",
     width: 32
+  },
+  avatarImage: {
+    height: "100%",
+    resizeMode: "cover",
+    width: "100%"
   },
   avatarText: {
     color: "#ffffff",
@@ -299,6 +380,35 @@ const styles = StyleSheet.create({
     marginLeft: -8,
     width: 36
   },
+  notificationButton: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 36,
+    justifyContent: "center",
+    position: "relative",
+    width: 36
+  },
+  notificationBadge: {
+    alignItems: "center",
+    backgroundColor: employeePalette.red,
+    borderColor: "#ffffff",
+    borderRadius: 999,
+    borderWidth: 1.5,
+    height: 17,
+    justifyContent: "center",
+    minWidth: 17,
+    paddingHorizontal: 4,
+    position: "absolute",
+    right: 2,
+    top: 2
+  },
+  notificationBadgeText: {
+    color: "#ffffff",
+    fontFamily: appFonts.bold,
+    fontSize: 9,
+    lineHeight: 11,
+    textAlign: "center"
+  },
   topSpacer: {
     flex: 1
   },
@@ -309,6 +419,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
     marginLeft: 8
+  },
+  topTitleLong: {
+    color: "#000000",
+    fontFamily: appFonts.bold,
+    fontSize: 18,
+    letterSpacing: -0.45,
+    lineHeight: 28
   },
   scroll: {
     paddingBottom: 28
