@@ -10,6 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "icon": "./assets/images/icons/app-icon.png",
+      "bundleIdentifier": "com.duongkhongkich.nhmBDSapp",
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Ứng dụng cần quyền vị trí để xác nhận chấm công tại văn phòng.",
