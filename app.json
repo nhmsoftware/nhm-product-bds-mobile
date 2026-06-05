@@ -3,12 +3,13 @@
     "name": "KHỞI NGUYÊN LAND",
     "slug": "khoi-nguyen-land",
     "version": "0.1.0",
-    "icon": "./assets/icons/project-building.png",
+    "icon": "./assets/images/icons/app-icon.png",
     "orientation": "portrait",
     "scheme": "BDS",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
+      "icon": "./assets/images/icons/app-icon.png",
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Ứng dụng cần quyền vị trí để xác nhận chấm công tại văn phòng.",
@@ -34,7 +35,8 @@
         "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#07120f"
+        "foregroundImage": "./assets/images/icons/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       },
       "package": "com.duongkhongkich.nhmBDSapp"
     },
