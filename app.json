@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Zentrix",
-    "slug": "nhm-zentrix-app",
+    "name": "BDS",
+    "slug": "nhm-BDS-app",
     "version": "0.1.0",
     "orientation": "portrait",
-    "scheme": "zentrix",
+    "scheme": "BDS",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
@@ -35,7 +35,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#07120f"
       },
-      "package": "com.duongkhongkich.nhmzentrixapp"
+      "package": "com.duongkhongkich.nhmBDSapp"
     },
     "web": {
       "bundler": "metro",

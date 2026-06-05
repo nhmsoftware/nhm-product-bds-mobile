@@ -1,6 +1,6 @@
-# Zentrix Mobile App
+# BDS Mobile App
 
-Expo Router mobile app for the Zentrix customer experience.
+Expo Router mobile app for the BDS customer experience.
 
 ## Run
 

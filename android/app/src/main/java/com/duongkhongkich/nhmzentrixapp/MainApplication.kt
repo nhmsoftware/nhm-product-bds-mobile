@@ -1,4 +1,4 @@
-package com.duongkhongkich.nhmzentrixapp
+package com.duongkhongkich.nhmBDSapp
 
 import android.app.Application
 import android.content.res.Configuration
