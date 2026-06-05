@@ -3,6 +3,7 @@
     "name": "BDS",
     "slug": "nhm-BDS-app",
     "version": "0.1.0",
+    "icon": "./assets/icons/project-building.png",
     "orientation": "portrait",
     "scheme": "BDS",
     "userInterfaceStyle": "light",
