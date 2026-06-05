@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Defs, LinearGradient, Path, Rect, Stop, Svg } from "react-native-svg";
 
 import { Screen } from "@/components/Screen";
+import { Pressable } from "@/components/SafePressable";
 import { EMPLOYEE_HEADER_HEIGHT, EmployeeAvatarButton, EmployeeNotificationButton } from "@/components/EmployeeUI";
 import { employeePalette } from "@/libs/employee-theme";
 import { useI18n, type TranslationKey } from "@/libs/i18n";

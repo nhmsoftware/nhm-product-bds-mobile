@@ -1,7 +1,20 @@
-import { Ionicons } from "@expo/vector-icons";
-import { router, usePathname } from "expo-router";
-import type { ComponentProps, PropsWithChildren, ReactNode } from "react";
-import { Image, Pressable, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle, type ImageSourcePropType } from "react-native";
+import {
+  Ionicons } from "@expo/vector-icons";
+import { router,
+  usePathname } from "expo-router";
+import type { ComponentProps,
+  PropsWithChildren,
+  ReactNode } from "react";
+import { Image,
+  ScrollView,
+  StyleProp,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+  type ImageSourcePropType
+} from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { employeePalette } from "@/libs/employee-theme";

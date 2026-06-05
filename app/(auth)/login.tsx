@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import {
   AuthButton,
@@ -12,6 +12,7 @@ import {
   AuthScreen,
   type AuthContactMethod
 } from "@/components/AuthChrome";
+import { Pressable } from "@/components/SafePressable";
 import { employeePalette } from "@/libs/employee-theme";
 import { useI18n } from "@/libs/i18n";
 import { notifyError, notifySuccess } from "@/libs/notify";
@@ -28,7 +29,7 @@ import { useAuth } from "@/services/auth/store";
 const apiDemoCredentials: Partial<Record<DemoLoginRole, { username: string; password: string }>> = {
   customer: {
     username: "maiducduong050820041@gmail.com",
-    password: "Duong2004@"
+    password: "password"
   },
   employee: {
     username: "maiducduong05082004@gmail.com",
@@ -43,6 +44,8 @@ const apiDemoCredentials: Partial<Record<DemoLoginRole, { username: string; pass
     password: "Duong2004@"
   }
 };
+
+const visibleDemoLoginOptions = DEMO_LOGIN_OPTIONS.filter((option) => option.role !== "director");
 
 export default function LoginScreen() {
   const { t } = useI18n();
@@ -148,7 +151,7 @@ export default function LoginScreen() {
 
       {DEMO_AUTH_ENABLED ? (
         <View style={styles.demoActions}>
-          {DEMO_LOGIN_OPTIONS.map((option) => (
+          {visibleDemoLoginOptions.map((option) => (
             <AuthButton
               key={option.role}
               title={t(option.labelKey)}

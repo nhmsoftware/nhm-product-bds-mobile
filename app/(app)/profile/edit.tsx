@@ -1,12 +1,13 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { LoadingState } from "@/components/LoadingState";
 import { RoleGuard } from "@/components/RoleGuard";
 import { Screen } from "@/components/Screen";
+import { Pressable } from "@/components/SafePressable";
 import { TextField } from "@/components/TextField";
 import { useI18n, type TranslationKey } from "@/libs/i18n";
 import { useAppTheme } from "@/libs/layout-mode";
@@ -162,7 +163,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "900"
+    fontWeight: "900",
+    lineHeight: 34
   },
   subtitle: {
     fontSize: 14,

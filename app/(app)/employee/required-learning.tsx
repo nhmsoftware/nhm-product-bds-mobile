@@ -38,6 +38,36 @@ function numberValue(value: unknown) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function apiList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
+}
+
+function normalizeQuizStatus(value: unknown) {
+  const status = textValue(value)?.toLowerCase() ?? "";
+
+  if (["passed", "pass", "success", "done", "completed", "complete"].includes(status)) return "passed";
+  if (["failed", "fail", "not_passed", "not passed", "chưa đạt", "chua_dat"].includes(status)) return "failed";
+  if (["grading", "pending", "pending_review", "manual_review", "reviewing", "submitted", "waiting_review"].includes(status)) return "grading";
+  if (["in_progress", "draft", "started", "doing"].includes(status)) return "in_progress";
+  if (["locked", "forbidden"].includes(status)) return "locked";
+  if (["none", "not_available", "unavailable", "no_quiz"].includes(status)) return "none";
+
+  return status || "available";
+}
+
+function quizResultStatus(value: unknown) {
+  const result = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const details = apiList(result.details);
+  const status = normalizeQuizStatus(result.status);
+
+  if (status === "grading" || details.some((item) => item.is_correct === null || item.is_correct === undefined)) return "grading";
+  if (status === "passed" || status === "failed") return status;
+  if (result.is_passed !== undefined || result.isPassed !== undefined) return booleanValue(result.is_passed ?? result.isPassed) ? "passed" : "failed";
+  if (result.score !== undefined || details.length > 0) return "completed";
+
+  return status;
+}
+
 function lastLessonId(course: MandatoryLearningCourse) {
   const lastLesson = [...course.lessons].sort((a, b) => b.order - a.order)[0];
   return lastLesson?.id ?? null;
@@ -92,6 +122,24 @@ async function withCourseQuiz(course: MandatoryLearningCourse | null) {
     return course;
   }
 
+  const resultResponse = await employeeApi.courseQuizResult(quizCourseId).catch(() => null);
+  if (resultResponse) {
+    const status = quizResultStatus(resultResponse.data);
+
+    return {
+      ...course,
+      quiz: {
+        actionText: status === "grading" ? "Đang chấm" : "Xem lại bài kiểm tra",
+        canStart: status !== "grading",
+        courseId: quizCourseId,
+        hasQuiz: true,
+        isPassed: status === "passed",
+        lessonId: lastLessonId(course),
+        status
+      }
+    };
+  }
+
   const response = await employeeApi.courseQuizAvailability(quizCourseId).catch(() => null);
 
   if (!response) {
@@ -102,14 +150,28 @@ async function withCourseQuiz(course: MandatoryLearningCourse | null) {
     return { ...course, quiz: { actionText: "Làm bài kiểm tra", courseId: null, hasQuiz: false, lessonId: null, status: "none" } };
   }
 
+  const responseData = response.data && typeof response.data === "object" && !Array.isArray(response.data)
+    ? response.data as Record<string, unknown>
+    : {};
+  const attempt = responseData.attempt && typeof responseData.attempt === "object" && !Array.isArray(responseData.attempt)
+    ? responseData.attempt as Record<string, unknown>
+    : {};
+  const status = response.status === 200 ? normalizeQuizStatus(attempt.status ?? responseData.status) : "locked";
+  const actionText = status === "grading"
+    ? "Đang chấm"
+    : status === "in_progress"
+      ? "Tiếp tục bài kiểm tra"
+      : "Làm bài kiểm tra";
+
   return {
     ...course,
     quiz: {
-      actionText: "Làm bài kiểm tra",
+      actionText,
+      canStart: status !== "grading" && status !== "locked",
       courseId: quizCourseId,
       hasQuiz: true,
       lessonId: lastLessonId(course),
-      status: response.status === 200 ? "available" : "locked"
+      status
     }
   };
 }

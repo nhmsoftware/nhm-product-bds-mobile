@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { Card } from "@/components/Card";
+import { Pressable } from "@/components/SafePressable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatArea, formatCurrencyVnd } from "@/libs/format";
 import { useI18n } from "@/libs/i18n";

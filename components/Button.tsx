@@ -1,11 +1,11 @@
 import {
   ActivityIndicator,
-  Pressable,
   StyleProp,
   StyleSheet,
   Text,
   ViewStyle
 } from "react-native";
+import { Pressable } from "@/components/SafePressable";
 
 import { useAppTheme } from "@/libs/layout-mode";
 

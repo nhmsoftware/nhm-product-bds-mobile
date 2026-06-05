@@ -1,8 +1,17 @@
-import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import {
+  Ionicons } from "@expo/vector-icons";
+import { router,
+  useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect,
+  useState } from "react";
+import { Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
@@ -286,7 +295,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 38,
     letterSpacing: -1.6,
-    lineHeight: 44,
+    lineHeight: 48,
     textShadowColor: "rgba(0, 0, 0, 0.35)",
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 4
@@ -350,7 +359,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 20
   },
   consultButton: {
     alignItems: "center",
@@ -372,7 +381,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 20
   },
   content: {
     gap: 48,

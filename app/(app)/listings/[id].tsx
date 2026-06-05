@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -9,6 +9,7 @@ import { InfoRow } from "@/components/InfoRow";
 import { LoadingState } from "@/components/LoadingState";
 import { RoleGuard } from "@/components/RoleGuard";
 import { Screen } from "@/components/Screen";
+import { Pressable } from "@/components/SafePressable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatArea, formatCurrencyVnd, formatRelativeCount } from "@/libs/format";
 import { useI18n } from "@/libs/i18n";
@@ -264,7 +265,8 @@ const styles = StyleSheet.create({
   },
   agentName: {
     fontSize: 16,
-    fontWeight: "900"
+    fontWeight: "900",
+    lineHeight: 20
   },
   agentMeta: {
     fontSize: 13,

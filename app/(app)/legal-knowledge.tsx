@@ -1,8 +1,16 @@
-import { Ionicons } from "@expo/vector-icons";
+import {
+  Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect,
+  useState } from "react";
+import { Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
@@ -233,7 +241,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 12
+    lineHeight: 16
   },
   title: {
     color: palette.darkRed,

@@ -1,12 +1,14 @@
-import { Ionicons } from "@expo/vector-icons";
-import type { ComponentProps, PropsWithChildren, ReactNode } from "react";
+import {
+  Ionicons } from "@expo/vector-icons";
+import type { ComponentProps,
+  PropsWithChildren,
+  ReactNode } from "react";
 import { useState } from "react";
 import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleProp,
   StyleSheet,
@@ -17,6 +19,7 @@ import {
   View,
   ViewStyle
 } from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { employeePalette } from "@/libs/employee-theme";

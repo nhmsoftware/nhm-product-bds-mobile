@@ -1,9 +1,20 @@
-import { Ionicons } from "@expo/vector-icons";
+import {
+  Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { router, type Href } from "expo-router";
+import { router,
+  type Href } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useEffect,
+  useRef,
+  useState } from "react";
+import { Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View
+} from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { mediaSource } from "@/libs/media";
@@ -402,7 +413,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 20,
     letterSpacing: 1,
-    lineHeight: 20
+    lineHeight: 24
   },
   brand: {
     color: palette.white,

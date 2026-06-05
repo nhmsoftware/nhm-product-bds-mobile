@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { Pressable } from "@/components/SafePressable";
 
 import { useI18n, type Language } from "@/libs/i18n";
 import { useAppTheme } from "@/libs/layout-mode";

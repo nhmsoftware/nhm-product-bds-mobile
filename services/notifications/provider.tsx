@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import { router, type Href } from "expo-router";
-import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { io, type Socket } from "socket.io-client";
 
@@ -14,6 +14,7 @@ import { employeeApi } from "@/services/employee/api";
 
 type NotificationPayload = Record<string, unknown>;
 type ExpoNotificationsModule = typeof import("expo-notifications");
+type RealtimeEventListener = (payload: unknown, event: string) => void;
 
 type NotificationState = {
   refreshUnreadCount: () => Promise<void>;
@@ -24,6 +25,8 @@ type NotificationState = {
 const recentRealtimeNotificationKeys = new Map<string, number>();
 const realtimeNotificationDedupeWindowMs = 10_000;
 let activeRealtimeSocket: Socket | null = null;
+const realtimeEventListeners = new Map<string, Set<RealtimeEventListener>>();
+const realtimeRoomRefs = new Map<string, number>();
 const NotificationContext = createContext<NotificationState>({
   refreshUnreadCount: async () => undefined,
   setUnreadCount: () => undefined,
@@ -268,6 +271,57 @@ function hasRecentRealtimeNotification(key: string) {
   return false;
 }
 
+function dispatchRealtimeEvent(event: string, payload: unknown) {
+  const listeners = realtimeEventListeners.get(event);
+  const wildcardListeners = realtimeEventListeners.get("*");
+
+  [listeners, wildcardListeners].forEach((listenerSet) => {
+    listenerSet?.forEach((listener) => {
+      try {
+        listener(payload, event);
+      } catch (error) {
+        appLogger.warn("notifications.socket.event", "Realtime event listener failed.", { event, error });
+      }
+    });
+  });
+}
+
+function addRealtimeEventListener(event: string, listener: RealtimeEventListener) {
+  const listeners = realtimeEventListeners.get(event) ?? new Set<RealtimeEventListener>();
+  listeners.add(listener);
+  realtimeEventListeners.set(event, listeners);
+
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      realtimeEventListeners.delete(event);
+    }
+  };
+}
+
+function joinRealtimeRoom(room: string) {
+  const normalizedRoom = room.trim();
+
+  if (!normalizedRoom) {
+    return () => undefined;
+  }
+
+  realtimeRoomRefs.set(normalizedRoom, (realtimeRoomRefs.get(normalizedRoom) ?? 0) + 1);
+  activeRealtimeSocket?.emit("join", normalizedRoom);
+
+  return () => {
+    const nextCount = (realtimeRoomRefs.get(normalizedRoom) ?? 1) - 1;
+
+    if (nextCount > 0) {
+      realtimeRoomRefs.set(normalizedRoom, nextCount);
+      return;
+    }
+
+    realtimeRoomRefs.delete(normalizedRoom);
+    activeRealtimeSocket?.emit("leave", normalizedRoom);
+  };
+}
+
 function subscribeRealtime(userId: string, setUnreadCount: NotificationState["setUnreadCount"]) {
   activeRealtimeSocket?.removeAllListeners();
   activeRealtimeSocket?.disconnect();
@@ -285,12 +339,21 @@ function subscribeRealtime(userId: string, setUnreadCount: NotificationState["se
     socket?.emit("join", `user.${userId}`);
     socket?.emit("join", `user:${userId}`);
     socket?.emit("join", `private_user_${userId}`);
+    realtimeRoomRefs.forEach((_count, room) => {
+      socket?.emit("join", room);
+    });
     appLogger.info("notifications.socket", "Realtime notification socket connected.", {
       realtimeUrl: REALTIME_URL
     });
   });
 
   socket.onAny((event, payload) => {
+    dispatchRealtimeEvent(event, payload);
+
+    if (event === "area.comment.created" || event === ".area.comment.created") {
+      return;
+    }
+
     if (__DEV__) {
       appLogger.info("notifications.socket.event", "Realtime socket event received.", {
         event,
@@ -446,4 +509,21 @@ export function NotificationProvider({ children }: PropsWithChildren) {
 
 export function useNotificationState() {
   return useContext(NotificationContext);
+}
+
+export function useRealtimeEvent(event: string, handler: RealtimeEventListener) {
+  const handlerRef = useRef(handler);
+
+  useEffect(() => {
+    handlerRef.current = handler;
+  }, [handler]);
+
+  useEffect(
+    () => addRealtimeEventListener(event, (payload, receivedEvent) => handlerRef.current(payload, receivedEvent)),
+    [event]
+  );
+}
+
+export function useRealtimeRoom(room: string) {
+  useEffect(() => joinRealtimeRoom(room), [room]);
 }

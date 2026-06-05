@@ -367,16 +367,16 @@ export const employeeApi = {
     return getData<JsonRecord>("/api/v1/areas/search", { q: query });
   },
 
-  inventoryMap(areaId: string) {
-    return getData<JsonRecord>(`/api/v1/areas/${areaId}/inventory-map`);
+  inventoryMap(areaId: string, params?: Record<string, unknown>) {
+    return getData<JsonRecord>(`/api/v1/areas/${areaId}/inventory-map`, params);
   },
 
   lotDetail(lotId: string) {
     return getData<JsonRecord>(`/api/v1/lots/${lotId}`);
   },
 
-  addLotComment(lotId: string, content: string) {
-    return postData<JsonRecord>(`/api/v1/lots/${lotId}/comments`, { content });
+  addAreaComment(areaId: string, content: string) {
+    return postData<JsonRecord>(`/api/v1/areas/${areaId}/comments`, { content });
   },
 
   requestLotLock(lotId: string, input: JsonRecord = {}) {

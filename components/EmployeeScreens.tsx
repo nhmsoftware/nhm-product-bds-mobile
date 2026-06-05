@@ -1,9 +1,21 @@
-import { Ionicons } from "@expo/vector-icons";
+import {
+  Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { VideoView, useVideoPlayer } from "expo-video";
-import { router, useFocusEffect, useLocalSearchParams, type Href } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { VideoView,
+  useVideoPlayer } from "expo-video";
+import { router,
+  useFocusEffect,
+  useLocalSearchParams,
+  type Href } from "expo-router";
+import { useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode } from "react";
 import {
   AppState,
   Alert,
@@ -11,7 +23,6 @@ import {
   Image,
   Linking,
   Modal,
-  Pressable,
   RefreshControl,
   ScrollView,
   Share,
@@ -21,10 +32,12 @@ import {
   type GestureResponderEvent,
   type ImageSourcePropType,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
   type NativeSyntheticEvent,
   type TextLayoutEventData,
   View
 } from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Path, Svg, SvgUri } from "react-native-svg";
 
@@ -53,7 +66,7 @@ import { useAuth } from "@/services/auth/store";
 import type { AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
 import { employeeNewsPosts } from "@/services/employee/mock-data";
-import { useNotificationState } from "@/services/notifications/provider";
+import { useNotificationState, useRealtimeEvent, useRealtimeRoom } from "@/services/notifications/provider";
 import type {
   LearningLessonAttachment,
   LearningLessonDetail,
@@ -178,6 +191,58 @@ function apiNumber(value: unknown, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function apiNullableNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeExternalUrl(value: unknown) {
+  const url = apiText(value, "").trim();
+
+  if (!url) {
+    return "";
+  }
+
+  if (/^(https?:|geo:|comgooglemaps:)/i.test(url)) {
+    return url;
+  }
+
+  return `https://${url}`;
+}
+
+function googleMapsUrlFromCoordinates(latitude: unknown, longitude: unknown) {
+  const lat = apiNullableNumber(latitude);
+  const lng = apiNullableNumber(longitude);
+
+  if (lat === null || lng === null) {
+    return "";
+  }
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
+}
+
+function directionUrlFromRecord(record: ApiObject) {
+  const directUrl = normalizeExternalUrl(
+    record.direction_url ??
+      record.directionUrl ??
+      record.google_maps_url ??
+      record.googleMapsUrl ??
+      record.maps_url ??
+      record.mapsUrl ??
+      record.location_url ??
+      record.locationUrl
+  );
+
+  if (directUrl) {
+    return directUrl;
+  }
+
+  return googleMapsUrlFromCoordinates(
+    record.latitude ?? record.lat ?? record.gps_latitude ?? record.gpsLatitude,
+    record.longitude ?? record.lng ?? record.lon ?? record.gps_longitude ?? record.gpsLongitude
+  );
+}
+
 function parsePriceNumber(value: unknown) {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
@@ -256,6 +321,17 @@ function formatVietnamRealEstatePrice(value: unknown, fallback = "3,7 Tỷ VND")
 type InventoryLotStatus = "available" | "held" | "sold" | "unavailable";
 
 function normalizeInventoryLotStatus(value: unknown): InventoryLotStatus {
+  if (typeof value === "number") {
+    if (value === 2) return "sold";
+    if (value === 3) return "held";
+    if (value === 4) return "unavailable";
+    return "available";
+  }
+
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    return normalizeInventoryLotStatus(Number(value));
+  }
+
   const status = apiText(value, "available").trim().toLowerCase();
 
   if (
@@ -293,6 +369,63 @@ function normalizeInventoryLotStatus(value: unknown): InventoryLotStatus {
   return "available";
 }
 
+function inventoryLotStatusLabel(status: InventoryLotStatus, isLocked?: unknown) {
+  if (apiBoolean(isLocked)) return "ĐÃ KHÓA";
+  if (status === "sold") return "ĐÃ BÁN";
+  if (status === "held") return "ĐANG GIỮ CHỖ";
+  if (status === "unavailable") return "KHÔNG KHẢ DỤNG";
+  return "ĐANG MỞ BÁN";
+}
+
+function formatSquareMeters(value: unknown, fallback = "100.3 m²") {
+  const text = apiText(value, "").trim();
+  const number = Number(value);
+
+  if (Number.isFinite(number)) {
+    return `${formatVietnamPriceAmount(number)} m²`;
+  }
+
+  if (!text) {
+    return fallback;
+  }
+
+  return `${text.replace(/\s*(m²|m2)$/i, "")} m²`;
+}
+
+function formatUnitPricePerSquareMeter(value: unknown, fallback = "~44.8 tr/m²") {
+  const rawText = apiText(value, "").trim();
+  const normalizedText = rawText.toLowerCase();
+  const number = parsePriceNumber(value);
+
+  if (number === null) {
+    if (!rawText) return fallback;
+    return rawText.replace(/\s*(\/\s*m²|\/\s*m2)$/i, "/m²");
+  }
+
+  if (normalizedText.includes("tỷ") || normalizedText.includes("ty") || normalizedText.includes("billion")) {
+    return `${formatVietnamPriceAmount(number)} tỷ/m²`;
+  }
+
+  if (
+    normalizedText.includes("tr") ||
+    normalizedText.includes("triệu") ||
+    normalizedText.includes("trieu") ||
+    normalizedText.includes("million")
+  ) {
+    return `${formatVietnamPriceAmount(number)} tr/m²`;
+  }
+
+  if (number >= 1_000_000_000) {
+    return `${formatVietnamPriceAmount(number / 1_000_000_000)} tỷ/m²`;
+  }
+
+  if (number >= 1_000_000) {
+    return `${formatVietnamPriceAmount(number / 1_000_000)} tr/m²`;
+  }
+
+  return `${formatVietnamPriceAmount(number)} tr/m²`;
+}
+
 function inventoryLotCode(item: ApiObject, fallback: string) {
   return apiText(
     item.code ??
@@ -308,6 +441,100 @@ function inventoryLotCode(item: ApiObject, fallback: string) {
   );
 }
 
+function inventoryLotStatus(item: ApiObject, fallback?: unknown): InventoryLotStatus {
+  const status = normalizeInventoryLotStatus(
+    item.status ??
+      item.state ??
+      item.availability ??
+      item.sale_status ??
+      item.saleStatus ??
+      fallback
+  );
+
+  if (status === "sold" || status === "unavailable") {
+    return status;
+  }
+
+  if (apiBoolean(item.is_locked ?? item.isLocked ?? item.locked ?? item.is_reserved ?? item.isReserved)) {
+    return "held";
+  }
+
+  return status;
+}
+
+function inventoryLotOrder(item: ApiObject) {
+  return apiNullableNumber(
+    item.display_order ??
+      item.displayOrder ??
+      item.sort_order ??
+      item.sortOrder ??
+      item.order ??
+      item.position ??
+      item.lot_number ??
+      item.lotNumber
+  );
+}
+
+function compareInventoryLots(left: ApiObject, right: ApiObject) {
+  const leftOrder = inventoryLotOrder(left);
+  const rightOrder = inventoryLotOrder(right);
+
+  if (leftOrder !== null && rightOrder !== null && leftOrder !== rightOrder) {
+    return leftOrder - rightOrder;
+  }
+
+  const codeCompare = inventoryLotCode(left, "").localeCompare(inventoryLotCode(right, ""), "vi", {
+    numeric: true,
+    sensitivity: "base"
+  });
+
+  if (codeCompare !== 0) {
+    return codeCompare;
+  }
+
+  const leftY = apiNullableNumber(left.coordinate_y ?? left.coordinateY ?? left.y);
+  const rightY = apiNullableNumber(right.coordinate_y ?? right.coordinateY ?? right.y);
+
+  if (leftY !== null && rightY !== null && leftY !== rightY) {
+    return leftY - rightY;
+  }
+
+  const leftX = apiNullableNumber(left.coordinate_x ?? left.coordinateX ?? left.x);
+  const rightX = apiNullableNumber(right.coordinate_x ?? right.coordinateX ?? right.x);
+
+  if (leftX !== null && rightX !== null && leftX !== rightX) {
+    return leftX - rightX;
+  }
+
+  return 0;
+}
+
+function sortInventoryLots(lots: ApiObject[]) {
+  return [...lots].sort(compareInventoryLots);
+}
+
+function imageUrisFromApiValue(value: unknown) {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+
+  return values
+    .map((item) => {
+      if (isApiObject(item)) {
+        return mediaUrl(item.url ?? item.image_url ?? item.imageUrl ?? item.src ?? item.path);
+      }
+
+      return mediaUrl(item);
+    })
+    .filter((uri): uri is string => Boolean(uri));
+}
+
+function lotImageUris(lot: ApiObject) {
+  const primaryImage = mediaUrl(lot.image_url ?? lot.imageUrl);
+  const images = imageUrisFromApiValue(lot.images);
+  const allImages = primaryImage ? [primaryImage, ...images] : images;
+
+  return Array.from(new Set(allImages));
+}
+
 function commentInitials(name: unknown) {
   return apiText(name, "NV")
     .split(/\s+/)
@@ -315,6 +542,131 @@ function commentInitials(name: unknown) {
     .slice(-2)
     .map((part) => part.charAt(0).toUpperCase())
     .join("") || "NV";
+}
+
+function formatFileSize(bytes?: number | null) {
+  if (!Number.isFinite(bytes ?? NaN)) return null;
+  const value = Number(bytes);
+  return {
+    bytes: value,
+    mb: Number((value / (1024 * 1024)).toFixed(2))
+  };
+}
+
+async function logImageUploadAsset(scope: string, photo: ImagePicker.ImagePickerAsset) {
+  let fileSystemSize: number | null = null;
+
+  try {
+    const info = await FileSystem.getInfoAsync(photo.uri);
+    fileSystemSize = info.exists && typeof info.size === "number" ? info.size : null;
+  } catch (error) {
+    appLogger.warn(scope, "Không thể đọc dung lượng ảnh từ file system.", { error, uri: photo.uri });
+  }
+
+  appLogger.info(scope, "Thông tin ảnh chuẩn bị upload.", {
+    fileName: photo.fileName,
+    fileSystemSize: formatFileSize(fileSystemSize),
+    height: photo.height,
+    mimeType: photo.mimeType,
+    pickerFileSize: formatFileSize(photo.fileSize),
+    uri: photo.uri,
+    width: photo.width
+  });
+}
+
+function areaCommentKey(comment: ApiObject) {
+  const id = apiText(comment.id, "").trim();
+  if (id) return `id:${id}`;
+
+  return [
+    apiText(comment.user_id ?? comment.userId, ""),
+    apiText(comment.content ?? comment.text, ""),
+    apiText(comment.created_at ?? comment.createdAt, "")
+  ].join("|");
+}
+
+function prependAreaComment(comments: ApiObject[], comment: ApiObject) {
+  const nextKey = areaCommentKey(comment);
+
+  if (nextKey && comments.some((item) => areaCommentKey(item) === nextKey)) {
+    return comments;
+  }
+
+  return [comment, ...comments];
+}
+
+function mergeAreaComments(primary: ApiObject[], secondary: ApiObject[]) {
+  return secondary.reduce((items, comment) => prependAreaComment(items, comment), primary);
+}
+
+function normalizeAreaComment(value: unknown, fallbackAreaId = "") {
+  if (!isApiObject(value)) {
+    return null;
+  }
+
+  const commentSource = isApiObject(value.comment) ? value.comment : value;
+  const areaId = apiText(value.area_id ?? value.areaId ?? commentSource.area_id ?? commentSource.areaId, fallbackAreaId).trim();
+  const content = apiText(commentSource.content ?? commentSource.text, "").trim();
+
+  if (!areaId || !content) {
+    return null;
+  }
+
+  return {
+    areaId,
+    comment: {
+      ...commentSource,
+      area_id: areaId
+    }
+  };
+}
+
+function normalizeRealtimeAreaComment(payload: unknown) {
+  const root = isApiObject(payload) ? payload : {};
+  const data = isApiObject(root.data) ? root.data : {};
+  const nestedPayload = isApiObject(root.payload) ? root.payload : {};
+  const candidate = isApiObject(root.comment) || root.area_id || root.areaId
+    ? root
+    : isApiObject(data.comment) || data.area_id || data.areaId
+      ? data
+      : nestedPayload;
+
+  return normalizeAreaComment(candidate);
+}
+
+function useRealtimeAreaComments(areaId: string, fetchedComments: ApiObject[]) {
+  const [realtimeComments, setRealtimeComments] = useState<ApiObject[]>([]);
+  const areaDotRoom = areaId ? `area.${areaId}` : "";
+  const areaColonRoom = areaId ? `area:${areaId}` : "";
+
+  useEffect(() => {
+    setRealtimeComments([]);
+  }, [areaId]);
+
+  const appendComment = useCallback((comment: ApiObject) => {
+    setRealtimeComments((current) => prependAreaComment(current, comment));
+  }, []);
+
+  const comments = useMemo(
+    () => mergeAreaComments(fetchedComments, realtimeComments),
+    [fetchedComments, realtimeComments]
+  );
+
+  const handleRealtimeComment = useCallback((payload: unknown) => {
+    const realtimeComment = normalizeRealtimeAreaComment(payload);
+
+    if (!realtimeComment || realtimeComment.areaId !== areaId) {
+      return;
+    }
+
+    appendComment(realtimeComment.comment);
+  }, [appendComment, areaId]);
+
+  useRealtimeEvent("*", handleRealtimeComment);
+  useRealtimeRoom(areaDotRoom);
+  useRealtimeRoom(areaColonRoom);
+
+  return { appendComment, comments };
 }
 
 function apiBoolean(value: unknown, fallback = false) {
@@ -827,25 +1179,75 @@ const learningCourseRows = [
   ]
 ] as const;
 
+type LearningCourseRow = [string, string, number, number, boolean];
+type LearningPathRow = [string, string, number, keyof typeof Ionicons.glyphMap, "active" | "default" | "locked"];
+
 function useCopy() {
   const { language } = useI18n();
   return language === "en" ? en : vi;
 }
 
 export function LearningHomeScreen() {
-  const { data } = useEmployeeApiData(() => employeeApi.courses(), []);
+  const { data, loading } = useEmployeeApiData(() => employeeApi.courses(), []);
+  const [selectedLearningTab, setSelectedLearningTab] = useState<"inProgress" | "completed">("inProgress");
+  const learningTabInitialized = useRef(false);
   const course = isApiObject(data?.course) ? data.course : null;
   const courseRecord = course as ApiObject | null;
   const progress: ApiObject = isApiObject(course?.progress) ? course.progress : {};
-  const courses = course
+  const totalCourses = course ? 1 : learningCourseRows.length;
+  const completedCourses = course
+    ? apiText(progress.status, "").toLowerCase() === "completed" || apiNumber(progress.percent, 0) >= 100
+      ? 1
+      : 0
+    : learningCourseRows.filter(([, , itemProgress]) => itemProgress >= 100).length;
+  const courseProgressPercent = totalCourses > 0 ? Math.round((completedCourses / totalCourses) * 100) : 0;
+  const dynamicLearningPathRows: LearningPathRow[] = [
+    [
+      "Chuyên viên Bán hàng",
+      `Hoàn thành ${completedCourses}/${totalCourses} khóa học cốt lõi.`,
+      courseProgressPercent,
+      "ribbon-outline",
+      completedCourses >= totalCourses ? "default" : "active"
+    ],
+    [
+      "Cố vấn Đầu tư Hạng sang",
+      `Hoàn thành ${completedCourses}/${totalCourses} khóa học phát triển.`,
+      courseProgressPercent,
+      "star",
+      completedCourses >= totalCourses ? "active" : "default"
+    ],
+    ["Giám đốc Khu vực", "Yêu cầu hoàn thành cấp độ Cố vấn Đầu tư.", 0, "lock-closed-outline", "locked"]
+  ];
+  const courses: LearningCourseRow[] = course
     ? [[
         apiText(course.title, "Khóa học bắt buộc"),
         apiText(course.description, "Hoàn thành lộ trình học bắt buộc."),
         apiNumber(progress.percent, 0),
         learningImages.requiredHero,
         apiBoolean(course.isMandatory ?? courseRecord?.is_mandatory, false)
-      ]] as const
-    : learningCourseRows;
+      ]]
+    : learningCourseRows.map(([title, description, itemProgress, image, required]) => [
+        title,
+        description,
+        itemProgress,
+        image,
+        required
+      ]);
+  const visibleCourses = courses.filter(([, , itemProgress]) => {
+    const completed = itemProgress >= 100;
+    return selectedLearningTab === "completed" ? completed : !completed;
+  });
+
+  useEffect(() => {
+    if (loading || learningTabInitialized.current) {
+      return;
+    }
+
+    learningTabInitialized.current = true;
+    if (courses.length > 0 && courses.every(([, , itemProgress]) => itemProgress >= 100)) {
+      setSelectedLearningTab("completed");
+    }
+  }, [courses, loading]);
 
   return (
     <EmployeePage
@@ -863,7 +1265,7 @@ export function LearningHomeScreen() {
           </Pressable>
         </View>
         <View style={styles.learningPathList}>
-          {learningPathRows.map(([title, description, progress, icon, state]) => (
+          {dynamicLearningPathRows.map(([title, description, progress, icon, state]) => (
             <LearningPathCard
               key={title}
               description={description}
@@ -877,12 +1279,16 @@ export function LearningHomeScreen() {
       </View>
 
       <View style={styles.learningTabs}>
-        <Text style={styles.learningTabActive}>Đang học</Text>
-        <Text style={styles.learningTab}>Hoàn thành</Text>
+        <Pressable accessibilityRole="button" onPress={() => setSelectedLearningTab("inProgress")}>
+          <Text style={selectedLearningTab === "inProgress" ? styles.learningTabActive : styles.learningTab}>Đang học</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => setSelectedLearningTab("completed")}>
+          <Text style={selectedLearningTab === "completed" ? styles.learningTabActive : styles.learningTab}>Hoàn thành</Text>
+        </Pressable>
       </View>
 
       <View style={styles.learningCourseList}>
-        {courses.map(([title, description, progress, image, required]) => (
+        {visibleCourses.length > 0 ? visibleCourses.map(([title, description, progress, image, required]) => (
           <LearningCourseCard
             key={title}
             description={description}
@@ -891,7 +1297,11 @@ export function LearningHomeScreen() {
             required={required}
             title={title}
           />
-        ))}
+        )) : (
+          <Text style={styles.learningEmptyText}>
+            {selectedLearningTab === "completed" ? "Chưa có khóa học hoàn thành." : "Hiện tại chưa có khóa học."}
+          </Text>
+        )}
       </View>
     </EmployeePage>
   );
@@ -1145,13 +1555,15 @@ function openQuizResultScreen(courseId: string, result: ApiObject) {
 
 function RequiredQuizCard({ canStart, quiz }: { canStart: boolean; quiz: MandatoryLearningQuiz }) {
   const [loadingResult, setLoadingResult] = useState(false);
-  const isPassed = quiz.status === "passed" || quiz.isPassed;
-  const isGrading = quiz.status === "grading";
-  const isFailed = quiz.status === "failed";
+  const normalizedQuizStatus = normalizeLessonCourseQuizStatus(quiz.status);
+  const isPassed = normalizedQuizStatus === "passed" || quiz.isPassed;
+  const isGrading = normalizedQuizStatus === "grading";
+  const isFailed = normalizedQuizStatus === "failed";
+  const hasQuizResult = isPassed || isFailed || normalizedQuizStatus === "completed";
   const buttonText =
-    loadingResult ? "Đang tải..." : isPassed ? "Xem lại bài làm" : quiz.actionText ||
-    (isGrading ? "Đang chấm bài" : isFailed ? "Làm lại" : "Làm bài kiểm tra");
-  const buttonIcon = isPassed ? "eye-outline" : isGrading ? "time-outline" : isFailed ? "refresh" : "play";
+    loadingResult ? "Đang tải..." : isGrading ? "Đang chấm" : hasQuizResult ? "Xem lại bài kiểm tra" : quiz.actionText ||
+    "Làm bài kiểm tra";
+  const buttonIcon = hasQuizResult ? "eye-outline" : isGrading ? "time-outline" : "play";
   const statusText = isPassed ? "Hoàn thành" : isGrading ? "Đang chấm" : isFailed ? "Chưa đạt" : "Chưa làm";
   const canPressQuiz = canStart && !isGrading && !loadingResult;
 
@@ -1168,11 +1580,16 @@ function RequiredQuizCard({ canStart, quiz }: { canStart: boolean; quiz: Mandato
       return;
     }
 
-    if (isPassed) {
+    if (hasQuizResult) {
       setLoadingResult(true);
       try {
         const response = await employeeApi.courseQuizResult(courseId);
         const result = isApiObject(response.data) ? response.data : {};
+        const resultStatus = quizResultStatus(result);
+        if (resultStatus === "grading") {
+          setLoadingResult(false);
+          return;
+        }
         setLoadingResult(false);
         openQuizResultScreen(courseId, result);
       } catch (error) {
@@ -2207,6 +2624,8 @@ export function MeetClientScreen() {
       const extension = photo.uri.split(".").pop()?.toLowerCase() || "jpg";
       const mimeType = photo.mimeType || `image/${extension === "jpg" ? "jpeg" : extension}`;
 
+      await logImageUploadAsset("employee.meet-client.image", photo);
+
       await employeeApi.checkInMeetCustomer({
         customer_name: normalizedName,
         customer_phone: normalizedPhone,
@@ -2613,7 +3032,7 @@ export function ShowingClientScreen() {
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
         mediaTypes: ["images"],
-        quality: 0.75
+        quality: 0.35
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -2694,6 +3113,8 @@ export function ShowingClientScreen() {
 
       const extension = photo.uri.split(".").pop()?.toLowerCase() || "jpg";
       const mimeType = photo.mimeType || `image/${extension === "jpg" ? "jpeg" : extension}`;
+
+      await logImageUploadAsset("employee.site-tour.image", photo);
 
       await employeeApi.checkInSiteTour({
         customer_name: normalizedCustomerName,
@@ -5112,7 +5533,8 @@ export function LessonDetailScreen({
   lesson: LearningLessonDetail;
   onProgressUpdate?: (progress: LearningLessonProgressUpdate) => void;
 }) {
-  const [courseQuizStatus, setCourseQuizStatus] = useState<"unknown" | "available" | "locked" | "none">("unknown");
+  const [courseQuizStatus, setCourseQuizStatus] = useState<LessonCourseQuizStatus>("unknown");
+  const [courseQuizResultLoading, setCourseQuizResultLoading] = useState(false);
   const description = htmlToPlainText(lesson.content);
   const durationSeconds = lesson.duration_seconds ?? (lesson.duration_minutes ?? 0) * 60;
   const watchedPercent = durationSeconds > 0 ? Math.min(100, (lesson.current_watch_seconds / durationSeconds) * 100) : 0;
@@ -5121,21 +5543,32 @@ export function LessonDetailScreen({
   const isCompleted = lesson.status === "completed";
   const hasNextLesson = Boolean(lesson.next_lesson_id);
   const courseQuizPending = !hasNextLesson && courseQuizStatus === "unknown";
-  const hasCourseQuiz = !hasNextLesson && (courseQuizStatus === "available" || courseQuizStatus === "locked");
-  const nextActionLabel = hasNextLesson
-    ? "Bài tiếp theo"
-    : courseQuizPending
-      ? "Đang kiểm tra bài thi..."
-      : hasCourseQuiz
-        ? "Làm bài kiểm tra"
-        : "Về trang Học viện Đào tạo";
-  const completedNotice =
-    hasNextLesson
-      ? lesson.unlock_condition?.replace("Hoàn thành bài học này để mở khóa bài tiếp theo:", "Bài tiếp theo đã được mở khóa:") ||
-        "Bài học đã hoàn thành. Bạn có thể chuyển sang bài học tiếp theo trong lộ trình."
-      : hasCourseQuiz
-        ? "Bạn đã hoàn thành toàn bộ bài học. Vui lòng làm bài kiểm tra để hoàn thành khóa học."
-        : "Bạn đã hoàn thành khóa học bắt buộc. Học viện Đào tạo đã được mở khóa.";
+  const hasCourseQuiz = !hasNextLesson && courseQuizStatus !== "unknown" && courseQuizStatus !== "none";
+  const courseQuizHasResult = courseQuizStatus === "passed" || courseQuizStatus === "failed" || courseQuizStatus === "completed";
+  const courseQuizIsGrading = courseQuizStatus === "grading";
+  const courseQuizActionDisabled =
+    !hasNextLesson && (courseQuizPending || courseQuizIsGrading || courseQuizStatus === "locked" || courseQuizResultLoading);
+  const nextActionLabel = (() => {
+    if (hasNextLesson) return "Bài tiếp theo";
+    if (courseQuizPending) return "Đang kiểm tra bài thi...";
+    if (courseQuizResultLoading) return "Đang tải...";
+    if (courseQuizIsGrading) return "Đang chấm";
+    if (courseQuizHasResult) return "Xem lại bài kiểm tra";
+    if (courseQuizStatus === "locked") return "Bài kiểm tra chưa mở";
+    if (hasCourseQuiz) return courseQuizStatus === "in_progress" ? "Tiếp tục bài kiểm tra" : "Làm bài kiểm tra";
+    return "Về trang Học viện Đào tạo";
+  })();
+  const completedNotice = (() => {
+    if (hasNextLesson) {
+      return lesson.unlock_condition?.replace("Hoàn thành bài học này để mở khóa bài tiếp theo:", "Bài tiếp theo đã được mở khóa:") ||
+        "Bài học đã hoàn thành. Bạn có thể chuyển sang bài học tiếp theo trong lộ trình.";
+    }
+
+    if (courseQuizIsGrading) return "Bài kiểm tra đang được chấm. Bạn sẽ xem lại kết quả khi có điểm.";
+    if (courseQuizHasResult) return "Bạn đã nộp bài kiểm tra. Có thể xem lại kết quả bài làm.";
+    if (hasCourseQuiz) return "Bạn đã hoàn thành toàn bộ bài học. Vui lòng làm bài kiểm tra để hoàn thành khóa học.";
+    return "Bạn đã hoàn thành khóa học bắt buộc. Học viện Đào tạo đã được mở khóa.";
+  })();
 
   useEffect(() => {
     let mounted = true;
@@ -5149,30 +5582,49 @@ export function LessonDetailScreen({
 
     setCourseQuizStatus("unknown");
 
-    employeeApi
-      .courseQuizAvailability(lesson.course_id)
-      .then((response) => {
-        if (!mounted) return;
+    async function loadCourseQuizStatus() {
+      const resultResponse = await employeeApi.courseQuizResult(lesson.course_id).catch(() => null);
+      if (!mounted) return;
 
-        if (response.status === 404) {
-          setCourseQuizStatus("none");
-          return;
-        }
+      if (resultResponse) {
+        const result = isApiObject(resultResponse.data) ? resultResponse.data : {};
+        setCourseQuizStatus(quizResultStatus(result));
+        return;
+      }
 
-        setCourseQuizStatus(response.status === 200 ? "available" : "locked");
-      })
-      .catch(() => {
-        if (mounted) {
-          setCourseQuizStatus("none");
-        }
-      });
+      const availabilityResponse = await employeeApi.courseQuizAvailability(lesson.course_id).catch(() => null);
+      if (!mounted) return;
+
+      if (!availabilityResponse) {
+        setCourseQuizStatus("none");
+        return;
+      }
+
+      if (availabilityResponse.status === 404) {
+        setCourseQuizStatus("none");
+        return;
+      }
+
+      if (availabilityResponse.status === 403) {
+        setCourseQuizStatus("locked");
+        return;
+      }
+
+      const responseData = isApiObject(availabilityResponse.data) ? availabilityResponse.data : {};
+      const attempt = isApiObject(responseData.attempt) ? responseData.attempt : {};
+      const attemptStatus = normalizeLessonCourseQuizStatus(attempt.status ?? responseData.status);
+
+      setCourseQuizStatus(attemptStatus === "available" ? "available" : attemptStatus);
+    }
+
+    void loadCourseQuizStatus();
 
     return () => {
       mounted = false;
     };
   }, [lesson.course_id, lesson.next_lesson_id]);
 
-  const openNextLesson = useCallback(() => {
+  const openNextLesson = useCallback(async () => {
     if (lesson.next_lesson_id) {
       router.replace({
         pathname: "/employee/lesson-detail",
@@ -5185,6 +5637,35 @@ export function LessonDetailScreen({
       return;
     }
 
+    if (courseQuizIsGrading || courseQuizStatus === "locked") {
+      return;
+    }
+
+    if (courseQuizHasResult) {
+      setCourseQuizResultLoading(true);
+      try {
+        const response = await employeeApi.courseQuizResult(lesson.course_id);
+        const result = isApiObject(response.data) ? response.data : {};
+        const resultStatus = quizResultStatus(result);
+
+        if (resultStatus === "grading") {
+          setCourseQuizStatus("grading");
+          return;
+        }
+
+        openQuizResultScreen(lesson.course_id, result);
+      } catch (error) {
+        appLogger.warn("employee.lesson.quiz_result", "Không thể tải kết quả bài kiểm tra.", {
+          courseId: lesson.course_id,
+          error
+        });
+        notifyError(error, "Không thể tải kết quả bài kiểm tra.");
+      } finally {
+        setCourseQuizResultLoading(false);
+      }
+      return;
+    }
+
     if (hasCourseQuiz) {
       router.replace({
         pathname: "/employee/quiz",
@@ -5194,7 +5675,15 @@ export function LessonDetailScreen({
     }
 
     router.replace("/employee/learning");
-  }, [courseQuizPending, hasCourseQuiz, lesson.course_id, lesson.next_lesson_id]);
+  }, [
+    courseQuizHasResult,
+    courseQuizIsGrading,
+    courseQuizPending,
+    courseQuizStatus,
+    hasCourseQuiz,
+    lesson.course_id,
+    lesson.next_lesson_id
+  ]);
 
   return (
     <EmployeePage
@@ -5256,15 +5745,15 @@ export function LessonDetailScreen({
           {isCompleted ? (
             <Pressable
               accessibilityRole="button"
-              disabled={courseQuizPending}
+              disabled={courseQuizActionDisabled}
               onPress={openNextLesson}
               style={({ pressed }) => [
                 styles.lessonNextButtonActive,
-                courseQuizPending && styles.lessonNextButtonPending,
+                courseQuizActionDisabled && styles.lessonNextButtonPending,
                 pressed && styles.pressed
               ]}
             >
-              <Ionicons name="play-forward-outline" size={18} color="#ffffff" />
+              <Ionicons name={courseQuizHasResult ? "eye-outline" : courseQuizIsGrading ? "time-outline" : "play-forward-outline"} size={18} color="#ffffff" />
               <Text style={styles.lessonNextButtonText}>{nextActionLabel}</Text>
             </Pressable>
           ) : (
@@ -6030,20 +6519,39 @@ function CertificateListCard({ certificate }: { certificate: CertificateCardItem
 export function InventoryListScreen() {
   const { data, failed, loading } = useEmployeeApiData(() => employeeApi.areas(), []);
   const areaRows = apiList(data);
+  const formatLotCount = (value: unknown) => {
+    if (value === null || value === undefined || value === "") return null;
+    const count = Number(value);
+    return Number.isFinite(count) && count >= 0 ? Math.trunc(count) : null;
+  };
+  const formatAreaAvailability = (area: ApiObject) => {
+    const remainingLots = formatLotCount(area.remaining_lots ?? area.remainingLots);
+    const totalLots = formatLotCount(area.total_lots ?? area.totalLots);
+
+    if (remainingLots !== null && totalLots !== null) {
+      return `Còn ${remainingLots}/${totalLots} Lô`;
+    }
+
+    return apiText(area.available_label ?? area.available ?? area.available_count, "Còn hàng");
+  };
+  const formatAreaTotal = (area: ApiObject) => {
+    const totalLots = formatLotCount(area.total_lots ?? area.totalLots);
+    return totalLots !== null ? `Tổng: ${totalLots} lô` : apiText(area.total, "Tổng: --");
+  };
   const zones = areaRows.length > 0
     ? areaRows.map((area, index) => ({
         id: apiText(area.id, ""),
-        available: apiText(area.available_label ?? area.available ?? area.available_count, "CÒN HÀNG"),
+        available: formatAreaAvailability(area),
         hot: Boolean(area.is_hot ?? index === 0),
         image: index % 2 === 0 ? inventoryImages.zoneA : inventoryImages.zoneB,
         name: apiText(area.name ?? area.title, "Khu đất"),
-        total: apiText(area.total_lots ? `Tổng: ${area.total_lots} lô` : area.total, "Tổng: --")
+        total: formatAreaTotal(area)
       }))
     : [
-        { available: "CÒN 12/45 LÔ", hot: true, image: inventoryImages.zoneA, name: "Láng hòa lạc", total: "Tổng: 45 lô" },
-        { available: "CÒN 5/30 LÔ", image: inventoryImages.zoneB, name: "Mỹ Đình", total: "Tổng: 30 lô" },
-        { available: "CÒN 12/45 LÔ", image: inventoryImages.zoneA, name: "Chương Mỹ", total: "Tổng: 45 lô" },
-        { available: "CÒN 5/30 LÔ", image: inventoryImages.zoneB, name: "Cầu Giấy", total: "Tổng: 30 lô" }
+        { available: "Còn 12/45 Lô", hot: true, image: inventoryImages.zoneA, name: "Láng hòa lạc", total: "Tổng: 45 lô" },
+        { available: "Còn 5/30 Lô", image: inventoryImages.zoneB, name: "Mỹ Đình", total: "Tổng: 30 lô" },
+        { available: "Còn 12/45 Lô", image: inventoryImages.zoneA, name: "Chương Mỹ", total: "Tổng: 45 lô" },
+        { available: "Còn 5/30 Lô", image: inventoryImages.zoneB, name: "Cầu Giấy", total: "Tổng: 30 lô" }
       ];
 
   return (
@@ -6138,16 +6646,25 @@ function InventoryZoneCard({
 }
 
 export function InventoryMapScreen() {
+  const commentsPerPage = 10;
+  const mapZoomMin = 1;
+  const mapZoomMax = 2.5;
+  const mapZoomStep = 0.25;
   const params = useLocalSearchParams<{ areaId?: string }>();
   const rawAreaId = params.areaId;
   const areaId = Array.isArray(rawAreaId) ? rawAreaId[0] : rawAreaId;
   const [selectedLotId, setSelectedLotId] = useState("");
   const [mapCommentDraft, setMapCommentDraft] = useState("");
   const [mapCommentSubmitting, setMapCommentSubmitting] = useState(false);
-  const [lotDetailRefreshKey, setLotDetailRefreshKey] = useState(0);
+  const [pagedAreaComments, setPagedAreaComments] = useState<ApiObject[]>([]);
+  const [commentsPagination, setCommentsPagination] = useState<ApiObject>({});
+  const [commentsLoadingPage, setCommentsLoadingPage] = useState<number | null>(null);
+  const [inventoryRefreshKey, setInventoryRefreshKey] = useState(0);
+  const [mapZoom, setMapZoom] = useState(mapZoomMin);
+  const inventoryFocusedAreaIdRef = useRef<string | undefined>(undefined);
   const { data, failed, loading } = useEmployeeApiData(
-    () => areaId ? employeeApi.inventoryMap(areaId) : Promise.resolve({ data: {} }),
-    [areaId]
+    () => areaId ? employeeApi.inventoryMap(areaId, { comments_per_page: commentsPerPage, page: 1 }) : Promise.resolve({ data: {} }),
+    [areaId, inventoryRefreshKey]
   );
   const inventoryMapData = isApiObject(data) ? data : {};
   const apiLots = useMemo(() => apiList(data), [data]);
@@ -6186,10 +6703,10 @@ export function InventoryMapScreen() {
   const lotItems = useMemo(
     () =>
       apiLots.length > 0
-        ? apiLots.map((lot, index) => ({
+        ? sortInventoryLots(apiLots).map((lot, index) => ({
             code: inventoryLotCode(lot, `L${index + 1}`),
             id: apiText(lot.id ?? lot.lot_id ?? lot.lotId, ""),
-            status: normalizeInventoryLotStatus(lot.status ?? lot.state ?? lot.availability ?? lot.sale_status ?? lot.saleStatus)
+            status: inventoryLotStatus(lot)
           }))
         : areaId
           ? []
@@ -6199,13 +6716,40 @@ export function InventoryMapScreen() {
   const activeLotId = selectedLotId || lotItems.find((lot) => lot.id)?.id || "";
   const { data: activeLotData } = useEmployeeApiData(
     () => activeLotId ? employeeApi.lotDetail(activeLotId) : Promise.resolve({ data: {} }),
-    [activeLotId, lotDetailRefreshKey]
+    [activeLotId, inventoryRefreshKey]
   );
   const activeLot = isApiObject(activeLotData) ? activeLotData : {};
-  const activeLotComments = apiList(activeLot.comments);
-  const activeLotTitle = apiText(activeLot.code ?? activeLot.name ?? activeLot.title, inventoryLotCode(lotItems.find((lot) => lot.id === activeLotId) ?? {}, "Lô đất"));
+  const fetchedAreaComments = useMemo(() => apiList(inventoryMapData.comments), [inventoryMapData.comments]);
+  const fetchedCommentsPagination = useMemo(
+    () => isApiObject(inventoryMapData.comments) ? inventoryMapData.comments : {},
+    [inventoryMapData.comments]
+  );
+  const { appendComment: appendAreaComment, comments: areaComments } = useRealtimeAreaComments(areaId ?? "", pagedAreaComments);
+  const commentsCurrentPage = apiNumber(commentsPagination.current_page, 1);
+  const commentsLastPage = apiNumber(commentsPagination.last_page, 1);
+  const commentsTotal = Math.max(apiNumber(commentsPagination.total, areaComments.length), areaComments.length);
   const activeLotArea = apiText(activeLot.area_name ?? activeLot.area ?? activeLot.location ?? inventoryMapData.area_name, "Khu 25 thửa phú cát");
   const activeLotPrice = formatVietnamRealEstatePrice(activeLot.price ?? activeLot.total_price ?? activeLot.sale_price, "4,5 Tỷ VND");
+  const activeLotStatus = inventoryLotStatus(activeLot, lotItems.find((lot) => lot.id === activeLotId)?.status);
+  const directionUrl = directionUrlFromRecord(activeLot) || directionUrlFromRecord(inventoryMapData);
+  const mapZoomStyle = useMemo(() => ({ transform: [{ scale: mapZoom }] }), [mapZoom]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!areaId) {
+        return undefined;
+      }
+
+      if (inventoryFocusedAreaIdRef.current !== areaId) {
+        inventoryFocusedAreaIdRef.current = areaId;
+        return undefined;
+      }
+
+      setInventoryRefreshKey((value) => value + 1);
+
+      return undefined;
+    }, [areaId])
+  );
 
   useEffect(() => {
     if (!selectedLotId) return;
@@ -6213,26 +6757,102 @@ export function InventoryMapScreen() {
     setSelectedLotId("");
   }, [lotItems, selectedLotId]);
 
+  useEffect(() => {
+    setPagedAreaComments(fetchedAreaComments);
+    setCommentsPagination(fetchedCommentsPagination);
+  }, [areaId, fetchedAreaComments, fetchedCommentsPagination]);
+
+  useEffect(() => {
+    setMapZoom(mapZoomMin);
+  }, [areaId, salesBoardEmbed, salesBoardImageUri]);
+
+  function changeMapZoom(direction: 1 | -1) {
+    setMapZoom((current) => {
+      const nextZoom = current + direction * mapZoomStep;
+      return Math.min(mapZoomMax, Math.max(mapZoomMin, Number(nextZoom.toFixed(2))));
+    });
+  }
+
+  async function loadAreaCommentsPage(page: number) {
+    if (!areaId || commentsLoadingPage || page === commentsCurrentPage) return;
+
+    setCommentsLoadingPage(page);
+    try {
+      const response = await employeeApi.inventoryMap(areaId, {
+        comments_per_page: apiNumber(commentsPagination.per_page, commentsPerPage),
+        page
+      });
+      const nextData = isApiObject(response.data) ? response.data : {};
+      const nextCommentsPayload = isApiObject(nextData.comments) ? nextData.comments : {};
+      const nextComments = apiList(nextData.comments);
+
+      setPagedAreaComments(nextComments);
+      setCommentsPagination(nextCommentsPayload);
+    } catch (error) {
+      appLogger.warn("employee.inventory-map.comments", "Không thể tải trang bình luận khu đất.", { areaId, page, error });
+      notifyError(error, "Không thể tải trang bình luận.");
+    } finally {
+      setCommentsLoadingPage(null);
+    }
+  }
+
   async function submitMapLotComment() {
     const content = mapCommentDraft.trim();
-    if (!activeLotId || !content) return;
+    if (!areaId || !content) return;
 
     setMapCommentSubmitting(true);
     try {
-      await employeeApi.addLotComment(activeLotId, content);
+      const response = await employeeApi.addAreaComment(areaId, content);
+      const createdComment = normalizeAreaComment(response.data, areaId);
+      if (createdComment) {
+        appendAreaComment(createdComment.comment);
+        setCommentsPagination((current) => ({
+          ...current,
+          total: apiNumber(current.total, areaComments.length) + 1
+        }));
+      }
       setMapCommentDraft("");
-      setLotDetailRefreshKey((value) => value + 1);
     } catch (error) {
-      appLogger.warn("employee.inventory-map.comment", "Không thể gửi bình luận lô đất.", { lotId: activeLotId, error });
+      appLogger.warn("employee.inventory-map.comment", "Không thể gửi bình luận khu đất.", { areaId, error });
       notifyError(error, "Không thể gửi bình luận.");
     } finally {
       setMapCommentSubmitting(false);
     }
   }
 
+  async function openInventoryDirections() {
+    if (!directionUrl) {
+      Alert.alert("Chưa có chỉ đường", "Khu đất này chưa có link Google Maps hoặc tọa độ điều hướng.");
+      return;
+    }
+
+    try {
+      await Linking.openURL(directionUrl);
+    } catch (error) {
+      appLogger.warn("employee.inventory-map.direction", "Không thể mở chỉ đường Google Maps.", {
+        areaId,
+        directionUrl,
+        error
+      });
+      Alert.alert("Không thể mở chỉ đường", "Vui lòng thử lại sau.");
+    }
+  }
+
   return (
     <SafeAreaView style={styles.inventoryMapSafe}>
-      <ScrollView contentContainerStyle={styles.inventoryMapScroll} showsVerticalScrollIndicator={false} style={styles.inventoryMapRoot}>
+      <ScrollView
+        contentContainerStyle={styles.inventoryMapScroll}
+        refreshControl={
+          <RefreshControl
+            colors={[employeePalette.red]}
+            onRefresh={() => setInventoryRefreshKey((value) => value + 1)}
+            refreshing={loading && Boolean(data)}
+            tintColor={employeePalette.red}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        style={styles.inventoryMapRoot}
+      >
         <View style={styles.inventoryMapHeader}>
           <Pressable accessibilityRole="button" onPress={() => back()} style={styles.inventoryMapBackButton}>
             <Ionicons name="arrow-back" size={24} color={employeePalette.text} />
@@ -6254,18 +6874,31 @@ export function InventoryMapScreen() {
             <WebView
               originWhitelist={["*"]}
               source={salesBoardEmbedSource}
-              style={styles.inventoryMapWebView}
+              style={[styles.inventoryMapWebView, mapZoomStyle]}
             />
           ) : (
             <Image
               source={salesBoardImageUri ? { uri: salesBoardImageUri } : inventoryImages.mapOverview}
-              style={styles.inventoryMapOverview}
+              style={[styles.inventoryMapOverview, mapZoomStyle]}
             />
           )}
           <View style={styles.inventoryMapControls}>
-            <MapControl icon="add" />
-            <MapControl icon="remove" />
-            <MapControl icon="locate-outline" highlight />
+            <MapControl
+              disabled={mapZoom >= mapZoomMax}
+              icon="add"
+              onPress={() => changeMapZoom(1)}
+            />
+            <MapControl
+              disabled={mapZoom <= mapZoomMin}
+              icon="remove"
+              onPress={() => changeMapZoom(-1)}
+            />
+            <MapControl
+              disabled={!directionUrl}
+              highlight
+              icon="locate-outline"
+              onPress={openInventoryDirections}
+            />
           </View>
         </View>
 
@@ -6303,14 +6936,14 @@ export function InventoryMapScreen() {
 
         <View style={styles.inventoryMapSheet}>
           <View style={styles.inventorySaleBadge}>
-            <Text style={styles.inventorySaleBadgeText}>ĐANG MỞ BÁN</Text>
+            <Text style={styles.inventorySaleBadgeText}>{inventoryLotStatusLabel(activeLotStatus, activeLot.is_locked)}</Text>
           </View>
           <Text style={styles.inventorySheetTitle}>{activeLotArea}</Text>
 
           <View style={styles.inventorySheetStats}>
             <InfoTile
               label="DIỆN TÍCH"
-              value={`${apiText(activeLot.area_size ?? activeLot.areaSize ?? activeLot.square_meters, "100.3").replace(/\s*(m²|m2)$/i, "")} m²`}
+              value={formatSquareMeters(activeLot.area_size ?? activeLot.areaSize ?? activeLot.square_meters)}
             />
             <InfoTile label="HƯỚNG" value={apiText(activeLot.direction, "Đông Nam")} />
           </View>
@@ -6320,10 +6953,18 @@ export function InventoryMapScreen() {
               <Text style={styles.inventoryPriceLabel}>GIÁ BÁN</Text>
               <Text style={styles.inventoryPriceValue}>{activeLotPrice}</Text>
             </View>
-            <Text style={styles.inventoryPricePerMeter}>~44.8 tr/m²</Text>
+            <Text style={styles.inventoryPricePerMeter}>{formatUnitPricePerSquareMeter(activeLot.unit_price ?? activeLot.unitPrice)}</Text>
           </View>
 
-          <Pressable accessibilityRole="button" style={styles.inventoryRouteButton}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!directionUrl}
+            onPress={openInventoryDirections}
+            style={({ pressed }) => [
+              styles.inventoryRouteButton,
+              (pressed || !directionUrl) && styles.pressed
+            ]}
+          >
             <Text style={styles.inventoryActionText}>Xem chỉ đường</Text>
           </Pressable>
           <Pressable
@@ -6340,51 +6981,20 @@ export function InventoryMapScreen() {
           </Pressable>
 
           <Image source={inventoryImages.planningArea} style={styles.inventoryPlanningMap} />
-          <View style={styles.inventoryComments}>
-            <View style={styles.inventoryCommentsHeader}>
-              <Text style={styles.inventoryCommentsTitle}>BÌNH LUẬN & THẢO LUẬN</Text>
-              <View style={styles.inventoryCommentsCount}>
-                <Text style={styles.inventoryCommentsCountText}>{activeLotComments.length}</Text>
-              </View>
-            </View>
-            {activeLotComments.length > 0 ? (
-              activeLotComments.map((comment, index) => {
-                const commentUser = isApiObject(comment.user) ? comment.user : {};
-                const name = apiText(comment.user_name ?? comment.userName ?? commentUser.name, "Nhân viên hệ thống");
-
-                return (
-                  <CommentRow
-                    key={apiText(comment.id, `${name}-${index}`)}
-                    initials={commentInitials(name)}
-                    name={name}
-                    text={apiText(comment.content ?? comment.text, "")}
-                    time={formatApiDateTime(comment.created_at ?? comment.createdAt, "Vừa xong")}
-                    tone={index % 2 === 0 ? "red" : "gold"}
-                  />
-                );
-              })
-            ) : (
-              <Text style={styles.inventoryCommentText}>{activeLotId ? "Chưa có bình luận nào." : "Chọn một lô đất để trao đổi."}</Text>
-            )}
-            <View style={styles.inventoryCommentInput}>
-              <TextInput
-                editable={Boolean(activeLotId) && !mapCommentSubmitting}
-                onChangeText={setMapCommentDraft}
-                placeholder="Nhập nội dung trao đổi..."
-                placeholderTextColor="#8f706b"
-                style={styles.inventoryCommentTextInput}
-                value={mapCommentDraft}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={!activeLotId || mapCommentSubmitting || !mapCommentDraft.trim()}
-                onPress={submitMapLotComment}
-                style={({ pressed }) => [styles.inventoryCommentSendButton, (pressed || mapCommentSubmitting) && styles.pressed]}
-              >
-                <Ionicons name="send" size={22} color="#990100" />
-              </Pressable>
-            </View>
-          </View>
+          <AreaCommentsSection
+            comments={areaComments}
+            currentPage={commentsCurrentPage}
+            disabled={!areaId}
+            draft={mapCommentDraft}
+            emptyText={areaId ? "Chưa có bình luận nào." : "Chọn một khu đất để trao đổi."}
+            loadingPage={commentsLoadingPage}
+            onChangeDraft={setMapCommentDraft}
+            onSelectPage={loadAreaCommentsPage}
+            onSubmit={submitMapLotComment}
+            pageCount={commentsLastPage}
+            submitting={mapCommentSubmitting}
+            totalCount={commentsTotal}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -6427,9 +7037,24 @@ function LegendItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-function MapControl({ highlight, icon }: { highlight?: boolean; icon: ComponentProps<typeof Ionicons>["name"] }) {
+function MapControl({
+  disabled,
+  highlight,
+  icon,
+  onPress
+}: {
+  disabled?: boolean;
+  highlight?: boolean;
+  icon: ComponentProps<typeof Ionicons>["name"];
+  onPress?: () => void;
+}) {
   return (
-    <Pressable style={styles.inventoryMapControl}>
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.inventoryMapControl, (pressed || disabled) && styles.pressed]}
+    >
       <Ionicons name={icon} size={highlight ? 22 : 24} color={highlight ? employeePalette.red : "#111111"} />
     </Pressable>
   );
@@ -6473,42 +7098,258 @@ function CommentRow({
   );
 }
 
+function AreaCommentsSection({
+  comments,
+  currentPage,
+  disabled,
+  draft,
+  emptyText,
+  loadingPage,
+  onChangeDraft,
+  onSelectPage,
+  onSubmit,
+  pageCount,
+  submitting,
+  totalCount
+}: {
+  comments: ApiObject[];
+  currentPage?: number;
+  disabled?: boolean;
+  draft: string;
+  emptyText: string;
+  loadingPage?: number | null;
+  onChangeDraft: (value: string) => void;
+  onSelectPage?: (page: number) => void;
+  onSubmit: () => void;
+  pageCount?: number;
+  submitting?: boolean;
+  totalCount?: number;
+}) {
+  const displayCount = totalCount ?? comments.length;
+  const safeCurrentPage = Math.max(1, currentPage ?? 1);
+  const safePageCount = Math.max(1, pageCount ?? 1);
+  const pageNumbers = Array.from({ length: safePageCount }, (_, index) => index + 1);
+
+  return (
+    <View style={styles.inventoryComments}>
+      <View style={styles.inventoryCommentsHeader}>
+        <Text style={styles.inventoryCommentsTitle}>BÌNH LUẬN & THẢO LUẬN</Text>
+        <View style={styles.inventoryCommentsCount}>
+          <Text style={styles.inventoryCommentsCountText}>{displayCount}</Text>
+        </View>
+      </View>
+      {comments.length > 0 ? (
+        comments.map((comment, index) => {
+          const commentUser = isApiObject(comment.user) ? comment.user : {};
+          const name = apiText(comment.user_name ?? comment.userName ?? commentUser.name, "Nhân viên hệ thống");
+
+          return (
+            <CommentRow
+              key={apiText(comment.id, `${name}-${index}`)}
+              initials={commentInitials(name)}
+              name={name}
+              text={apiText(comment.content ?? comment.text, "")}
+              time={formatApiDateTime(comment.created_at ?? comment.createdAt, "Vừa xong")}
+              tone={index % 2 === 0 ? "red" : "gold"}
+            />
+          );
+        })
+      ) : (
+        <Text style={styles.inventoryCommentText}>{emptyText}</Text>
+      )}
+      {safePageCount > 1 ? (
+        <View style={styles.inventoryCommentsPagination}>
+          {pageNumbers.map((page) => {
+            const active = page === safeCurrentPage;
+
+            return (
+              <Pressable
+                accessibilityRole="button"
+                disabled={Boolean(loadingPage) || active}
+                key={page}
+                onPress={() => onSelectPage?.(page)}
+                style={({ pressed }) => [
+                  styles.inventoryCommentsPageButton,
+                  active && styles.inventoryCommentsPageButtonActive,
+                  pressed && styles.pressed
+                ]}
+              >
+                <Text style={[styles.inventoryCommentsPageText, active && styles.inventoryCommentsPageTextActive]}>
+                  {page}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+      <View style={styles.inventoryCommentInput}>
+        <TextInput
+          editable={!disabled && !submitting}
+          onChangeText={onChangeDraft}
+          placeholder="Nhập nội dung trao đổi..."
+          placeholderTextColor="#8f706b"
+          style={styles.inventoryCommentTextInput}
+          value={draft}
+        />
+        <Pressable
+          accessibilityRole="button"
+          disabled={disabled || submitting || !draft.trim()}
+          onPress={onSubmit}
+          style={({ pressed }) => [styles.inventoryCommentSendButton, (pressed || submitting) && styles.pressed]}
+        >
+          <Ionicons name="send" size={22} color="#990100" />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+type LessonCourseQuizStatus = "unknown" | "available" | "locked" | "none" | "grading" | "passed" | "failed" | "completed" | "in_progress";
+
+function normalizeLessonCourseQuizStatus(value: unknown): LessonCourseQuizStatus {
+  const status = apiText(value, "").trim().toLowerCase();
+
+  if (!status) return "available";
+  if (["passed", "pass", "success", "done", "completed", "complete"].includes(status)) return "passed";
+  if (["failed", "fail", "not_passed", "not passed", "chua_dat", "chưa đạt"].includes(status)) return "failed";
+  if (["grading", "pending", "pending_review", "manual_review", "reviewing", "submitted", "waiting_review"].includes(status)) {
+    return "grading";
+  }
+  if (["in_progress", "draft", "started", "doing"].includes(status)) return "in_progress";
+  if (["locked", "forbidden"].includes(status)) return "locked";
+  if (["none", "not_available", "unavailable", "no_quiz"].includes(status)) return "none";
+
+  return "available";
+}
+
+function quizResultStatus(result: ApiObject): LessonCourseQuizStatus {
+  const details = apiList(result.details);
+  const status = normalizeLessonCourseQuizStatus(result.status);
+
+  if (status === "grading" || details.some((item) => item.is_correct === null || item.is_correct === undefined)) {
+    return "grading";
+  }
+
+  if (status === "passed" || status === "failed") {
+    return status;
+  }
+
+  if (result.is_passed !== undefined || result.isPassed !== undefined) {
+    return apiBoolean(result.is_passed ?? result.isPassed) ? "passed" : "failed";
+  }
+
+  if (result.score !== undefined || details.length > 0) {
+    return "completed";
+  }
+
+  return status;
+}
+
 export function LotDetailScreen() {
   const params = useLocalSearchParams<{ lotId?: string }>();
   const rawLotId = params.lotId;
   const lotId = Array.isArray(rawLotId) ? rawLotId[0] : rawLotId;
+  const [lotRefreshKey, setLotRefreshKey] = useState(0);
+  const [lockSubmitting, setLockSubmitting] = useState(false);
+  const [depositSubmitting, setDepositSubmitting] = useState(false);
+  const [lotHeroWidth, setLotHeroWidth] = useState(0);
+  const [lotImageIndex, setLotImageIndex] = useState(0);
   const { data } = useEmployeeApiData(
     () => lotId ? employeeApi.lotDetail(lotId) : Promise.resolve({ data: {} }),
-    [lotId]
+    [lotId, lotRefreshKey]
   );
   const lot = isApiObject(data) ? data : {};
   const lotName = apiText(lot.code ?? lot.name ?? lot.title, "Lô A10");
   const lotArea = apiText(lot.area_name ?? lot.area ?? lot.location, "Khu 25 Thừa Phú Cát");
   const totalPrice = formatVietnamRealEstatePrice(lot.total_price ?? lot.price ?? lot.sale_price);
+  const lotStatus = normalizeInventoryLotStatus(lot.status);
+  const lotUnitPrice = formatUnitPricePerSquareMeter(lot.unit_price ?? lot.unitPrice, "36.9 tr/m²");
+  const lotAreaSize = formatSquareMeters(lot.area_size ?? lot.areaSize ?? lot.square_meters, "36.9 m²");
+  const lotFrontage = apiText(lot.frontage, "Chưa có");
+  const lotLegal = apiText(lot.legal, "Chưa có");
+  const lotIsLocked = apiBoolean(lot.is_locked) || lotStatus === "held";
+  const lotDetailStatusText = lotIsLocked ? "ĐÃ LOCK" : inventoryLotStatusLabel(lotStatus, lot.is_locked);
+  const lotLockButtonText = lockSubmitting ? "ĐANG GỬI" : lotIsLocked ? "ĐÃ LOCK" : "LOCK";
+  const lotImages = lotImageUris(lot);
+  const lotImageSlides: ImageSourcePropType[] = lotImages.length > 0
+    ? lotImages.map((uri) => ({ uri }))
+    : [inventoryImages.lotHero];
+  const firstLotImage = lotImages[0] ?? "";
+  const visibleLotImageIndex = Math.min(lotImageIndex, Math.max(lotImageSlides.length - 1, 0));
+  const lotGalleryCountText = lotImages.length > 0 ? `${visibleLotImageIndex + 1}/${lotImages.length}` : "0/0";
+  const lotDescription = apiText(
+    lot.description,
+    "Lô đất góc 2 mặt tiền cực hiếm tại phân khu trung tâm The Pearl. View trực diện công viên nội khu và rạch cảnh quan. Cơ sở hạ tầng đã hoàn thiện 100%, sẵn sàng xây dựng ngay. Rất thích hợp để xây biệt thự nghỉ dưỡng hoặc shophouse thương mại cao cấp."
+  );
+
+  useEffect(() => {
+    setLotImageIndex(0);
+  }, [firstLotImage, lotId, lotImages.length]);
+
+  function handleLotHeroLayout(event: LayoutChangeEvent) {
+    setLotHeroWidth(event.nativeEvent.layout.width);
+  }
+
+  function handleLotHeroScrollEnd(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const width = event.nativeEvent.layoutMeasurement.width;
+    if (!width) return;
+
+    const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+    setLotImageIndex(Math.min(Math.max(nextIndex, 0), lotImageSlides.length - 1));
+  }
 
   async function requestLock() {
     if (!lotId) return;
+    setLockSubmitting(true);
     try {
-      await employeeApi.requestLotLock(lotId, { note: "Mobile demo lock request" });
+      const response = await employeeApi.requestLotLock(lotId, { reason: "Khách hẹn cọc ngày mai." });
+      notifySuccess({ message: response.message || "Yêu cầu lock lô thành công." });
+      setLotRefreshKey((value) => value + 1);
     } catch (error) {
       appLogger.warn("employee.lot.lock", "Không thể gửi yêu cầu lock lô.", { lotId, error });
+      notifyError(error, "Không thể gửi yêu cầu lock lô.");
+    } finally {
+      setLockSubmitting(false);
     }
   }
 
   async function requestDeposit() {
     if (!lotId) return;
+    setDepositSubmitting(true);
     try {
-      await employeeApi.requestLotDeposit(lotId, { note: "Mobile demo deposit request" });
+      const response = await employeeApi.requestLotDeposit(lotId, { reason: "Khách gửi yêu cầu đặt cọc." });
+      notifySuccess({ message: response.message || "Yêu cầu đặt cọc đã được gửi thành công." });
+      setLotRefreshKey((value) => value + 1);
     } catch (error) {
       appLogger.warn("employee.lot.deposit", "Không thể gửi yêu cầu cọc lô.", { lotId, error });
+      notifyError(error, "Không thể gửi yêu cầu đặt cọc.");
+    } finally {
+      setDepositSubmitting(false);
     }
   }
 
   return (
     <SafeAreaView style={styles.lotDetailSafe}>
       <ScrollView contentContainerStyle={styles.lotDetailScroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.lotDetailHero}>
-          <Image source={inventoryImages.lotHero} style={styles.lotDetailHeroImage} />
+        <View onLayout={handleLotHeroLayout} style={styles.lotDetailHero}>
+          <ScrollView
+            bounces={false}
+            decelerationRate="fast"
+            horizontal
+            onMomentumScrollEnd={handleLotHeroScrollEnd}
+            pagingEnabled
+            scrollEnabled={lotImageSlides.length > 1}
+            showsHorizontalScrollIndicator={false}
+            style={styles.lotDetailHeroCarousel}
+          >
+            {lotImageSlides.map((source, index) => (
+              <Image
+                key={lotImages[index] ?? `fallback-${index}`}
+                source={source}
+                style={[styles.lotDetailHeroImage, { width: lotHeroWidth || "100%" }]}
+              />
+            ))}
+          </ScrollView>
           <View style={styles.lotDetailHeroActions}>
             <Pressable accessibilityRole="button" onPress={() => back()} style={styles.lotDetailHeroButton}>
               <Ionicons name="arrow-back" size={28} color={employeePalette.text} />
@@ -6524,7 +7365,7 @@ export function LotDetailScreen() {
           </View>
           <View style={styles.lotDetailGalleryPill}>
             <Ionicons name="image" size={14} color={employeePalette.red} />
-            <Text style={styles.lotDetailGalleryText}>1/8</Text>
+            <Text style={styles.lotDetailGalleryText}>{lotGalleryCountText}</Text>
           </View>
         </View>
 
@@ -6538,7 +7379,7 @@ export function LotDetailScreen() {
               </View>
             </View>
             <View style={styles.lotDetailStatusPill}>
-              <Text style={styles.lotDetailStatusText}>ĐANG GIỮ CHỖ</Text>
+              <Text style={styles.lotDetailStatusText}>{lotDetailStatusText}</Text>
             </View>
           </View>
 
@@ -6550,22 +7391,20 @@ export function LotDetailScreen() {
             <View style={styles.lotDetailDivider} />
             <View style={styles.lotDetailUnitRow}>
               <Text style={styles.lotDetailUnitLabel}>Đơn giá</Text>
-              <Text style={styles.lotDetailUnitValue}>36.9 Tr/m²</Text>
+              <Text style={styles.lotDetailUnitValue}>{lotUnitPrice}</Text>
             </View>
           </View>
 
           <View style={styles.lotDetailStatsGrid}>
-            <LotStat icon="resize-outline" label="DIỆN TÍCH" value="36.9 Tr/m²" />
-            <LotStat icon="analytics-outline" label="MẶT TIỀN" value="6.21m" />
-            <LotStat icon="compass-outline" label="HƯỚNG" value="36.9 Tr/m²" />
-            <LotStat icon="document-text-outline" label="PHÁP LÝ" value="36.9 Tr/m²" />
+            <LotStat icon="resize-outline" label="DIỆN TÍCH" value={lotAreaSize} />
+            <LotStat icon="analytics-outline" label="MẶT TIỀN" value={lotFrontage} />
+            <LotStat icon="compass-outline" label="HƯỚNG" value={apiText(lot.direction, "Đông Nam")} />
+            <LotStat icon="document-text-outline" label="PHÁP LÝ" value={lotLegal} />
           </View>
 
           <View style={styles.lotDetailDescriptionSection}>
             <Text style={styles.lotDetailSectionTitle}>Mô tả chi tiết</Text>
-            <Text style={styles.lotDetailDescription}>
-              Lô đất góc 2 mặt tiền cực hiếm tại phân khu trung tâm The Pearl. View trực diện công viên nội khu và rạch cảnh quan. Cơ sở hạ tầng đã hoàn thiện 100%, sẵn sàng xây dựng ngay. Rất thích hợp để xây biệt thự nghỉ dưỡng hoặc shophouse thương mại cao cấp.
-            </Text>
+            <Text style={styles.lotDetailDescription}>{lotDescription}</Text>
           </View>
 
           <Text style={styles.lotDetailNote}>
@@ -6575,13 +7414,28 @@ export function LotDetailScreen() {
       </ScrollView>
 
       <View style={styles.lotDetailBottomActions}>
-        <Pressable accessibilityRole="button" onPress={requestLock} style={[styles.lotDetailActionButton, styles.lotDetailLockButton]}>
-          <Ionicons name="save-outline" size={20} color="#1e8e3e" />
-          <Text style={styles.lotDetailLockText}>LOCK</Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={lockSubmitting || lotIsLocked}
+          onPress={requestLock}
+          style={[
+            styles.lotDetailActionButton,
+            styles.lotDetailLockButton,
+            lotIsLocked && styles.lotDetailLockButtonLocked,
+            lockSubmitting && styles.pressed
+          ]}
+        >
+          <Ionicons name={lotIsLocked ? "lock-closed-outline" : "save-outline"} size={20} color="#1e8e3e" />
+          <Text style={[styles.lotDetailLockText, lotIsLocked && styles.lotDetailLockTextLocked]}>{lotLockButtonText}</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={requestDeposit} style={[styles.lotDetailActionButton, styles.lotDetailDepositButton]}>
+        <Pressable
+          accessibilityRole="button"
+          disabled={depositSubmitting}
+          onPress={requestDeposit}
+          style={[styles.lotDetailActionButton, styles.lotDetailDepositButton, depositSubmitting && styles.pressed]}
+        >
           <Ionicons name="send" size={20} color="#ffffff" />
-          <Text style={styles.lotDetailDepositText}>CỌC</Text>
+          <Text style={styles.lotDetailDepositText}>{depositSubmitting ? "ĐANG GỬI" : "CỌC"}</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -7112,7 +7966,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 12,
+    lineHeight: 16,
     paddingBottom: 8,
     textAlign: "center"
   },
@@ -7737,7 +8591,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.2,
-    lineHeight: 12
+    lineHeight: 16
   },
   leaveBadgePendingText: {
     color: "#5b403c"
@@ -8073,7 +8927,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.2,
-    lineHeight: 12
+    lineHeight: 16
   },
   staffDepartmentTitle: {
     color: "#ffffff",
@@ -8121,7 +8975,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.2,
-    lineHeight: 12
+    lineHeight: 16
   },
   staffInputFrame: {
     alignItems: "center",
@@ -8900,6 +9754,12 @@ const styles = StyleSheet.create({
   learningCourseList: {
     gap: 24
   },
+  learningEmptyText: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    lineHeight: 21
+  },
   learningCourseCard: {
     backgroundColor: employeePalette.bg,
     borderColor: employeePalette.border,
@@ -9014,7 +9874,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 12,
+    lineHeight: 16,
     marginBottom: 6,
     paddingHorizontal: 9,
     paddingVertical: 5
@@ -9451,7 +10311,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 12
+    lineHeight: 16
   },
   lessonDetailTitle: {
     color: employeePalette.text,
@@ -10526,7 +11386,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 12
+    lineHeight: 16
   },
   profileScoreBadgeTextRed: {
     color: employeePalette.red
@@ -11781,14 +12641,16 @@ const styles = StyleSheet.create({
     lineHeight: 20
   },
   inventoryMapCanvas: {
+    alignItems: "center",
     backgroundColor: "#ffffff",
-    height: 260,
+    height: 292,
+    justifyContent: "center",
     overflow: "hidden"
   },
   inventoryMapOverview: {
-    height: 292,
+    height: "100%",
     resizeMode: "cover",
-    width: 414
+    width: "100%"
   },
   inventoryMapWebView: {
     backgroundColor: "#ffffff",
@@ -12070,6 +12932,35 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 15
   },
+  inventoryCommentsPagination: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    paddingTop: 2
+  },
+  inventoryCommentsPageButton: {
+    alignItems: "center",
+    borderColor: "#f0d3cf",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: "center",
+    width: 34
+  },
+  inventoryCommentsPageButtonActive: {
+    backgroundColor: "#990100",
+    borderColor: "#990100"
+  },
+  inventoryCommentsPageText: {
+    color: "#990100",
+    fontFamily: appFonts.bold,
+    fontSize: 12,
+    lineHeight: 18
+  },
+  inventoryCommentsPageTextActive: {
+    color: "#ffffff"
+  },
   inventoryCommentRow: {
     flexDirection: "row",
     gap: 12
@@ -12165,12 +13056,14 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     width: "100%"
   },
+  lotDetailHeroCarousel: {
+    height: "100%",
+    width: "100%"
+  },
   lotDetailHeroImage: {
-    height: 403,
-    left: -87,
+    height: "100%",
     resizeMode: "cover",
-    top: 0,
-    width: 644
+    width: "100%"
   },
   lotDetailHeroActions: {
     flexDirection: "row",
@@ -12228,7 +13121,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     gap: 24,
     marginTop: -24,
-    paddingBottom: 52,
+    paddingBottom: 22,
     paddingHorizontal: 20,
     paddingTop: 20
   },
@@ -12359,15 +13252,17 @@ const styles = StyleSheet.create({
     color: employeePalette.muted,
     fontFamily: appFonts.bold,
     fontSize: 12,
+    includeFontPadding: false,
     letterSpacing: 1.2,
-    lineHeight: 14
+    lineHeight: 18
   },
   lotDetailStatValue: {
     color: employeePalette.text,
     fontFamily: appFonts.semiBold,
     fontSize: 24,
+    includeFontPadding: false,
     letterSpacing: -0.48,
-    lineHeight: 28.8
+    lineHeight: 32
   },
   lotDetailDescriptionSection: {
     gap: 15,
@@ -12391,7 +13286,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.regular,
     fontSize: 16,
     lineHeight: 20,
-    marginTop: 105
+    marginTop: 0
   },
   lotDetailBottomActions: {
     alignItems: "center",
@@ -12428,6 +13323,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1.05
   },
+  lotDetailLockButtonLocked: {
+    backgroundColor: "#eef8f1"
+  },
   lotDetailDepositButton: {
     backgroundColor: employeePalette.red,
     flex: 1,
@@ -12443,6 +13341,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 0.32,
     lineHeight: 18
+  },
+  lotDetailLockTextLocked: {
+    letterSpacing: 0
   },
   lotDetailDepositText: {
     color: "#ffffff",

@@ -35,14 +35,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: "HOME",
-            tabBarLabelStyle: {
-              color: "#950100",
-              fontFamily: appFonts.semiBold,
-              fontSize: 10,
-              lineHeight: 15,
-              marginTop: 4
-            },
+            title: "Trang chủ",
             tabBarIcon: ({ color }) => (
               <Ionicons color={color} name="home-outline" size={22} />
             )

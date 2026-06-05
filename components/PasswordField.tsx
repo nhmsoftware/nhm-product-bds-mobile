@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
+import { Pressable } from "@/components/SafePressable";
 import { TextField } from "@/components/TextField";
 import { useI18n } from "@/libs/i18n";
 import { useAppTheme } from "@/libs/layout-mode";

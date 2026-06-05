@@ -1,8 +1,16 @@
-import { Ionicons } from "@expo/vector-icons";
+import {
+  Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { router,
+  useFocusEffect } from "expo-router";
+import { useCallback,
+  useState } from "react";
+import { Platform,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { Pressable } from "@/components/SafePressable";
 
 import { Screen } from "@/components/Screen";
 import { EmployeeAvatarButton, EmployeeNotificationButton } from "@/components/EmployeeUI";
@@ -19,6 +27,7 @@ import {
 } from "@/services/employee/api";
 
 type ActivityItem = {
+  createdAtMs: number;
   id: string;
   time: string;
   title: string;
@@ -146,17 +155,48 @@ function formatActivityTime(value: unknown) {
   });
 }
 
+function activityTimeValue(item: ApiObject) {
+  return item.check_in_at ??
+    item.checked_in_at ??
+    item.created_at ??
+    item.meeting_at ??
+    item.tour_at ??
+    item.scheduled_at ??
+    item.time;
+}
+
+function parseActivityTimeMs(value: unknown) {
+  const parsed = new Date(apiText(value, ""));
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
 function statusFromActivity(value: unknown): ActivityItem["status"] {
-  const status = apiDisplayText(value, "").toLowerCase();
-  if (["completed", "done", "success", "finished", "hoàn tất"].includes(status)) {
+  const status = apiDisplayText(value, "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (["completed", "done", "success", "finished", "hoan tat", "hoan thanh", "thanh cong"].includes(status)) {
     return "completed";
   }
 
-  if (["upcoming", "pending", "scheduled", "chờ xử lý"].includes(status)) {
+  if (["upcoming", "pending", "scheduled", "cho xu ly", "sap toi", "sap dien ra"].includes(status)) {
     return "upcoming";
   }
 
   return undefined;
+}
+
+function activityStatus(item: ApiObject) {
+  return statusFromActivity(
+    item.status ??
+      item.lable_status ??
+      item.label_status ??
+      item.status_label ??
+      item.statusLabel ??
+      item.state
+  );
 }
 
 function mapRecentMeeting(item: ApiObject, index: number): ActivityItem {
@@ -181,19 +221,51 @@ function mapRecentMeeting(item: ApiObject, index: number): ActivityItem {
   ], "Gặp khách hàng");
   const title = firstApiDisplayText([item.title], `Gặp ${customerName}`);
   const meta = firstApiDisplayText([item.note, item.description, item.meta], project);
-  const time = formatActivityTime(
-    item.check_in_at ??
-      item.created_at ??
-      item.meeting_at ??
-      item.time
-  );
+  const timeValue = activityTimeValue(item);
 
   return {
+    createdAtMs: parseActivityTimeMs(timeValue),
     icon: "people-outline",
-    id: apiText(item.id, `recent-meeting-${index}`),
+    id: `meeting-${apiText(item.id, `recent-meeting-${index}`)}`,
     meta,
-    status: statusFromActivity(item.status),
-    time,
+    status: activityStatus(item),
+    time: formatActivityTime(timeValue),
+    title
+  };
+}
+
+function mapRecentSiteTour(item: ApiObject, index: number): ActivityItem {
+  const customerName = firstApiDisplayText([
+    item.customer_name,
+    item.customerName,
+    item.client_name,
+    item.clientName,
+    item.customer,
+    item.client,
+    item.name
+  ], "Khách hàng");
+  const project = firstApiDisplayText([
+    item.project_name,
+    item.projectName,
+    item.project,
+    item.area,
+    item.land_area,
+    item.landArea,
+    item.location,
+    item.address
+  ], "Dẫn khách hàng");
+  const unit = firstApiDisplayText([item.unit_code, item.unitCode, item.lot_code, item.lotCode], "");
+  const meta = firstApiDisplayText([item.note, item.description, item.meta], unit ? `${customerName} - ${unit}` : project);
+  const title = firstApiDisplayText([item.title], `Dẫn ${customerName}`);
+  const timeValue = activityTimeValue(item);
+
+  return {
+    createdAtMs: parseActivityTimeMs(timeValue),
+    icon: "walk",
+    id: `site-tour-${apiText(item.id, `recent-site-tour-${index}`)}`,
+    meta,
+    status: activityStatus(item),
+    time: formatActivityTime(timeValue),
     title
   };
 }
@@ -292,22 +364,42 @@ export default function EmployeeCheckInScreen() {
 
   useFocusEffect(loadTodayStatus);
 
-  const loadRecentMeetings = useCallback(() => {
+  const loadRecentActivities = useCallback(() => {
     let active = true;
 
     setRecentLoading(true);
-    employeeApi
-      .recentMeetings()
-      .then((response) => {
+    Promise.allSettled([
+      employeeApi.recentMeetings(),
+      employeeApi.siteToursRecent()
+    ])
+      .then((results) => {
         if (!active) return;
 
-        const rows = apiList(response.data).map(mapRecentMeeting);
+        const [meetingsResult, siteToursResult] = results;
+        const meetingRows = meetingsResult.status === "fulfilled"
+          ? apiList(meetingsResult.value.data).map(mapRecentMeeting)
+          : [];
+        const siteTourRows = siteToursResult.status === "fulfilled"
+          ? apiList(siteToursResult.value.data).map(mapRecentSiteTour)
+          : [];
+        const rows = [...meetingRows, ...siteTourRows]
+          .sort((left, right) => right.createdAtMs - left.createdAtMs)
+          .slice(0, 5);
+
+        if (meetingsResult.status === "rejected") {
+          appLogger.warn("employee.customerMeetings.recent", "Không thể tải hoạt động gặp khách gần đây.", { error: meetingsResult.reason });
+        }
+
+        if (siteToursResult.status === "rejected") {
+          appLogger.warn("employee.siteTours.recent", "Không thể tải hoạt động dẫn khách gần đây.", { error: siteToursResult.reason });
+        }
+
         setRecentActivities(rows);
-        setRecentMessage(response.message || "Chưa có hoạt động gần đây.");
+        setRecentMessage(rows.length > 0 ? "" : "Chưa có hoạt động gần đây.");
       })
       .catch((error) => {
         if (!active) return;
-        appLogger.warn("employee.customerMeetings.recent", "Không thể tải hoạt động gần đây.", { error });
+        appLogger.warn("employee.activities.recent", "Không thể tải hoạt động gần đây.", { error });
         setRecentActivities([]);
         setRecentMessage("Không thể tải hoạt động gần đây. Vui lòng thử lại.");
       })
@@ -322,7 +414,7 @@ export default function EmployeeCheckInScreen() {
     };
   }, []);
 
-  useFocusEffect(loadRecentMeetings);
+  useFocusEffect(loadRecentActivities);
 
   async function getGpsAttendancePayload(): Promise<AttendancePunchInput> {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -721,8 +813,10 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     fontWeight: "900",
+    includeFontPadding: true,
     letterSpacing: 0.32,
-    lineHeight: 18
+    lineHeight: 22,
+    paddingTop: 4
   },
   activityMetaRow: {
     alignItems: "center",

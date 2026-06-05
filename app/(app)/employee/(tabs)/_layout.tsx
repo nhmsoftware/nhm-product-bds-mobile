@@ -16,8 +16,13 @@ export default function EmployeeTabsLayout() {
   const bottomInset = Math.max(insets.bottom, 10);
 
   async function openLearningTab() {
+    router.navigate("/employee/learning");
+
     if (canUseDemoLearning(session)) {
-      router.navigate("/employee/learning");
+      return;
+    }
+
+    if (checkingLearningAccess.current) {
       return;
     }
 
@@ -26,19 +31,12 @@ export default function EmployeeTabsLayout() {
       const access = await employeeApi.learningAccess();
 
       if (access.mandatoryLearningCompleted) {
-        router.navigate("/employee/learning");
         return;
       }
 
-      router.replace("/employee");
-      setTimeout(() => {
-        router.push("/employee/required-learning");
-      }, 0);
+      router.push("/employee/required-learning");
     } catch {
-      router.replace("/employee");
-      setTimeout(() => {
-        router.push("/employee/required-learning");
-      }, 0);
+      router.push("/employee/required-learning");
     } finally {
       checkingLearningAccess.current = false;
     }
@@ -67,15 +65,14 @@ export default function EmployeeTabsLayout() {
           fontSize: 10,
           fontWeight: "600",
           letterSpacing: 0.5,
-          lineHeight: 16,
-          textTransform: "uppercase"
+          lineHeight: 16
         }
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "HOME",
+          title: "Trang chủ",
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="home-outline" size={size} />
         }}
       />
@@ -84,33 +81,32 @@ export default function EmployeeTabsLayout() {
         listeners={{
           tabPress: (event) => {
             event.preventDefault();
-            if (checkingLearningAccess.current) return;
             void openLearningTab();
           }
         }}
         options={{
-          title: "LEARNING",
+          title: "Học tập",
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="school-outline" size={size} />
         }}
       />
       <Tabs.Screen
         name="check-in"
         options={{
-          title: "CHECK-IN",
+          title: "Check-in",
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="location-outline" size={size} />
         }}
       />
       <Tabs.Screen
         name="news"
         options={{
-          title: "NEWS",
+          title: "Tin tức",
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="calendar-outline" size={size} />
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "PROFILE",
+          title: "Hồ sơ",
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="person-outline" size={size} />
         }}
       />

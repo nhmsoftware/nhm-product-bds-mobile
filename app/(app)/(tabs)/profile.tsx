@@ -1,15 +1,25 @@
-import { Ionicons } from "@expo/vector-icons";
+import {
+  Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect,
+  useState } from "react";
+import { Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
 import { appLogger } from "@/libs/logger";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
-import { customerPublicApi, type ConsultationSetting } from "@/services/customer/api";
+import { customerPublicApi, type ConsultationSetting, type PublicProject } from "@/services/customer/api";
 
 const palette = {
   background: "#f8f9fa",
@@ -28,16 +38,18 @@ const contactImages = {
   office: require("@/assets/images/customer/contact/saigon-office.png")
 };
 
-const formFields = [
-  { label: "HỌ VÀ TÊN", value: "Nguyễn Văn A" },
-  { label: "SỐ ĐIỆN THOẠI", value: "0901 234 567" },
-  { label: "EMAIL", value: "example@email.com (Nếu có)" }
-] as const;
-
 export default function ContactScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
+  const [projectPickerVisible, setProjectPickerVisible] = useState(false);
   const [setting, setSetting] = useState<ConsultationSetting | null>(null);
+  const [projects, setProjects] = useState<PublicProject[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [selectedProject, setSelectedProject] = useState<PublicProject | null>(null);
+  const [content, setContent] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -51,22 +63,51 @@ export default function ContactScreen() {
         appLogger.warn("customer.consultationSetting", "Không thể tải cấu hình tư vấn.", { error });
       });
 
+    setProjectsLoading(true);
+    customerPublicApi
+      .projects({ per_page: 50 })
+      .then((response) => {
+        if (active) setProjects(response.data.data ?? response.data.list ?? []);
+      })
+      .catch((error) => {
+        appLogger.warn("customer.consultationProjects", "Không thể tải danh sách dự án tư vấn.", { error });
+      })
+      .finally(() => {
+        if (active) setProjectsLoading(false);
+      });
+
     return () => {
       active = false;
     };
   }, []);
 
   async function handleSubmitConsultation() {
+    const normalizedPhone = phone.replace(/\s/g, "");
+    if (!fullName.trim()) {
+      notifyError(new Error("Vui lòng nhập họ tên."));
+      return;
+    }
+    if (!normalizedPhone) {
+      notifyError(new Error("Vui lòng nhập số điện thoại."));
+      return;
+    }
+
     setSubmitting(true);
     try {
       const response = await customerPublicApi.submitConsultation({
-        full_name: "Nguyễn Văn A",
-        phone: "0901234567",
-        email: "example@email.com",
-        project_name: "Grand Riverside Luxury",
-        content: "Tôi muốn tìm hiểu thêm về dự án."
+        full_name: fullName.trim(),
+        phone: normalizedPhone,
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(selectedProject?.id ? { project_id: selectedProject.id } : {}),
+        ...(selectedProject?.name ? { project_name: selectedProject.name } : {}),
+        ...(content.trim() ? { content: content.trim() } : {})
       });
       notifySuccess({ message: response.message || "Gửi yêu cầu tư vấn thành công." });
+      setFullName("");
+      setPhone("");
+      setEmail("");
+      setSelectedProject(null);
+      setContent("");
     } catch (error) {
       notifyError(error, "Không thể gửi yêu cầu tư vấn.");
     } finally {
@@ -87,6 +128,17 @@ export default function ContactScreen() {
         </Pressable>
       </View>
       <CustomerAccountMenu onClose={() => setAccountMenuVisible(false)} visible={accountMenuVisible} />
+      <ConsultationProjectPicker
+        loading={projectsLoading}
+        onClose={() => setProjectPickerVisible(false)}
+        onSelect={(project) => {
+          setSelectedProject(project);
+          setProjectPickerVisible(false);
+        }}
+        options={projects}
+        selectedProjectId={selectedProject?.id}
+        visible={projectPickerVisible}
+      />
 
       <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
@@ -123,27 +175,72 @@ export default function ContactScreen() {
         <View style={styles.formCard}>
           <Text style={styles.formTitle}>{setting?.form_title || "Gửi Tin Nhắn"}</Text>
           <View style={styles.formFields}>
-            {formFields.map((field) => (
-              <View key={field.label} style={styles.field}>
-                <Text style={styles.label}>{field.label}</Text>
-                <View style={styles.inputBox}>
-                  <Text style={styles.inputText}>{field.value}</Text>
-                </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>HỌ VÀ TÊN</Text>
+              <View style={styles.inputBox}>
+                <TextInput
+                  autoCapitalize="words"
+                  onChangeText={setFullName}
+                  placeholder="Nhập họ và tên"
+                  placeholderTextColor={palette.muted}
+                  returnKeyType="next"
+                  style={styles.inputText}
+                  value={fullName}
+                />
               </View>
-            ))}
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>SỐ ĐIỆN THOẠI</Text>
+              <View style={styles.inputBox}>
+                <TextInput
+                  keyboardType="phone-pad"
+                  onChangeText={setPhone}
+                  placeholder="Nhập số điện thoại"
+                  placeholderTextColor={palette.muted}
+                  style={styles.inputText}
+                  value={phone}
+                />
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>EMAIL</Text>
+              <View style={styles.inputBox}>
+                <TextInput
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  onChangeText={setEmail}
+                  placeholder="Nhập email nếu có"
+                  placeholderTextColor={palette.muted}
+                  style={styles.inputText}
+                  value={email}
+                />
+              </View>
+            </View>
 
             <View style={styles.field}>
               <Text style={styles.label}>DỰ ÁN QUAN TÂM</Text>
-              <View style={styles.selectBox}>
-                <Text style={styles.selectText}>Grand Riverside Luxury</Text>
+              <Pressable accessibilityRole="button" onPress={() => setProjectPickerVisible(true)} style={styles.selectBox}>
+                <Text style={[styles.selectText, !selectedProject?.name && styles.placeholderText]}>
+                  {selectedProject?.name || "Chọn dự án quan tâm"}
+                </Text>
                 <Ionicons name="chevron-down" size={20} color={palette.muted} />
-              </View>
+              </Pressable>
             </View>
 
             <View style={styles.field}>
               <Text style={styles.label}>NỘI DUNG</Text>
               <View style={styles.textarea}>
-                <Text style={styles.inputText}>Tôi muốn tìm hiểu thêm về...</Text>
+                <TextInput
+                  multiline
+                  onChangeText={setContent}
+                  placeholder="Tôi muốn tìm hiểu thêm về..."
+                  placeholderTextColor={palette.muted}
+                  style={styles.textareaInput}
+                  textAlignVertical="top"
+                  value={content}
+                />
               </View>
             </View>
           </View>
@@ -177,6 +274,65 @@ export default function ContactScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function ConsultationProjectPicker({
+  loading,
+  onClose,
+  onSelect,
+  options,
+  selectedProjectId,
+  visible
+}: {
+  loading: boolean;
+  onClose: () => void;
+  onSelect: (project: PublicProject) => void;
+  options: PublicProject[];
+  selectedProjectId?: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+      <Pressable onPress={onClose} style={styles.projectModalBackdrop}>
+        <Pressable onPress={(event) => event.stopPropagation()} style={styles.projectModal}>
+          <View style={styles.projectModalHeader}>
+            <Text style={styles.projectModalTitle}>Chọn dự án quan tâm</Text>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.projectModalClose}>
+              <Ionicons color={palette.text} name="close" size={20} />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.projectModalList} showsVerticalScrollIndicator={false}>
+            {loading ? <Text style={styles.projectModalState}>Đang tải danh sách dự án...</Text> : null}
+            {!loading && options.length === 0 ? (
+              <Text style={styles.projectModalState}>Hiện chưa có dự án để chọn.</Text>
+            ) : null}
+            {!loading
+              ? options.map((project) => {
+                  const active = project.id === selectedProjectId;
+
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={project.id}
+                      onPress={() => onSelect(project)}
+                      style={[styles.projectModalOption, active && styles.projectModalOptionActive]}
+                    >
+                      <View style={styles.projectModalOptionBody}>
+                        <Text style={[styles.projectModalOptionText, active && styles.projectModalOptionTextActive]}>
+                          {project.name || "Dự án chưa đặt tên"}
+                        </Text>
+                        {project.location ? <Text style={styles.projectModalOptionMeta}>{project.location}</Text> : null}
+                      </View>
+                      {active ? <Ionicons color={palette.goldDark} name="checkmark" size={20} /> : null}
+                    </Pressable>
+                  );
+                })
+              : null}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -318,7 +474,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 20
   },
   secondaryButton: {
     borderColor: "#313131",
@@ -332,7 +488,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 20
   },
   formCard: {
     backgroundColor: palette.white,
@@ -367,7 +523,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 12
+    lineHeight: 16
   },
   inputBox: {
     backgroundColor: palette.background,
@@ -380,9 +536,11 @@ const styles = StyleSheet.create({
   },
   inputText: {
     color: palette.muted,
+    flex: 1,
     fontFamily: appFonts.regular,
     fontSize: 16,
-    lineHeight: 24
+    lineHeight: 24,
+    padding: 0
   },
   selectBox: {
     alignItems: "center",
@@ -402,6 +560,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24
   },
+  placeholderText: {
+    color: palette.muted
+  },
   textarea: {
     backgroundColor: palette.background,
     borderColor: "rgba(227, 190, 184, 0.5)",
@@ -410,6 +571,15 @@ const styles = StyleSheet.create({
     minHeight: 130,
     paddingHorizontal: 17,
     paddingTop: 17
+  },
+  textareaInput: {
+    color: palette.text,
+    flex: 1,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    minHeight: 96,
+    padding: 0
   },
   submitButton: {
     alignItems: "center",
@@ -429,7 +599,90 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 20
+  },
+  projectModalBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 20
+  },
+  projectModal: {
+    backgroundColor: palette.white,
+    borderRadius: 12,
+    maxHeight: "70%",
+    overflow: "hidden",
+    width: "100%"
+  },
+  projectModalHeader: {
+    alignItems: "center",
+    borderBottomColor: "rgba(227, 190, 184, 0.45)",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14
+  },
+  projectModalTitle: {
+    color: palette.text,
+    flex: 1,
+    fontFamily: appFonts.bold,
+    fontSize: 16,
+    lineHeight: 22
+  },
+  projectModalClose: {
+    alignItems: "center",
+    height: 32,
+    justifyContent: "center",
+    width: 32
+  },
+  projectModalList: {
+    padding: 12
+  },
+  projectModalState: {
+    color: palette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    padding: 12,
+    textAlign: "center"
+  },
+  projectModalOption: {
+    alignItems: "center",
+    borderColor: "rgba(227, 190, 184, 0.5)",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    minHeight: 54,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  projectModalOptionActive: {
+    backgroundColor: "rgba(249, 209, 92, 0.16)",
+    borderColor: "#f5c14b"
+  },
+  projectModalOptionBody: {
+    flex: 1,
+    paddingRight: 10
+  },
+  projectModalOptionText: {
+    color: palette.text,
+    fontFamily: appFonts.bold,
+    fontSize: 14,
+    lineHeight: 20
+  },
+  projectModalOptionTextActive: {
+    color: palette.goldDark
+  },
+  projectModalOptionMeta: {
+    color: palette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2
   },
   officeSection: {
     gap: 24,

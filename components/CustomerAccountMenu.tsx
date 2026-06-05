@@ -1,7 +1,14 @@
-import { Ionicons } from "@expo/vector-icons";
-import { router, type Href } from "expo-router";
+import {
+  Ionicons } from "@expo/vector-icons";
+import { router,
+  type Href } from "expo-router";
 import type { ComponentProps } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { appFonts } from "@/libs/typography";
