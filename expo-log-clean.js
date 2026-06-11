@@ -9,6 +9,10 @@ const isLinux = process.platform === "linux";
 fs.mkdirSync(logsDir, { recursive: true });
 fs.writeFileSync(logPath, "");
 
+function shellArg(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function stripControl(input) {
   return input
     .replace(/\x00/g, "")
@@ -17,7 +21,10 @@ function stripControl(input) {
     .replace(/\r/g, "\n");
 }
 
-const command = "expo start";
+const port = process.env.EXPO_PORT || "8081";
+const command = ["expo", "start", "--port", port, ...process.argv.slice(2)]
+  .map(shellArg)
+  .join(" ");
 const child = isLinux
   ? spawn("script", ["-q", "-f", "-c", command, "/dev/null"], {
       env: {

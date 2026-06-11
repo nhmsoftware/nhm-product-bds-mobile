@@ -1,4 +1,4 @@
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -107,6 +107,14 @@ function normalizeCourseQuiz(course: MandatoryLearningCourse): MandatoryLearning
   };
 }
 
+function firstIncompleteCourse(courses: MandatoryLearningCourse[]) {
+  return courses.find((course) => {
+    const status = textValue(course.progress?.status)?.toLowerCase() ?? "";
+    const percent = numberValue(course.progress?.percent) ?? 0;
+    return status !== "completed" && percent < 100;
+  }) ?? courses[0] ?? null;
+}
+
 async function withCourseQuiz(course: MandatoryLearningCourse | null) {
   if (!course) {
     return null;
@@ -120,24 +128,6 @@ async function withCourseQuiz(course: MandatoryLearningCourse | null) {
   const quizCourseId = course.id;
   if (!quizCourseId) {
     return course;
-  }
-
-  const resultResponse = await employeeApi.courseQuizResult(quizCourseId).catch(() => null);
-  if (resultResponse) {
-    const status = quizResultStatus(resultResponse.data);
-
-    return {
-      ...course,
-      quiz: {
-        actionText: status === "grading" ? "Đang chấm" : "Xem lại bài kiểm tra",
-        canStart: status !== "grading",
-        courseId: quizCourseId,
-        hasQuiz: true,
-        isPassed: status === "passed",
-        lessonId: lastLessonId(course),
-        status
-      }
-    };
   }
 
   const response = await employeeApi.courseQuizAvailability(quizCourseId).catch(() => null);
@@ -177,6 +167,9 @@ async function withCourseQuiz(course: MandatoryLearningCourse | null) {
 }
 
 export default function RequiredLearningRoute() {
+  const params = useLocalSearchParams<{ courseId?: string }>();
+  const rawCourseId = params.courseId;
+  const selectedCourseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
   const [course, setCourse] = useState<MandatoryLearningCourse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -192,7 +185,11 @@ export default function RequiredLearningRoute() {
     const request = employeeApi
       .courses()
       .then(async (response) => {
-        const courseWithQuiz = await withCourseQuiz(response.data.course);
+        const courses = response.data.courses ?? [];
+        const selectedCourse = selectedCourseId
+          ? courses.find((item) => item.id === selectedCourseId) ?? response.data.course
+          : firstIncompleteCourse(courses) ?? response.data.course;
+        const courseWithQuiz = await withCourseQuiz(selectedCourse);
         if (mounted) {
           setCourse(courseWithQuiz);
         }
@@ -215,7 +212,7 @@ export default function RequiredLearningRoute() {
       },
       request
     };
-  }, []);
+  }, [selectedCourseId]);
 
   useEffect(() => {
     const loader = loadCourse(true);

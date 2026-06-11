@@ -9,12 +9,22 @@ import { notifyError } from "@/libs/notify";
 import { employeeApi } from "@/services/employee/api";
 import type { LearningLessonDetail, LearningLessonProgressUpdate } from "@/services/employee/types";
 
-const defaultLessonId = "019e640c-8acd-71f8-82e4-e40aa5caad2e";
+function preserveQuizStatusLabel(value: string) {
+  const label = value.trim().toLocaleLowerCase("vi-VN");
+
+  return (
+    label.includes("xem lại") ||
+    label.includes("chưa đạt") ||
+    label.includes("đang chấm") ||
+    label.includes("làm bài kiểm tra") ||
+    label.includes("tiếp tục bài kiểm tra")
+  );
+}
 
 export default function LessonDetailRoute() {
   const params = useLocalSearchParams<{ lessonId?: string; id?: string }>();
   const lessonId = useMemo(() => {
-    const raw = params.lessonId || params.id || defaultLessonId;
+    const raw = params.lessonId || params.id;
     return Array.isArray(raw) ? raw[0] : raw;
   }, [params.id, params.lessonId]);
 
@@ -37,7 +47,9 @@ export default function LessonDetailRoute() {
         current_watch_seconds: progress.current_watch_seconds,
         next_lesson_id: progress.next_lesson_id,
         status: progress.is_completed ? "completed" : currentLesson.status,
-        status_label: progress.is_completed ? "Hoàn thành" : currentLesson.status_label,
+        status_label: progress.is_completed && !preserveQuizStatusLabel(currentLesson.status_label)
+          ? "Hoàn thành"
+          : currentLesson.status_label,
         unlock_condition: progress.unlock_condition ?? currentLesson.unlock_condition
       };
     });
@@ -48,6 +60,15 @@ export default function LessonDetailRoute() {
 
     setLoading(true);
     setFailed(false);
+
+    if (!lessonId) {
+      setFailed(true);
+      setLoading(false);
+      notifyError("Chưa chọn bài học để mở.");
+      return () => {
+        mounted = false;
+      };
+    }
 
     employeeApi
       .lesson(lessonId)

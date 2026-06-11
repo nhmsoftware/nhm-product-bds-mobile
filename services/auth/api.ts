@@ -12,6 +12,7 @@ import type {
 type BackendUser = {
   id: string;
   staff_code?: string | null;
+  cccd?: string | null;
   name?: string | null;
   fullName?: string | null;
   email: string;
@@ -37,6 +38,7 @@ function mapUser(user: BackendUser): AuthUser {
   return {
     id: String(user.id),
     staffCode: user.staff_code ?? undefined,
+    cccd: user.cccd ?? null,
     fullName: user.fullName || user.name || user.email,
     email: user.email,
     phone: user.phone ?? undefined,

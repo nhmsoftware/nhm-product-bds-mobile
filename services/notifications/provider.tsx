@@ -350,7 +350,12 @@ function subscribeRealtime(userId: string, setUnreadCount: NotificationState["se
   socket.onAny((event, payload) => {
     dispatchRealtimeEvent(event, payload);
 
-    if (event === "area.comment.created" || event === ".area.comment.created") {
+    if (
+      event === "area.comment.created" ||
+      event === ".area.comment.created" ||
+      event === "news.comment.created" ||
+      event === ".news.comment.created"
+    ) {
       return;
     }
 

@@ -1,5 +1,7 @@
 import {
   Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -39,6 +41,7 @@ import {
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
+import QRCode from "react-native-qrcode-svg";
 import { Path, Svg, SvgUri } from "react-native-svg";
 
 import {
@@ -55,17 +58,17 @@ import {
   EmployeeSectionTitle
 } from "@/components/EmployeeUI";
 import { employeePalette } from "@/libs/employee-theme";
-import { API_URL } from "@/libs/env";
+import { API_URL, STORAGE_KEYS } from "@/libs/env";
 import { useI18n } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
-import { mediaUrl } from "@/libs/media";
+import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
+import { ApiRequestError } from "@/libs/api";
 import { isDepartmentTransferApproverRole, isManagerAccessRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
-import type { AuthUser } from "@/services/auth/types";
+import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
-import { employeeNewsPosts } from "@/services/employee/mock-data";
 import { useNotificationState, useRealtimeEvent, useRealtimeRoom } from "@/services/notifications/provider";
 import type {
   LearningLessonAttachment,
@@ -151,6 +154,28 @@ type CertificateCardItem = {
   title: string;
 };
 
+type CertificateFilterValue = "all" | "verified" | "pending" | "new";
+
+const certificateFilterOptions: Array<{ label: string; value: CertificateFilterValue }> = [
+  { label: "Tất cả", value: "all" },
+  { label: "Đã xác thực", value: "verified" },
+  { label: "Chờ duyệt", value: "pending" },
+  { label: "Mới", value: "new" }
+];
+
+type LearningCertificateData = {
+  certificates: CertificateCardItem[];
+  quizRows: ProfileQuizScoreItem[];
+};
+
+type ProfileQuizScoreItem = {
+  badge: string;
+  date: string;
+  score: string;
+  title: string;
+  tone: "red" | "gold";
+};
+
 function isApiObject(value: unknown): value is ApiObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -170,6 +195,17 @@ function apiText(value: unknown, fallback = "-") {
 
 function avatarInitial(value?: unknown) {
   return apiText(value, "N").trim().slice(0, 1).toUpperCase() || "N";
+}
+
+function AvatarEditPencilIcon() {
+  return (
+    <Svg width={10.5} height={10.5} viewBox="0 0 10.5 10.5" fill="none">
+      <Path
+        d="M1.16667 9.33333H1.99792L7.7 3.63125L6.86875 2.8L1.16667 8.50208V9.33333V9.33333M0 10.5V8.02083L7.7 0.335417C7.81667 0.228472 7.94549 0.145833 8.08646 0.0875C8.22743 0.0291667 8.37569 0 8.53125 0C8.68681 0 8.8375 0.0291667 8.98333 0.0875C9.12917 0.145833 9.25556 0.233333 9.3625 0.35L10.1646 1.16667C10.2812 1.27361 10.3663 1.4 10.4198 1.54583C10.4733 1.69167 10.5 1.8375 10.5 1.98333C10.5 2.13889 10.4733 2.28715 10.4198 2.42812C10.3663 2.5691 10.2812 2.69792 10.1646 2.81458L2.47917 10.5H0V10.5M9.33333 1.98333V1.98333L8.51667 1.16667V1.16667L9.33333 1.98333V1.98333M7.27708 3.22292L6.86875 2.8V2.8L7.7 3.63125V3.63125L7.27708 3.22292V3.22292"
+        fill="#ffffff"
+      />
+    </Svg>
+  );
 }
 
 function canCreateInternalNews(user?: AuthUser | null) {
@@ -701,6 +737,7 @@ function apiList(value: unknown): ApiObject[] {
     value.areas,
     value.lots,
     value.requests,
+    value.departments,
     value.history,
     value.meetings,
     value.site_tours,
@@ -736,7 +773,7 @@ function formatSignedPoints(value: unknown, fallback = "+0") {
   return text.startsWith("+") || text.startsWith("-") ? text : `+${text}`;
 }
 
-function formatPercentChange(value: unknown, fallback = "+12%") {
+function formatPercentChange(value: unknown, fallback = "0%") {
   if (value === null || value === undefined || value === "") {
     return fallback;
   }
@@ -776,14 +813,29 @@ function formatApiDateTime(value: unknown, fallback = "Mới cập nhật") {
   return `${formatTwoDigits(parsed.getHours())}:${formatTwoDigits(parsed.getMinutes())} - ${day}/${month}/${year}`;
 }
 
-function normalizeRewardRank(value: unknown, fallback = "Vàng") {
-  const rank = apiText(value, fallback).replace(/^hạng[:\s]*/i, "");
-  return `HẠNG: ${rank.toUpperCase()}`;
+function normalizeRewardRank(value: unknown, fallback = "Chưa xếp hạng") {
+  const rank = rewardRankName(value, fallback);
+  return `HẠNG: ${rank.toLocaleUpperCase("vi-VN")}`;
+}
+
+function rewardRankName(value: unknown, fallback = "Chưa xếp hạng") {
+  const rankValue = isApiObject(value) ? value.label : value;
+  return apiText(rankValue, fallback).replace(/^hạng[:\s]*/i, "");
 }
 
 function formatTwoDigits(value: number) {
   return String(Math.max(0, Math.floor(value))).padStart(2, "0");
 }
+function formatScoreValue(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function formatScoreParam(value: unknown, fallback = "0") {
+  const number = Number(value);
+  return Number.isFinite(number) ? formatScoreValue(number) : fallback;
+}
+
 
 const certificateFallbackImages = [
   certificateImages.realEstate,
@@ -792,40 +844,87 @@ const certificateFallbackImages = [
   certificateImages.negotiation
 ];
 
-const certificateFallbackRows: CertificateCardItem[] = [
-  {
-    id: "real-estate-broker",
-    image: certificateImages.realEstate,
-    issuedAt: "15/05/2023",
-    provider: "Hiệp hội Bất động sản Việt Nam",
+function learningCourseFromPayload(value: unknown): ApiObject | null {
+  if (!isApiObject(value)) return null;
+  const course = value.course;
+  return isApiObject(course) ? course : null;
+}
+
+function isLearningCourseCompleted(course: ApiObject | null) {
+  if (!course) return false;
+  const progress = isApiObject(course.progress) ? course.progress : {};
+  const status = apiText(progress.status ?? course.status, "").toLowerCase();
+  const percent = apiNumber(progress.percent ?? course.progress_percent ?? course.progressPercent, 0);
+  return status === "completed" || percent >= 100;
+}
+
+function formatCertificateDate(value: unknown, fallback = "Đã hoàn thành") {
+  const formatted = formatApiDateTime(value, fallback);
+  return formatted.includes(" - ") ? formatted.split(" - ").pop() || formatted : formatted;
+}
+
+function certificateFromCourse(course: ApiObject, certificate: ApiObject | null, index = 0): CertificateCardItem {
+  const completedAt = certificate?.completed_at ?? certificate?.completedAt ?? course.completed_at ?? course.completedAt;
+  const code = apiText(certificate?.certificate_code ?? certificate?.certificateCode ?? course.id, `certificate-${index}`);
+
+  return {
+    id: code,
+    image: certificateFallbackImages[index % certificateFallbackImages.length],
+    issuedAt: formatCertificateDate(completedAt),
+    provider: apiText(certificate?.provider ?? certificate?.issuer, "NHM Academy"),
     status: "verified",
-    title: "Môi Giới Bất Động Sản Cao Cấp"
-  },
-  {
-    id: "apartment-operations",
-    image: certificateImages.operations,
-    issuedAt: "20/11/2022",
-    provider: "Viện Đào tạo Quốc tế CRE",
-    status: "verified",
-    title: "Quản Trị Vận Hành Căn Hộ"
-  },
-  {
-    id: "digital-real-estate",
-    image: certificateImages.digitalMarketing,
-    issuedAt: "12/02/2023",
-    provider: "Google Digital Academy",
-    status: "verified",
-    title: "Marketing BĐS Kỹ Thuật Số"
-  },
-  {
-    id: "million-dollar-negotiation",
-    image: certificateImages.negotiation,
-    issuedAt: "05/01/2024",
-    provider: "Harvard Business Review Certification",
-    status: "new",
-    title: "Kỹ Năng Đàm Phán Triệu Đô"
+    title: apiText(certificate?.course_title ?? certificate?.courseTitle ?? course.title ?? course.name, "Chứng chỉ hoàn thành khóa học")
+  };
+}
+
+function quizScoreRowsFromCourse(course: ApiObject | null): ProfileQuizScoreItem[] {
+  if (!course) return [];
+  const quiz = isApiObject(course.quiz) ? course.quiz : {};
+  const score = apiNullableNumber(quiz.lastScore ?? quiz.last_score ?? quiz.score);
+  const status = apiText(quiz.status, "").toLowerCase();
+  const isPassed = apiBoolean(quiz.isPassed ?? quiz.is_passed, status === "passed" || status === "completed");
+
+  if (score === null && !isPassed) return [];
+
+  const scoreValue = score ?? apiNumber(quiz.passingScore ?? quiz.passing_score, 0);
+
+  return [{
+    badge: isPassed ? "ĐẠT" : "CHƯA ĐẠT",
+    date: "Gần nhất",
+    score: String(Math.round(scoreValue * 10) / 10),
+    title: apiText(course.title ?? course.name, "Bài kiểm tra khóa học"),
+    tone: isPassed ? "red" : "gold"
+  }];
+}
+
+async function loadLearningCertificateData(): Promise<{ data: LearningCertificateData }> {
+  const coursesResponse = await employeeApi.courses();
+  const payload: ApiObject = isApiObject(coursesResponse.data) ? coursesResponse.data : {};
+  const courses = apiList(payload.courses);
+  const fallbackCourse = learningCourseFromPayload(coursesResponse.data);
+  const courseRows = courses.length > 0 ? courses : fallbackCourse ? [fallbackCourse] : [];
+  const quizRows = courseRows.flatMap((course) => quizScoreRowsFromCourse(course));
+  const completedCourses = courseRows.filter(isLearningCourseCompleted);
+
+  if (completedCourses.length === 0) {
+    return { data: { certificates: [], quizRows } };
   }
-];
+
+  const certificates = await Promise.all(completedCourses.map(async (course, index) => {
+    const courseId = apiText(course.id, "");
+    const certificateResponse = courseId ? await employeeApi.courseCertificate(courseId).catch(() => null) : null;
+    const certificate = isApiObject(certificateResponse?.data) ? certificateResponse.data : null;
+
+    return certificateFromCourse(course, certificate, index);
+  }));
+
+  return {
+    data: {
+      certificates,
+      quizRows
+    }
+  };
+}
 
 const showProfileRewardHistoryShortcut = false;
 const newsPostPreviewLines = 5;
@@ -919,7 +1018,7 @@ function backToCheckInHistory() {
 }
 
 function backToRequiredLearning() {
-  router.replace("/employee/required-learning");
+  router.dismissTo("/employee/required-learning");
 }
 
 function backToProfile() {
@@ -1011,7 +1110,7 @@ const vi = {
   },
   requests: {
     leaveTitle: "Danh sách Xin nghỉ phép",
-    transferTitle: "Danh sách xin chuyển phòng",
+    transferTitle: "Danh sách xin chuyển phòng ban",
     staffTitle: "Danh sách nhân viên phòng ban",
     pending: "Chờ duyệt",
     approved: "Đã duyệt",
@@ -1149,37 +1248,7 @@ const en: typeof vi = {
   }
 };
 
-const learningPathRows = [
-  ["Chuyên viên Bán hàng", "Hoàn thành 3/5 khóa học cốt lõi.", 60, "ribbon-outline", "default"],
-  ["Cố vấn Đầu tư Hạng sang", "Mục tiêu tiếp theo. Cần hoàn thành khóa Phân tích vi mô.", 15, "star", "active"],
-  ["Giám đốc Khu vực", "Yêu cầu hoàn thành cấp độ Cố vấn Đầu tư.", 0, "lock-closed-outline", "locked"]
-] as const;
-
-const learningCourseRows = [
-  [
-    "Nghệ thuật Đàm phán Giá trị Cao",
-    "Kỹ năng cốt lõi để chốt giao dịch các bất động sản siêu sang, xử lý từ chối và thiết lập...",
-    75,
-    learningImages.negotiation,
-    true
-  ],
-  [
-    "Phân tích Thị trường BĐS Nghỉ dưỡng",
-    "Đọc hiểu báo cáo vĩ mô, nhận diện xu hướng dòng tiền và tâm lý nhà đầu tư phân khúc nghỉ...",
-    30,
-    learningImages.market,
-    false
-  ],
-  [
-    "Pháp lý Dự án & Quản trị Rủi ro",
-    "Nắm vững hồ sơ pháp lý, các loại hợp đồng và quy trình giải quyết khiếu nại cho khách hàng...",
-    5,
-    learningImages.legal,
-    false
-  ]
-] as const;
-
-type LearningCourseRow = [string, string, number, number, boolean];
+type LearningCourseRow = [string, string, number, ImageSourcePropType, boolean, string];
 type LearningPathRow = [string, string, number, keyof typeof Ionicons.glyphMap, "active" | "default" | "locked"];
 
 function useCopy() {
@@ -1191,15 +1260,15 @@ export function LearningHomeScreen() {
   const { data, loading } = useEmployeeApiData(() => employeeApi.courses(), []);
   const [selectedLearningTab, setSelectedLearningTab] = useState<"inProgress" | "completed">("inProgress");
   const learningTabInitialized = useRef(false);
-  const course = isApiObject(data?.course) ? data.course : null;
-  const courseRecord = course as ApiObject | null;
-  const progress: ApiObject = isApiObject(course?.progress) ? course.progress : {};
-  const totalCourses = course ? 1 : learningCourseRows.length;
-  const completedCourses = course
-    ? apiText(progress.status, "").toLowerCase() === "completed" || apiNumber(progress.percent, 0) >= 100
-      ? 1
-      : 0
-    : learningCourseRows.filter(([, , itemProgress]) => itemProgress >= 100).length;
+  const payload: ApiObject = isApiObject(data) ? data : {};
+  const apiCourses = apiList(payload.courses);
+  const fallbackCourse = isApiObject(payload.course) ? payload.course : null;
+  const courseRecords = apiCourses.length > 0 ? apiCourses : fallbackCourse ? [fallbackCourse] : [];
+  const totalCourses = courseRecords.length;
+  const completedCourses = courseRecords.filter((course) => {
+    const progress = isApiObject(course.progress) ? course.progress : {};
+    return apiText(progress.status, "").toLowerCase() === "completed" || apiNumber(progress.percent, 0) >= 100;
+  }).length;
   const courseProgressPercent = totalCourses > 0 ? Math.round((completedCourses / totalCourses) * 100) : 0;
   const dynamicLearningPathRows: LearningPathRow[] = [
     [
@@ -1218,21 +1287,20 @@ export function LearningHomeScreen() {
     ],
     ["Giám đốc Khu vực", "Yêu cầu hoàn thành cấp độ Cố vấn Đầu tư.", 0, "lock-closed-outline", "locked"]
   ];
-  const courses: LearningCourseRow[] = course
-    ? [[
-        apiText(course.title, "Khóa học bắt buộc"),
-        apiText(course.description, "Hoàn thành lộ trình học bắt buộc."),
-        apiNumber(progress.percent, 0),
-        learningImages.requiredHero,
-        apiBoolean(course.isMandatory ?? courseRecord?.is_mandatory, false)
-      ]]
-    : learningCourseRows.map(([title, description, itemProgress, image, required]) => [
-        title,
-        description,
-        itemProgress,
-        image,
-        required
-      ]);
+  const courses: LearningCourseRow[] = courseRecords.map((course) => {
+    const progress = isApiObject(course.progress) ? course.progress : {};
+
+    return [
+      apiText(course.title, "Khóa học bắt buộc"),
+      apiText(course.description, "Hoàn thành lộ trình học bắt buộc."),
+      apiNumber(progress.percent, 0),
+      mediaUrl(course.thumbnailUrl ?? course.thumbnail_url ?? course.thumbnail)
+        ? { uri: mediaUrl(course.thumbnailUrl ?? course.thumbnail_url ?? course.thumbnail) }
+        : learningImages.requiredHero,
+      apiBoolean(course.isMandatory ?? course.is_mandatory, false),
+      apiText(course.id, "")
+    ];
+  });
   const visibleCourses = courses.filter(([, , itemProgress]) => {
     const completed = itemProgress >= 100;
     return selectedLearningTab === "completed" ? completed : !completed;
@@ -1259,7 +1327,15 @@ export function LearningHomeScreen() {
       <View style={styles.learningSection}>
         <View style={styles.learningSectionHeader}>
           <Text style={styles.learningSectionTitle}>Lộ trình phát triển</Text>
-          <Pressable onPress={() => router.push("/employee/required-learning")} style={styles.learningDetailLink}>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/employee/certificates",
+                params: { from: "profile" }
+              })
+            }
+            style={styles.learningDetailLink}
+          >
             <Text style={styles.learningDetailText}>Xem chi tiết</Text>
             <Ionicons name="arrow-forward" size={12} color={employeePalette.goldDark} />
           </Pressable>
@@ -1288,10 +1364,11 @@ export function LearningHomeScreen() {
       </View>
 
       <View style={styles.learningCourseList}>
-        {visibleCourses.length > 0 ? visibleCourses.map(([title, description, progress, image, required]) => (
+        {visibleCourses.length > 0 ? visibleCourses.map(([title, description, progress, image, required, courseId]) => (
           <LearningCourseCard
             key={title}
             description={description}
+            courseId={courseId}
             image={image}
             progress={progress}
             required={required}
@@ -1358,21 +1435,33 @@ function LearningPathCard({
 
 function LearningCourseCard({
   title,
+  courseId,
   description,
   progress,
   image,
   required
 }: {
   title: string;
+  courseId: string;
   description: string;
   progress: number;
-  image: number;
+  image: ImageSourcePropType;
   required: boolean;
 }) {
-  const target: Href = required ? "/employee/required-learning" : "/employee/lesson-detail";
+  const openCourse = () => {
+    if (!courseId) {
+      notifyError("Khóa học chưa có dữ liệu lộ trình để mở.");
+      return;
+    }
+
+    router.push({
+      pathname: "/employee/required-learning",
+      params: { courseId }
+    });
+  };
 
   return (
-    <Pressable onPress={() => router.push(target)} style={({ pressed }) => [styles.learningCourseCard, pressed && styles.pressed]}>
+    <Pressable onPress={openCourse} style={({ pressed }) => [styles.learningCourseCard, pressed && styles.pressed]}>
       <View style={styles.learningCourseImageWrap}>
         <Image source={image} style={styles.learningCourseImage} />
         {required ? (
@@ -1401,8 +1490,8 @@ export function RequiredLearningScreen({ course }: { course?: MandatoryLearningC
 
   if (!course) {
     return (
-      <EmployeePage headerTitle="Khóa học Bắt buộc" back={back} contentStyle={styles.requiredLearningContent}>
-        <Text style={styles.requiredIntro}>Chưa có dữ liệu khóa học bắt buộc.</Text>
+      <EmployeePage headerTitle="Lộ trình Học" back={back} contentStyle={styles.requiredLearningContent}>
+        <Text style={styles.requiredIntro}>Chưa có dữ liệu lộ trình học.</Text>
       </EmployeePage>
     );
   }
@@ -1434,7 +1523,7 @@ export function RequiredLearningScreen({ course }: { course?: MandatoryLearningC
   );
 
   return (
-    <EmployeePage headerTitle="Khóa học Bắt buộc" back={back} contentStyle={styles.requiredLearningContent}>
+    <EmployeePage headerTitle={course.isMandatory ? "Lộ trình Học bắt buộc" : "Lộ trình Học"} back={back} contentStyle={styles.requiredLearningContent}>
       <View style={styles.requiredHero}>
         <Image source={heroImage} onError={() => setThumbnailFailed(true)} style={styles.requiredHeroImage} />
         <View style={styles.requiredHeroOverlay} />
@@ -1489,7 +1578,7 @@ function RequiredLessonCard({ lesson }: { lesson: MandatoryLearningLesson }) {
       <Pressable
         disabled={locked}
         onPress={() =>
-          router.push({
+          router.navigate({
             pathname: "/employee/lesson-detail",
             params: { lessonId: lesson.id }
           })
@@ -1542,8 +1631,9 @@ function openQuizResultScreen(courseId: string, result: ApiObject) {
   router.push({
     pathname: "/employee/quiz-result",
     params: {
-      score: apiText(result.score, "0"),
-      total: apiText(result.total_questions, "0"),
+      score: formatScoreParam(result.score, "0"),
+      maxScore: formatScoreParam(result.max_score ?? result.maxScore, "10"),
+      totalQuestions: apiText(result.total_questions, "0"),
       correct: apiText(result.correct_count, "0"),
       courseId,
       passed: String(passed),
@@ -1650,11 +1740,14 @@ function RequiredQuizCard({ canStart, quiz }: { canStart: boolean; quiz: Mandato
 export function NewsFeedScreen() {
   const { session } = useAuth();
   const [newsRefreshKey, setNewsRefreshKey] = useState(0);
+  const newsFocusedRef = useRef(false);
+  const [newsRefreshing, setNewsRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createExpanded, setCreateExpanded] = useState(false);
   const [newPostTitle, setNewPostTitle] = useState("");
   const [newPostContent, setNewPostContent] = useState("");
   const [newPostImage, setNewPostImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [newPostAttachment, setNewPostAttachment] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editPostTitle, setEditPostTitle] = useState("");
   const [editPostContent, setEditPostContent] = useState("");
@@ -1665,11 +1758,34 @@ export function NewsFeedScreen() {
   const [updatingPost, setUpdatingPost] = useState(false);
   const { data, failed, loading } = useEmployeeApiData(() => employeeApi.internalNews(), [newsRefreshKey]);
   const apiPosts = apiList(data);
-  const posts: ApiObject[] = apiPosts.length > 0 || !failed ? apiPosts : (employeeNewsPosts as unknown as ApiObject[]);
+  const posts: ApiObject[] = apiPosts;
   const showInitialLoading = loading && apiPosts.length === 0;
   const showEmptyState = !loading && !failed && apiPosts.length === 0;
   const canCreateNews = canCreateInternalNews(session?.user);
   const currentUserAvatarUri = mediaUrl(session?.user.avatar);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!newsFocusedRef.current) {
+        newsFocusedRef.current = true;
+        return undefined;
+      }
+
+      setNewsRefreshKey((value) => value + 1);
+      return undefined;
+    }, [])
+  );
+
+  useEffect(() => {
+    if (!loading) {
+      setNewsRefreshing(false);
+    }
+  }, [loading]);
+
+  function refreshNewsManually() {
+    setNewsRefreshing(true);
+    setNewsRefreshKey((value) => value + 1);
+  }
 
   async function pickNewsImage(target: "create" | "edit" = editingPostId ? "edit" : "create") {
     if (target === "create" && !canCreateNews) {
@@ -1705,6 +1821,29 @@ export function NewsFeedScreen() {
     }
   }
 
+  async function pickNewsAttachment() {
+    if (!canCreateNews) {
+      return;
+    }
+
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: employeeDocumentMimeTypes
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    if (asset.size && asset.size > employeeDocumentMaxBytes) {
+      notifyError("Dung lượng tài liệu không được vượt quá 10MB.");
+      return;
+    }
+
+    setNewPostAttachment(asset);
+    setCreateExpanded(true);
+  }
+
   async function submitInternalNews() {
     if (!canCreateNews) {
       return;
@@ -1728,6 +1867,13 @@ export function NewsFeedScreen() {
           }
         : undefined;
       const response = await employeeApi.createInternalNews({
+        attachments: newPostAttachment
+          ? [{
+              name: newPostAttachment.name || `tai-lieu-bai-viet-${Date.now()}`,
+              type: employeeDocumentMimeType(newPostAttachment.name || "", newPostAttachment.mimeType),
+              uri: newPostAttachment.uri
+            }]
+          : undefined,
         content,
         thumbnail,
         title: title || undefined
@@ -1737,6 +1883,7 @@ export function NewsFeedScreen() {
       setNewPostTitle("");
       setNewPostContent("");
       setNewPostImage(null);
+      setNewPostAttachment(null);
       setCreateExpanded(false);
       setNewsRefreshKey((value) => value + 1);
     } catch (error) {
@@ -1852,8 +1999,8 @@ export function NewsFeedScreen() {
         refreshControl={
           <RefreshControl
             colors={[employeePalette.red]}
-            onRefresh={() => setNewsRefreshKey((value) => value + 1)}
-            refreshing={loading && apiPosts.length > 0}
+            onRefresh={refreshNewsManually}
+            refreshing={newsRefreshing && loading}
             tintColor={employeePalette.red}
           />
         }
@@ -1918,6 +2065,21 @@ export function NewsFeedScreen() {
                     </Pressable>
                   </View>
                 ) : null}
+                {newPostAttachment ? (
+                  <View style={styles.newsCreateAttachmentPreview}>
+                    <View style={styles.newsCreateAttachmentTitleRow}>
+                      <Ionicons name="document-text-outline" size={18} color={employeePalette.red} />
+                      <Text numberOfLines={1} style={styles.newsCreateAttachmentName}>{newPostAttachment.name}</Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setNewPostAttachment(null)}
+                      style={({ pressed }) => [styles.newsCreateAttachmentRemove, pressed && styles.pressed]}
+                    >
+                      <Ionicons name="close" size={16} color={employeePalette.muted} />
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
             ) : null}
             <View style={styles.newsCreateFooter}>
@@ -1933,7 +2095,7 @@ export function NewsFeedScreen() {
                 <Pressable
                   accessibilityRole="button"
                   disabled={creating}
-                  onPress={() => pickNewsImage("create")}
+                  onPress={pickNewsAttachment}
                   style={({ pressed }) => [styles.newsCreateToolButton, pressed && styles.pressed]}
                 >
                   <Ionicons name="attach-outline" size={22} color={employeePalette.red} />
@@ -1948,6 +2110,7 @@ export function NewsFeedScreen() {
                     setNewPostTitle("");
                     setNewPostContent("");
                     setNewPostImage(null);
+                    setNewPostAttachment(null);
                   }}
                   style={styles.newsCreateCancelButton}
                 >
@@ -1987,6 +2150,8 @@ export function NewsFeedScreen() {
             const likes = apiText(post.likes_count ?? post.likes, "0");
             const comments = apiText(post.comments_count ?? post.comments, "0");
             const image = apiText(post.image_url ?? post.thumbnail_url ?? post.thumbnail, "");
+            const imageUri = mediaUrl(image);
+            const attachments = apiList(post.attachments);
             const highlighted = index === 0;
             const currentUserName = apiText(session?.user.fullName, "").trim().toLowerCase();
             const authorName = author.trim().toLowerCase();
@@ -2072,7 +2237,7 @@ export function NewsFeedScreen() {
                     />
                     {editPostImage || editPostThumbnailUrl ? (
                       <View style={styles.newsCreateImagePreview}>
-                        <Image source={{ uri: editPostImage?.uri || editPostThumbnailUrl }} style={styles.newsCreateImage} />
+                        <Image source={{ uri: editPostImage?.uri || mediaUrl(editPostThumbnailUrl) }} style={styles.newsCreateImage} />
                         <Pressable
                           accessibilityRole="button"
                           onPress={() => {
@@ -2123,10 +2288,28 @@ export function NewsFeedScreen() {
                   <>
                     <Text style={highlighted ? styles.newsPostTitle : styles.newsStandardBody}>{title}</Text>
                     {content ? <ExpandableNewsPostText content={content} /> : null}
-                    {!highlighted && image ? <Image source={{ uri: image }} style={styles.newsPostImage} /> : null}
+                    {imageUri ? <Image source={{ uri: imageUri }} style={styles.newsPostImage} /> : null}
+                    {attachments.length > 0 ? (
+                      <View style={styles.newsPostAttachmentList}>
+                        {attachments.map((attachment, attachmentIndex) => (
+                          <NewsAttachmentChip
+                            key={`${id}-attachment-${attachmentIndex}`}
+                            attachment={attachment}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
                   </>
                 )}
-                <NewsPostActions initialLiked={apiBoolean(post.is_liked ?? post.liked)} postId={id} likes={likes} comments={`${comments} Bình luận`} share={!highlighted} />
+                <NewsPostActions
+                  initialLiked={apiBoolean(post.is_liked ?? post.liked)}
+                  postId={id}
+                  postSummary={content}
+                  postTitle={title}
+                  likes={likes}
+                  comments={`${comments} Bình luận`}
+                  share
+                />
                 {highlighted ? <View style={styles.newsGoldAccent} /> : null}
               </View>
             );
@@ -2170,17 +2353,50 @@ function ExpandableNewsPostText({ content }: { content: string }) {
   );
 }
 
+function NewsAttachmentChip({ attachment }: { attachment: ApiObject }) {
+  const title = apiText(attachment.name ?? attachment.title ?? attachment.file_name ?? attachment.fileName, "Tài liệu đính kèm");
+  const url = mediaUrl(attachment.url ?? attachment.file_url ?? attachment.fileUrl ?? attachment.path ?? attachment.uri);
+
+  function openAttachment() {
+    if (!url) {
+      notifyError("Tài liệu này chưa có đường dẫn để mở.");
+      return;
+    }
+
+    router.push({
+      pathname: "/employee/document-viewer",
+      params: { title, url }
+    });
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={openAttachment}
+      style={({ pressed }) => [styles.newsPostAttachmentChip, pressed && styles.pressed]}
+    >
+      <Ionicons name="document-text-outline" size={17} color={employeePalette.red} />
+      <Text numberOfLines={1} style={styles.newsPostAttachmentText}>{title}</Text>
+      <Ionicons name="open-outline" size={15} color={employeePalette.muted} />
+    </Pressable>
+  );
+}
+
 function NewsPostActions({
   comments,
   initialLiked,
   likes,
   postId,
+  postSummary,
+  postTitle,
   share
 }: {
   comments: string;
   initialLiked?: boolean;
   likes: string;
   postId?: string;
+  postSummary?: string;
+  postTitle?: string;
   share?: boolean;
 }) {
   const [liked, setLiked] = useState(Boolean(initialLiked));
@@ -2216,20 +2432,43 @@ function NewsPostActions({
     }
   }
 
+  async function sharePost() {
+    const title = apiText(postTitle, "Tin tức nội bộ");
+    const summary = apiText(postSummary, "");
+    const message = summary ? `${title}\n\n${summary}` : title;
+
+    try {
+      await Share.share({ message, title });
+    } catch (error) {
+      appLogger.warn("employee.news.share", "Không thể chia sẻ bài viết nội bộ.", { postId, error });
+      notifyError(error, "Không thể chia sẻ bài viết.");
+    }
+  }
+
   return (
     <View style={styles.newsPostActions}>
       <Pressable disabled={liking} onPress={toggleLike} style={({ pressed }) => [styles.newsPostAction, (pressed || liking) && styles.pressed]}>
         <Ionicons name={liked ? "thumbs-up" : "thumbs-up-outline"} size={20} color={liked ? employeePalette.red : employeePalette.muted} />
         <Text style={styles.newsPostActionText}>{likesCount}</Text>
       </Pressable>
-      <Pressable onPress={() => router.push("/employee/comments")} style={styles.newsPostAction}>
+      <Pressable
+        onPress={() => {
+          if (!postId) return;
+          router.push({ pathname: "/employee/comments", params: { postId, title: postTitle ?? "" } });
+        }}
+        style={styles.newsPostAction}
+      >
         <Ionicons name="chatbox-outline" size={20} color={employeePalette.muted} />
         <Text style={styles.newsPostActionText}>{comments}</Text>
       </Pressable>
       {share ? (
-        <View style={styles.newsPostActionShare}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={sharePost}
+          style={({ pressed }) => [styles.newsPostActionShare, pressed && styles.pressed]}
+        >
           <Ionicons name="share-social-outline" size={20} color={employeePalette.muted} />
-        </View>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -2239,19 +2478,35 @@ export function ProfileOverviewScreen() {
   const qrCopy = useCopy().qr;
   const { session, signOut } = useAuth();
   const { data: profileData } = useEmployeeApiData(() => employeeApi.employeeProfile(), []);
+  const { data: rewardOverviewData } = useEmployeeApiData(() => employeeApi.rewardPointOverview(), []);
   const { data: customerQrData } = useEmployeeApiData(() => employeeApi.customerReferralQr(), []);
   const { data: recruitmentQrData } = useEmployeeApiData(() => employeeApi.recruitmentReferralQr(), []);
+  const { data: learningCertificateData } = useEmployeeApiData(loadLearningCertificateData, []);
   const [activeProfileQr, setActiveProfileQr] = useState<"recruitment" | "customer">("customer");
   const profile = isApiObject(profileData) ? profileData : {};
+  const rewardOverview = isApiObject(rewardOverviewData) ? rewardOverviewData : {};
   const user = session?.user;
   const isManager = isManagerAccessRole(user?.role);
   const canApproveDepartmentTransfers = isDepartmentTransferApproverRole(user?.role);
-  const fullName = apiText(profile.full_name ?? profile.name ?? user?.fullName, "Nguyen Van Huy");
-  const jobTitle = apiText(profile.job_position ?? profile.position ?? user?.jobPosition, isManager ? "Trưởng phòng" : "Tư vấn viên Cao cấp");
+  const fullName = apiText(profile.full_name ?? profile.name ?? user?.fullName, "Chưa cập nhật tên");
+  const jobTitle = apiText(profile.job_position ?? profile.position ?? user?.jobPosition, "Chưa cập nhật chức danh");
+  const profileRankValue = rewardOverview.rank ?? rewardOverview.rank_label ?? rewardOverview.tier ?? profile.rank ?? profile.rank_label ?? profile.tier;
+  const profileRankName = rewardRankName(profileRankValue);
+  const profileRankText = normalizeRewardRank(profileRankValue);
+  const profileRewardPoints = apiText(
+    rewardOverview.total_points ?? rewardOverview.reward_points ?? rewardOverview.points ?? profile.reward_points ?? profile.total_points,
+    "0"
+  );
+  const profileRankSummary = `${profileRankName === "Chưa xếp hạng" ? profileRankName : `Hạng ${profileRankName}`} hiện tại với ${profileRewardPoints} điểm tích lũy.`;
   const customerQr = referralQrValue(customerQrData);
   const recruitmentQr = referralQrValue(recruitmentQrData);
   const activeProfileQrData = activeProfileQr === "customer" ? customerQrData : recruitmentQrData;
   const activeProfileQrValue = activeProfileQr === "customer" ? customerQr : recruitmentQr;
+  const profileCertificates = learningCertificateData?.certificates ?? [];
+  const profileQuizRows = learningCertificateData?.quizRows ?? [];
+  const profileUser = isApiObject(profile.user) ? profile.user : {};
+  const profileAvatarUri = mediaUrl(user?.avatar ?? profileUser.avatar ?? profile.avatar);
+  const profileInitial = avatarInitial(user?.fullName ?? profileUser.name ?? profile.name);
 
   async function shareProfileQr() {
     try {
@@ -2276,20 +2531,25 @@ export function ProfileOverviewScreen() {
           onPress={() => router.push({ pathname: "/employee/personal-info", params: { from: "profile" } })}
           style={({ pressed }) => [styles.profileHeroAvatarButton, pressed && styles.pressed]}
         >
-          <Image source={profileImages.headshot} style={styles.profileHeroAvatar} />
+          {profileAvatarUri ? (
+            <Image source={{ uri: profileAvatarUri }} style={styles.profileHeroAvatar} />
+          ) : (
+            <View style={styles.profileHeroAvatarFallback}>
+              <Text style={styles.profileHeroAvatarInitial}>{profileInitial}</Text>
+            </View>
+          )}
         </Pressable>
         <Image source={profileImages.verifiedBadge} style={styles.profileVerifyBadgeImage} />
         <Text style={styles.profileHeroName}>{fullName}</Text>
         <Text style={styles.profileHeroRole}>{jobTitle}</Text>
         <View style={styles.profileRankPill}>
           <ProfileRankIcon />
-          <Text style={styles.profileRankPillText}>HẠNG VÀNG</Text>
+          <Text style={styles.profileRankPillText}>{profileRankText}</Text>
         </View>
       </View>
 
       <Text style={styles.profileSectionTitle}>Xếp hạng</Text>
-      <ProfileRankingCard tone="green" label="Nội bộ phòng ban" rank="#3" suffix="/ 45 nhân viên" icon="trophy" progress={0.84} />
-      <ProfileRankingCard tone="red" label="Xếp hạng phòng ban" rank="#1" suffix="/ 20 phòng ban" icon="trophy" progress={0.84} />
+      <Text style={styles.bodyText}>{profileRankSummary}</Text>
       {showProfileRewardHistoryShortcut ? <ProfileRewardHistoryButton /> : null}
 
       <View style={styles.profileSectionHeader}>
@@ -2303,15 +2563,28 @@ export function ProfileOverviewScreen() {
           <Text style={styles.profileSeeAll}>Xem tất cả</Text>
         </Pressable>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.profileCertList}>
-        <ProfileCertificateCard title="Chuyên gia BĐS Hạng sang" date="T10/2023" />
-        <ProfileCertificateCard title="Đàm phán BĐS Cao cấp" date="T7/2023" compact />
-      </ScrollView>
+      {profileCertificates.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.profileCertList}>
+          {profileCertificates.map((certificate, index) => (
+            <ProfileCertificateCard
+              key={certificate.id}
+              compact={index > 0}
+              date={certificate.issuedAt}
+              title={certificate.title}
+            />
+          ))}
+        </ScrollView>
+      ) : (
+        <Text style={styles.bodyText}>Chưa có chứng chỉ hoàn thành khóa học.</Text>
+      )}
 
       <Text style={styles.profileSectionTitle}>Điểm thi trắc nghiệm</Text>
       <View style={styles.profileScoreList}>
-        <ProfileScoreRow title="Khung pháp lý 2024" badge="XUẤT SẮC" date="12 thg 11" score="95" tone="red" />
-        <ProfileScoreRow title="Phân tích Thị trường Q4" badge="ĐẠT" date="28 thg 10" score="82" tone="gold" />
+        {profileQuizRows.length > 0 ? (
+          profileQuizRows.map((row) => <ProfileScoreRow key={row.title} {...row} />)
+        ) : (
+          <Text style={styles.bodyText}>Chưa có điểm bài kiểm tra.</Text>
+        )}
       </View>
 
       {isManager ? <ProfileManagerActions canApproveDepartmentTransfers={canApproveDepartmentTransfers} /> : <ProfileEmployeeActions />}
@@ -2358,7 +2631,7 @@ function ProfileEmployeeActions() {
         style={({ pressed }) => [styles.profileTransferButton, pressed && styles.pressed]}
       >
         <Ionicons name="send" size={17} color="#ffffff" />
-        <Text style={styles.profileTransferButtonText}>Xin phép chuyển phòng</Text>
+        <Text style={styles.profileTransferButtonText}>Xin phép chuyển phòng ban</Text>
       </Pressable>
     </View>
   );
@@ -2379,7 +2652,7 @@ function ProfileManagerActions({ canApproveDepartmentTransfers }: { canApproveDe
       >
         <Ionicons name={canApproveDepartmentTransfers ? "swap-horizontal" : "send"} size={17} color="#ffffff" />
         <Text style={styles.profileTransferButtonText}>
-          {canApproveDepartmentTransfers ? "Duyệt đơn xin chuyển phòng" : "Xin phép chuyển phòng"}
+          {canApproveDepartmentTransfers ? "Duyệt đơn xin chuyển phòng ban" : "Xin phép chuyển phòng ban"}
         </Text>
       </Pressable>
       <Pressable
@@ -2491,7 +2764,7 @@ function ProfileScoreRow({
       <View style={styles.profileScoreDivider} />
       <View style={styles.profileScoreValueRow}>
         <Text style={[styles.profileScoreValue, isRed && styles.profileScoreValueRed]}>{score}</Text>
-        <Text style={styles.profileScoreMax}>/100</Text>
+        <Text style={styles.profileScoreMax}>/10</Text>
       </View>
     </View>
   );
@@ -2522,7 +2795,7 @@ export function ManagerProfileScreen() {
       />
       <EmployeeListRow
         icon="swap-horizontal-outline"
-        title="Duyệt chuyển phòng"
+        title="Duyệt chuyển phòng ban"
         description="2 yêu cầu cần xem xét"
         onPress={() => router.push({ pathname: "/employee/transfer-requests", params: { from: "profile" } })}
       />
@@ -3342,49 +3615,41 @@ export function PointHistoryScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
   const { data: overviewData } = useEmployeeApiData(() => employeeApi.rewardPointOverview(), []);
-  const { data: historyData } = useEmployeeApiData(() => employeeApi.rewardPointHistory(), []);
+  const { data: historyData, failed: historyFailed } = useEmployeeApiData(() => employeeApi.rewardPointHistory(), []);
   const overview = isApiObject(overviewData) ? overviewData : {};
   const history = apiList(historyData);
-  const totalPoints = apiText(overview.total_points ?? overview.points ?? overview.balance, "1,248");
-  const rankLabel = normalizeRewardRank(overview.rank_label ?? overview.rank ?? overview.tier);
+  const totalPoints = apiText(overview.total_points ?? overview.points ?? overview.balance, "0");
+  const rankLabel = normalizeRewardRank(overview.rank ?? overview.rank_label ?? overview.tier);
   const monthPoints = formatSignedPoints(
-    overview.month_points ?? overview.monthly_points ?? overview.this_month_points,
-    "+125"
+    overview.current_month_points ?? overview.month_points ?? overview.monthly_points ?? overview.this_month_points,
+    "0"
   );
   const monthGrowth = formatPercentChange(
     overview.month_growth_percent ?? overview.growth_percent ?? overview.month_change_percent,
-    "+12%"
+    "0%"
   );
   const quarterCurrent = apiNumber(
     overview.quarter_points ?? overview.current_quarter_points ?? overview.quarter_current,
-    650
+    0
   );
   const quarterTarget = apiNumber(
     overview.quarter_target_points ?? overview.quarter_target ?? overview.target_points,
-    1000
+    0
   );
   const quarterProgressValue = apiNumber(
     overview.quarter_progress ?? overview.quarter_progress_percent ?? overview.progress,
-    quarterTarget > 0 ? quarterCurrent / quarterTarget : 0.65
+    quarterTarget > 0 ? quarterCurrent / quarterTarget : 0
   );
   const quarterProgress = Math.min(
     1,
     Math.max(0, quarterProgressValue > 1 ? quarterProgressValue / 100 : quarterProgressValue)
   );
-  const rows = history.length > 0
-    ? history.map((item) => ({
-        title: apiText(item.reason ?? item.title ?? item.description, "Hoạt động tích điểm"),
-        points: formatSignedPoints(item.points ?? item.point, "+0"),
-        time: formatApiDateTime(item.created_at ?? item.time ?? item.date),
-        dimmed: Boolean(item.disabled ?? item.is_inactive)
-      }))
-    : [
-        { title: "Bán thành công lô A10", points: "+10", time: "14:30 - 25/10/2023", dimmed: false },
-        { title: "Giới thiệu nhân viên mới", points: "+1", time: "09:15 - 22/10/2023", dimmed: false },
-        { title: "Thưởng chuyên cần tháng", points: "+5", time: "17:00 - 01/10/2023", dimmed: false },
-        { title: "Giao dịch thành công Condotel B2", points: "+15", time: "11:20 - 28/09/2023", dimmed: false },
-        { title: "Đào tạo kỹ năng chốt deal", points: "+2", time: "14:00 - 15/09/2023", dimmed: true }
-      ];
+  const rows = history.map((item) => ({
+    title: apiText(item.reason ?? item.title ?? item.description, "Hoạt động tích điểm"),
+    points: formatSignedPoints(item.points_changed ?? item.pointsChanged ?? item.points ?? item.point, "0"),
+    time: formatApiDateTime(item.created_at ?? item.createdAt ?? item.time ?? item.date),
+    dimmed: Boolean(item.disabled ?? item.is_inactive)
+  }));
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.pointHistorySafe}>
@@ -3434,18 +3699,29 @@ export function PointHistoryScreen() {
 
         <Text style={styles.pointHistorySectionTitle}>Lịch sử điểm</Text>
         <View style={styles.pointHistoryList}>
-          {rows.map((item) => (
-            <View key={`${item.title}-${item.time}`} style={[styles.pointHistoryItem, item.dimmed && styles.pointHistoryItemDimmed]}>
-              <View style={styles.flex}>
-                <Text style={styles.pointHistoryItemTitle}>{item.title}</Text>
-                <Text style={styles.pointHistoryItemTime}>{item.time}</Text>
+          {rows.length > 0 ? (
+            rows.map((item) => (
+              <View key={`${item.title}-${item.time}`} style={[styles.pointHistoryItem, item.dimmed && styles.pointHistoryItemDimmed]}>
+                <View style={styles.flex}>
+                  <Text style={styles.pointHistoryItemTitle}>{item.title}</Text>
+                  <Text style={styles.pointHistoryItemTime}>{item.time}</Text>
+                </View>
+                <View style={styles.pointHistoryPoints}>
+                  <Text style={styles.pointHistoryPointsValue}>{item.points}</Text>
+                  <Text style={styles.pointHistoryPointsUnit}>PTS</Text>
+                </View>
               </View>
-              <View style={styles.pointHistoryPoints}>
-                <Text style={styles.pointHistoryPointsValue}>{item.points}</Text>
-                <Text style={styles.pointHistoryPointsUnit}>PTS</Text>
-              </View>
+            ))
+          ) : (
+            <View style={styles.pointHistoryEmpty}>
+              <Text style={styles.pointHistoryEmptyTitle}>
+                {historyFailed ? "Không thể tải lịch sử điểm." : "Chưa có dữ liệu điểm thưởng."}
+              </Text>
+              <Text style={styles.pointHistoryEmptyText}>
+                {historyFailed ? "Vui lòng thử lại sau." : "Khi có giao dịch hoặc hoạt động được ghi nhận, lịch sử điểm sẽ xuất hiện tại đây."}
+              </Text>
             </View>
-          ))}
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -3458,6 +3734,7 @@ type PersonalProfileForm = {
   bank_account_name: string;
   bank_account_number: string;
   bank_name: string;
+  cccd: string;
   dob: string;
   education: string;
   email: string;
@@ -3476,12 +3753,137 @@ type MeetClientRecentItem = {
   time: string;
 };
 
+function documentFileExtension(title: string, url?: string) {
+  const source = (url || title).split("?")[0]?.split("#")[0] || title;
+  return source.split(".").pop()?.trim().toLowerCase() || "";
+}
+
+function isImageDocument(extension: string) {
+  return ["jpg", "jpeg", "png", "gif", "webp"].includes(extension);
+}
+
+function safeEmployeeDocumentFileName(title: string, url?: string) {
+  const urlPath = url?.split("?")[0]?.split("#")[0] ?? "";
+  const urlName = urlPath.split("/").pop() || "";
+  let decodedUrlName = urlName;
+
+  try {
+    decodedUrlName = decodeURIComponent(urlName);
+  } catch {
+    decodedUrlName = urlName;
+  }
+
+  const rawName = title.includes(".") ? title : decodedUrlName || title;
+  const cleaned = rawName
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+  const extension = documentFileExtension(cleaned, url);
+
+  if (!cleaned) return `tai-lieu-${Date.now()}`;
+  if (cleaned.includes(".") || !extension) return cleaned;
+  return `${cleaned}.${extension}`;
+}
+
+function uniqueEmployeeDocumentFileName(fileName: string) {
+  const dotIndex = fileName.lastIndexOf(".");
+  const suffix = `${Date.now()}-${Math.round(Math.random() * 10000)}`;
+
+  if (dotIndex <= 0) {
+    return `${fileName}-${suffix}`;
+  }
+
+  return `${fileName.slice(0, dotIndex)}-${suffix}${fileName.slice(dotIndex)}`;
+}
+
+function deleteExistingFile(file: FileSystem.File) {
+  const writableFile = file as unknown as { exists?: boolean; delete?: () => void };
+
+  try {
+    if (writableFile.exists && writableFile.delete) {
+      writableFile.delete();
+    }
+  } catch {
+    // Nếu file không tồn tại hoặc hệ điều hành không cho xóa, cứ để download báo lỗi chi tiết.
+  }
+}
+
+async function employeeDocumentDownloadHeaders() {
+  const raw = await AsyncStorage.getItem(STORAGE_KEYS.auth);
+  if (!raw) return undefined;
+
+  try {
+    const session = JSON.parse(raw) as AuthSession;
+    return session.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function downloadEmployeeDocumentFile(
+  url: string,
+  title: string,
+  destination: "cache" | "document",
+  options: { unique?: boolean } = {}
+) {
+  const baseFileName = safeEmployeeDocumentFileName(title, url);
+  const fileName = options.unique ? uniqueEmployeeDocumentFileName(baseFileName) : baseFileName;
+  const directory = destination === "document" ? FileSystem.Paths.document : FileSystem.Paths.cache;
+  const target = new FileSystem.File(directory, fileName);
+  const headers = await employeeDocumentDownloadHeaders();
+
+  deleteExistingFile(target);
+
+  return FileSystem.File.downloadFileAsync(url, target, {
+    headers,
+    idempotent: true
+  });
+}
+
+async function saveEmployeeDocumentToDevice(url: string, title: string) {
+  const fileName = safeEmployeeDocumentFileName(title, url);
+  const file = await downloadEmployeeDocumentFile(url, title, "cache", { unique: true });
+
+  await Share.share({
+    title: fileName,
+    url: file.uri,
+    message: fileName
+  });
+
+  return fileName;
+}
+
+const employeeDocumentMaxBytes = 10 * 1024 * 1024;
+const employeeAvatarMaxBytes = 5 * 1024 * 1024;
+const employeeDocumentMimeTypes = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png"
+];
+
+function employeeDocumentMimeType(fileName: string, mimeType?: string | null) {
+  if (mimeType) return mimeType;
+
+  const extension = fileName.split(".").pop()?.toLowerCase();
+  if (extension === "pdf") return "application/pdf";
+  if (extension === "doc") return "application/msword";
+  if (extension === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "png") return "image/png";
+
+  return "application/octet-stream";
+}
+
 const emptyPersonalProfileForm: PersonalProfileForm = {
   address: "",
   avatar: "",
   bank_account_name: "",
   bank_account_number: "",
   bank_name: "",
+  cccd: "",
   dob: "",
   education: "",
   email: "",
@@ -3560,6 +3962,7 @@ function personalFormFromProfile(profile: ApiObject, user: AuthUser | undefined)
     bank_account_name: profileValue(bank.bank_account_name),
     bank_account_number: profileValue(bank.bank_account_number),
     bank_name: profileValue(bank.bank_name),
+    cccd: profileValue(profileUser.cccd ?? details.identity_card ?? user?.cccd),
     dob: normalizePersonalDate(details.dob),
     education: profileValue(education.education),
     email: profileValue(profileUser.email ?? user?.email),
@@ -3571,14 +3974,117 @@ function personalFormFromProfile(profile: ApiObject, user: AuthUser | undefined)
   };
 }
 
-function personalIdentityCard(profile: ApiObject) {
-  const details = isApiObject(profile.employee_details) ? profile.employee_details : {};
-  return profileValue(details.identity_card);
-}
-
 function personalAttachments(profile: ApiObject): ApiObject[] {
   const attachments = isApiObject(profile.attachments) ? profile.attachments : {};
   return apiList(attachments.list);
+}
+
+export function DocumentViewerScreen() {
+  const params = useLocalSearchParams<{ title?: string; url?: string }>();
+  const rawTitle = Array.isArray(params.title) ? params.title[0] : params.title;
+  const rawUrl = Array.isArray(params.url) ? params.url[0] : params.url;
+  const title = apiText(rawTitle, "Tài liệu");
+  const documentUrl = mediaUrl(rawUrl);
+  const extension = documentFileExtension(title, documentUrl);
+  const imageDocument = isImageDocument(extension);
+  const [localDocumentUri, setLocalDocumentUri] = useState("");
+  const [viewerLoading, setViewerLoading] = useState(Boolean(documentUrl));
+  const [viewerFailed, setViewerFailed] = useState(false);
+  const [downloadingDocument, setDownloadingDocument] = useState(false);
+
+  useEffect(() => {
+    if (!documentUrl) {
+      setLocalDocumentUri("");
+      setViewerLoading(false);
+      setViewerFailed(false);
+      return undefined;
+    }
+
+    let mounted = true;
+    setViewerLoading(true);
+    setViewerFailed(false);
+    setLocalDocumentUri("");
+
+    downloadEmployeeDocumentFile(documentUrl, title, "cache", { unique: true })
+      .then((file) => {
+        if (mounted) {
+          setLocalDocumentUri(file.uri);
+        }
+      })
+      .catch((error) => {
+        if (mounted) {
+          setViewerFailed(true);
+          appLogger.warn("employee.profile.document.preview", "Không thể tải tài liệu để xem trong ứng dụng.", { title, url: documentUrl, error });
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setViewerLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [documentUrl, title]);
+
+  async function downloadDocument() {
+    if (!documentUrl) {
+      notifyError("Tài liệu này chưa có đường dẫn để tải về.");
+      return;
+    }
+
+    setDownloadingDocument(true);
+    try {
+      const fileName = await saveEmployeeDocumentToDevice(documentUrl, title);
+      notifySuccess({ message: `Đã chuẩn bị tài liệu: ${fileName}. Chọn "Lưu vào Tệp" để lưu về máy.` });
+    } catch (error) {
+      appLogger.warn("employee.profile.document.download", "Không thể tải tài liệu nhân sự.", { title, url: documentUrl, error });
+      notifyError(error, "Không thể tải tài liệu này.");
+    } finally {
+      setDownloadingDocument(false);
+    }
+  }
+
+  return (
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.documentViewerSafe}>
+      <View style={styles.documentViewerHeader}>
+        <Pressable accessibilityRole="button" onPress={() => back()} style={styles.documentViewerHeaderButton}>
+          <Ionicons name="arrow-back" size={22} color={employeePalette.text} />
+        </Pressable>
+        <Text numberOfLines={1} style={styles.documentViewerTitle}>{title}</Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={!documentUrl || downloadingDocument}
+          onPress={downloadDocument}
+          style={({ pressed }) => [styles.documentViewerHeaderButton, pressed && styles.pressed]}
+        >
+          <Ionicons name={downloadingDocument ? "hourglass-outline" : "download-outline"} size={21} color={documentUrl ? employeePalette.text : "#b8aaa8"} />
+        </Pressable>
+      </View>
+
+      <View style={styles.documentViewerBody}>
+        {!documentUrl ? (
+          <Text style={styles.documentViewerMessage}>Tài liệu này chưa có đường dẫn để mở.</Text>
+        ) : viewerLoading ? (
+          <Text style={styles.documentViewerMessage}>Đang tải tài liệu...</Text>
+        ) : viewerFailed || !localDocumentUri ? (
+          <Text style={styles.documentViewerMessage}>Không thể tải tài liệu để xem. Vui lòng kiểm tra quyền truy cập hoặc cấu hình storage.</Text>
+        ) : imageDocument ? (
+          <Image source={{ uri: localDocumentUri }} style={styles.documentViewerImage} resizeMode="contain" />
+        ) : (
+          <WebView
+            originWhitelist={["*"]}
+            source={{ uri: localDocumentUri }}
+            style={styles.documentViewerWebView}
+            javaScriptEnabled
+            domStorageEnabled
+            startInLoadingState
+          />
+        )}
+      </View>
+    </SafeAreaView>
+  );
 }
 
 function meetClientStatusText(value: unknown) {
@@ -3732,28 +4238,75 @@ function mapMeetClientRecent(item: ApiObject, index: number): MeetClientRecentIt
 export function PersonalInfoScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
-  const { session } = useAuth();
+  const { refreshMe, session } = useAuth();
   const { data: profileData, failed, loading } = useEmployeeApiData(() => employeeApi.employeeProfile(), []);
   const [form, setForm] = useState<PersonalProfileForm>(emptyPersonalProfileForm);
-  const [identityCard, setIdentityCard] = useState("");
   const [attachments, setAttachments] = useState<ApiObject[]>([]);
   const [dobPickerVisible, setDobPickerVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploading, setUploading] = useState(false);
   const user = session?.user;
   const fullName = form.name || user?.fullName || "Nhân viên";
   const jobTitle = (form.employee_title || user?.jobPosition || "Nhân viên").toUpperCase();
+  const avatarUri = mediaUrl(form.avatar || user?.avatar);
+  const personalInitial = avatarInitial(fullName);
 
   useEffect(() => {
     if (!isApiObject(profileData)) return;
 
     setForm(personalFormFromProfile(profileData, user));
-    setIdentityCard(personalIdentityCard(profileData));
     setAttachments(personalAttachments(profileData));
   }, [profileData, user]);
 
   function updateForm(key: keyof PersonalProfileForm, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function uploadAvatar() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      notifyError("Vui lòng cấp quyền truy cập thư viện ảnh để cập nhật ảnh đại diện.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.85
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    if (asset.fileSize && asset.fileSize > employeeAvatarMaxBytes) {
+      notifyError("Dung lượng ảnh đại diện không được vượt quá 5MB.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("avatar", {
+      name: asset.fileName || `avatar-${Date.now()}.jpg`,
+      type: asset.mimeType || "image/jpeg",
+      uri: asset.uri
+    } as unknown as Blob);
+
+    setUploadingAvatar(true);
+    try {
+      const response = await employeeApi.uploadEmployeeAvatar(formData);
+      const data = isApiObject(response.data) ? response.data : {};
+      const nextAvatar = apiText(data.avatar, "");
+
+      if (nextAvatar) {
+        setForm((current) => ({ ...current, avatar: nextAvatar }));
+      }
+
+      await refreshMe();
+      notifySuccess({ message: response.message || "Cập nhật ảnh đại diện thành công." });
+    } catch (error) {
+      notifyError(error, "Không thể cập nhật ảnh đại diện.");
+    } finally {
+      setUploadingAvatar(false);
+    }
   }
 
   async function saveProfile() {
@@ -3765,6 +4318,7 @@ export function PersonalInfoScreen() {
         bank_account_name: form.bank_account_name || null,
         bank_account_number: form.bank_account_number || null,
         bank_name: form.bank_name || null,
+        cccd: form.cccd || null,
         dob: form.dob || null,
         education: form.education || null,
         email: form.email,
@@ -3778,7 +4332,6 @@ export function PersonalInfoScreen() {
 
       if (updatedProfile) {
         setForm(personalFormFromProfile(updatedProfile, user));
-        setIdentityCard(personalIdentityCard(updatedProfile));
         setAttachments(personalAttachments(updatedProfile));
       }
 
@@ -3791,25 +4344,26 @@ export function PersonalInfoScreen() {
   }
 
   async function uploadDocument() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      notifyError("Vui lòng cấp quyền truy cập thư viện ảnh để tải tài liệu.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.9
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: employeeDocumentMimeTypes
     });
 
     if (result.canceled || !result.assets[0]) return;
 
     const asset = result.assets[0];
+    if (asset.size && asset.size > employeeDocumentMaxBytes) {
+      notifyError("Dung lượng tài liệu không được vượt quá 10MB.");
+      return;
+    }
+
+    const fileName = asset.name || `employee-document-${Date.now()}`;
     const formData = new FormData();
     formData.append("type", "Tài liệu khác");
     formData.append("file", {
-      name: asset.fileName || `employee-document-${Date.now()}.jpg`,
-      type: asset.mimeType || "image/jpeg",
+      name: fileName,
+      type: employeeDocumentMimeType(fileName, asset.mimeType),
       uri: asset.uri
     } as unknown as Blob);
 
@@ -3838,12 +4392,25 @@ export function PersonalInfoScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.personalScroll} style={styles.personalRoot}>
         <View style={styles.personalIdentity}>
-          <View style={styles.personalAvatarWrap}>
-            <Image source={profileImages.personalAvatar} style={styles.personalAvatarImage} />
-            <View style={styles.personalEditAvatar}>
-              <Ionicons name="pencil" size={11} color="#ffffff" />
+          <Pressable
+            accessibilityRole="button"
+            disabled={uploadingAvatar}
+            onPress={uploadAvatar}
+            style={({ pressed }) => [styles.personalAvatarWrap, pressed && styles.pressed]}
+          >
+            <View style={styles.personalAvatarFrame}>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.personalAvatarImage} />
+              ) : (
+                <View style={styles.personalAvatarFallback}>
+                  <Text style={styles.personalAvatarInitial}>{personalInitial}</Text>
+                </View>
+              )}
             </View>
-          </View>
+            <View style={styles.personalEditAvatar}>
+              {uploadingAvatar ? <Ionicons name="hourglass-outline" size={11} color="#ffffff" /> : <AvatarEditPencilIcon />}
+            </View>
+          </Pressable>
           <Text style={styles.personalName}>{fullName}</Text>
           <Text style={styles.personalRole}>{jobTitle}</Text>
           <View style={styles.personalAwardPill}>
@@ -3855,7 +4422,13 @@ export function PersonalInfoScreen() {
           {loading ? <Text style={styles.personalStatusText}>Đang tải hồ sơ nhân viên...</Text> : null}
           {failed ? <Text style={styles.personalStatusText}>Không thể tải hồ sơ, vui lòng thử lại sau.</Text> : null}
           <PersonalSection title="Thông tin cá nhân" icon="id-card-outline">
-            <PersonalField editable={false} label="SỐ CCCD" value={identityCard || "Chưa cập nhật"} />
+            <PersonalField
+              keyboardType="number-pad"
+              label="SỐ CCCD"
+              maxLength={20}
+              value={form.cccd}
+              onChangeText={(value) => updateForm("cccd", value.replace(/\D/g, "").slice(0, 20))}
+            />
             <PersonalField label="HỌ VÀ TÊN" value={form.name} onChangeText={(value) => updateForm("name", value)} />
             <PersonalDateField label="NGÀY SINH" value={form.dob} onPress={() => setDobPickerVisible(true)} />
             <PersonalField label="ĐỊA CHỈ THƯỜNG TRÚ" value={form.address} multiline onChangeText={(value) => updateForm("address", value)} />
@@ -3879,6 +4452,7 @@ export function PersonalInfoScreen() {
                 key={`${apiText(item.name ?? item.url, "document")}-${index}`}
                 title={apiText(item.name, "Tài liệu nhân sự")}
                 icon="document-text-outline"
+                url={apiText(item.url ?? item.file_url ?? item.fileUrl ?? item.path ?? item.uri, "")}
               />
             )) : (
               <Text style={styles.personalStatusText}>Chưa có tài liệu đính kèm.</Text>
@@ -3934,6 +4508,7 @@ function PersonalField({
   editable = true,
   keyboardType,
   label,
+  maxLength,
   multiline,
   onChangeText,
   placeholder,
@@ -3942,6 +4517,7 @@ function PersonalField({
   editable?: boolean;
   keyboardType?: ComponentProps<typeof TextInput>["keyboardType"];
   label: string;
+  maxLength?: number;
   multiline?: boolean;
   onChangeText?: (value: string) => void;
   placeholder?: string;
@@ -3954,6 +4530,7 @@ function PersonalField({
         <TextInput
           editable={editable}
           keyboardType={keyboardType}
+          maxLength={maxLength}
           multiline={multiline}
           onChangeText={onChangeText}
           placeholder={placeholder || "Chưa cập nhật"}
@@ -4206,11 +4783,46 @@ function PersonalExperienceRow({
 
 function PersonalDocument({
   icon,
-  title
+  title,
+  url
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
+  url?: string;
 }) {
+  const documentUrl = mediaUrl(url);
+  const [downloading, setDownloading] = useState(false);
+
+  function viewDocument() {
+    if (!documentUrl) {
+      notifyError("Tài liệu này chưa có đường dẫn để mở.");
+      return;
+    }
+
+    router.push({
+      pathname: "/employee/document-viewer",
+      params: { title, url: documentUrl }
+    });
+  }
+
+  async function downloadDocument() {
+    if (!documentUrl) {
+      notifyError("Tài liệu này chưa có đường dẫn để tải về.");
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const fileName = await saveEmployeeDocumentToDevice(documentUrl, title);
+      notifySuccess({ message: `Đã chuẩn bị tài liệu: ${fileName}. Chọn "Lưu vào Tệp" để lưu về máy.` });
+    } catch (error) {
+      appLogger.warn("employee.profile.document.download", "Không thể tải tài liệu nhân sự.", { title, url: documentUrl, error });
+      notifyError(error, "Không thể tải tài liệu này.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <View style={styles.personalDocRow}>
       <View style={styles.personalDocTitleRow}>
@@ -4218,8 +4830,24 @@ function PersonalDocument({
         <Text numberOfLines={2} style={styles.personalDocTitle}>{title}</Text>
       </View>
       <View style={styles.personalDocActions}>
-        <Ionicons name="eye-outline" size={18} color="#5b403c" />
-        <Ionicons name="download-outline" size={17} color="#5b403c" />
+        <Pressable
+          accessibilityLabel={`Xem tài liệu ${title}`}
+          accessibilityRole="button"
+          disabled={!documentUrl}
+          onPress={viewDocument}
+          style={({ pressed }) => [styles.personalDocActionButton, pressed && styles.pressed]}
+        >
+          <Ionicons name="eye-outline" size={18} color={documentUrl ? "#5b403c" : "#b8aaa8"} />
+        </Pressable>
+        <Pressable
+          accessibilityLabel={`Tải tài liệu ${title}`}
+          accessibilityRole="button"
+          disabled={!documentUrl || downloading}
+          onPress={downloadDocument}
+          style={({ pressed }) => [styles.personalDocActionButton, pressed && styles.pressed]}
+        >
+          <Ionicons name={downloading ? "hourglass-outline" : "download-outline"} size={17} color={documentUrl ? "#5b403c" : "#b8aaa8"} />
+        </Pressable>
       </View>
     </View>
   );
@@ -4312,9 +4940,15 @@ function referralQrValue(data: unknown) {
       data.qrImage ??
       data.image_url ??
       data.imageUrl ??
-      data.url ??
+      data.qr_value ??
+      data.qrValue ??
+      data.qr_data ??
+      data.qrData ??
       data.share_url ??
       data.shareUrl ??
+      data.url ??
+      data.referral_code ??
+      data.referralCode ??
       data.code,
     ""
   );
@@ -4342,7 +4976,7 @@ function referralQrShareText(data: unknown, fallback: string) {
 }
 
 function isRemoteImage(value: string) {
-  return /^https?:\/\//i.test(value);
+  return /^(data:image\/|https?:\/\/.*\.(?:png|jpe?g|webp|gif|svg)(?:$|[?#]))/i.test(value);
 }
 
 function isRemoteSvg(value: string) {
@@ -4372,6 +5006,8 @@ function ReferralQrPanel({
           <SvgUri height={160} uri={qrValue} width={160} />
         ) : remoteImage ? (
           <Image source={{ uri: qrValue }} style={styles.qrImage} />
+        ) : qrValue ? (
+          <QRCode backgroundColor="#ffffff" color="#191C1D" size={160} value={qrValue} />
         ) : (
           <ReferralQrCode />
         )}
@@ -4408,9 +5044,20 @@ function ReferralQrCode() {
 }
 
 export function LeaveRequestsScreen() {
+  const { session } = useAuth();
+
+  if (!isManagerAccessRole(session?.user.role)) {
+    return <EmployeeLeaveSelfServiceScreen />;
+  }
+
+  return <LeaveApprovalRequestsScreen />;
+}
+
+function LeaveApprovalRequestsScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
-  const { data, failed, loading } = useEmployeeApiData(() => employeeApi.leaveRequests(), []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { data, failed, loading } = useEmployeeApiData(() => employeeApi.leaveRequests(), [refreshKey]);
   const [filter, setFilter] = useState<LeaveStatusFilter>("all");
   const rows = leaveRowsFromApi(data);
   const filteredRows = filter === "all" ? rows : rows.filter((row) => row.status === filter);
@@ -4461,11 +5108,360 @@ export function LeaveRequestsScreen() {
 
         <View style={styles.leaveList}>
           {filteredRows.map((row) => (
-            <LeaveRequestCard key={row.id} request={row} />
+            <LeaveRequestCard
+              key={row.id}
+              onChanged={() => setRefreshKey((value) => value + 1)}
+              request={row}
+            />
           ))}
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+type EmployeeLeaveForm = {
+  end_date: string;
+  leave_type: string;
+  reason: string;
+  start_date: string;
+};
+
+type EmployeeLeaveHistoryRow = {
+  dateRange: string;
+  id: string;
+  leaveType: string;
+  reason: string;
+  rejectionReason: string;
+  status: LeaveRequestCardData["status"] | "cancelled";
+};
+
+const leaveTypeOptions = [
+  { label: "Nghỉ phép năm", value: "1" },
+  { label: "Nghỉ không lương", value: "2" },
+  { label: "Nghỉ cá nhân", value: "3" },
+  { label: "Nghỉ thai sản", value: "4" },
+  { label: "Nghỉ công tác", value: "5" },
+  { label: "Nghỉ bù", value: "6" }
+];
+
+function defaultLeaveForm(): EmployeeLeaveForm {
+  const today = formatPersonalDateValue(new Date());
+
+  return {
+    end_date: today,
+    leave_type: leaveTypeOptions[0].value,
+    reason: "",
+    start_date: today
+  };
+}
+
+function leaveTypeLabel(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    annual: "1",
+    unpaid: "2",
+    personal: "3",
+    maternity: "4",
+    business: "5",
+    compensatory: "6"
+  };
+  const optionValue = aliases[normalized] ?? normalized;
+  return leaveTypeOptions.find((option) => option.value === optionValue)?.label || apiText(value, "Nghỉ phép");
+}
+
+function normalizeLeaveHistoryStatus(status: unknown): EmployeeLeaveHistoryRow["status"] {
+  const value = String(status ?? "").trim().toLowerCase();
+  if (["4", "cancelled"].includes(value) || value.includes("hủy")) return "cancelled";
+  return normalizeLeaveStatus(status);
+}
+
+function leaveHistoryRowsFromApi(data: unknown): EmployeeLeaveHistoryRow[] {
+  return apiList(data).map((item, index) => ({
+    dateRange: formatLeaveDateRange(item),
+    id: apiText(item.id, `leave-history-${index}`),
+    leaveType: leaveTypeLabel(item.leave_type ?? item.leaveType ?? item.type),
+    reason: apiText(item.reason ?? item.detail ?? item.note, "Chưa cập nhật lý do nghỉ."),
+    rejectionReason: apiText(item.rejection_reason ?? item.rejectionReason, ""),
+    status: normalizeLeaveHistoryStatus(item.status ?? item.status_label)
+  }));
+}
+
+function EmployeeLeaveSelfServiceScreen() {
+  const params = useLocalSearchParams<{ from?: string }>();
+  const handleBack = () => backWithProfileSource(params.from);
+  const [form, setForm] = useState<EmployeeLeaveForm>(() => defaultLeaveForm());
+  const [dateField, setDateField] = useState<"start_date" | "end_date" | null>(null);
+  const [typeModalVisible, setTypeModalVisible] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const { data, failed, loading } = useEmployeeApiData(() => employeeApi.leaveHistory(), [refreshKey]);
+  const historyRows = leaveHistoryRowsFromApi(data);
+  const selectedLeaveType = leaveTypeLabel(form.leave_type);
+
+  function updateForm(key: keyof EmployeeLeaveForm, value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function submitLeaveRequest() {
+    const normalizedReason = form.reason.trim();
+
+    if (!form.leave_type || !form.start_date || !form.end_date || !normalizedReason) {
+      notifyError("Vui lòng nhập đầy đủ thông tin nghỉ phép.");
+      return;
+    }
+
+    if (normalizedReason.length < 5) {
+      notifyError("Lý do nghỉ phép phải có ít nhất 5 ký tự.");
+      return;
+    }
+
+    if (form.end_date < form.start_date) {
+      notifyError("Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await employeeApi.createLeaveRequest({
+        end_date: form.end_date,
+        leave_type: form.leave_type,
+        reason: normalizedReason,
+        start_date: form.start_date
+      });
+
+      notifySuccess({ message: response.message || "Gửi yêu cầu nghỉ phép thành công." });
+      setForm((current) => ({ ...current, reason: "" }));
+      setRefreshKey((current) => current + 1);
+    } catch (error) {
+      notifyError(error, "Không thể gửi yêu cầu nghỉ phép. Vui lòng thử lại.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.leaveSafe}>
+      <View style={styles.leaveHeader}>
+        <Pressable accessibilityRole="button" onPress={handleBack} style={styles.leaveHeaderButton}>
+          <Ionicons name="arrow-back" size={28} color="#000000" />
+        </Pressable>
+        <Text style={styles.leaveHeaderTitle}>Xin nghỉ phép</Text>
+        <EmployeeNotificationButton returnTo="/employee/leave-requests" />
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.leaveScrollContent}
+        style={styles.leaveRoot}
+      >
+        <View style={styles.leaveIntroCompact}>
+          <Text style={styles.leaveTitle}>Tạo đơn nghỉ phép</Text>
+          <Text style={styles.leaveSubtitle}>Gửi yêu cầu để quản lý xét duyệt theo quy trình nhân sự.</Text>
+        </View>
+
+        <View style={styles.leaveFormCard}>
+          <Text style={styles.leaveFormTitle}>Thông tin nghỉ phép</Text>
+          <View style={styles.personalField}>
+            <Text style={styles.personalFieldLabel}>Loại nghỉ phép</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setTypeModalVisible(true)}
+              style={({ pressed }) => [styles.leaveTypeButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.leaveTypeButtonText}>{selectedLeaveType}</Text>
+              <Ionicons name="chevron-down" size={18} color="#950100" />
+            </Pressable>
+          </View>
+
+          <PersonalDateField label="Ngày bắt đầu" value={form.start_date} onPress={() => setDateField("start_date")} />
+          <PersonalDateField label="Ngày kết thúc" value={form.end_date} onPress={() => setDateField("end_date")} />
+          <PersonalField
+            label="Lý do nghỉ"
+            multiline
+            onChangeText={(value: string) => updateForm("reason", value)}
+            placeholder="Nhập lý do nghỉ phép"
+            value={form.reason}
+          />
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={submitting}
+            onPress={submitLeaveRequest}
+            style={({ pressed }) => [styles.leaveSubmitButton, (pressed || submitting) && styles.pressed]}
+          >
+            <Ionicons name="send" size={18} color="#ffffff" />
+            <Text style={styles.leaveSubmitText}>{submitting ? "Đang gửi yêu cầu" : "Gửi yêu cầu"}</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.leaveHistoryHeader}>
+          <Text style={styles.leaveHistoryTitle}>Lịch sử nghỉ phép</Text>
+          {loading ? <Text style={styles.leaveHistoryMeta}>Đang tải...</Text> : <Text style={styles.leaveHistoryMeta}>{historyRows.length} đơn</Text>}
+        </View>
+
+        {failed ? <Text style={styles.leaveStateText}>Không thể tải lịch sử nghỉ phép. Vui lòng thử lại.</Text> : null}
+        {!loading && historyRows.length === 0 ? <Text style={styles.leaveStateText}>Chưa có lịch sử nghỉ phép.</Text> : null}
+
+        <View style={styles.leaveList}>
+          {historyRows.map((row) => (
+            <EmployeeLeaveHistoryCard key={row.id} request={row} onChanged={() => setRefreshKey((current) => current + 1)} />
+          ))}
+        </View>
+      </ScrollView>
+
+      <LeaveTypePickerModal
+        onClose={() => setTypeModalVisible(false)}
+        onSelect={(value) => {
+          updateForm("leave_type", value);
+          setTypeModalVisible(false);
+        }}
+        value={form.leave_type}
+        visible={typeModalVisible}
+      />
+      <PersonalDatePickerModal
+        title={dateField === "end_date" ? "Chọn ngày kết thúc" : "Chọn ngày bắt đầu"}
+        value={dateField ? form[dateField] : form.start_date}
+        visible={dateField !== null}
+        onClose={() => setDateField(null)}
+        onSelect={(value) => {
+          if (dateField) updateForm(dateField, value);
+          setDateField(null);
+        }}
+      />
+    </SafeAreaView>
+  );
+}
+
+function leaveHistoryStatusLabel(status: EmployeeLeaveHistoryRow["status"]) {
+  if (status === "approved") return "Đã duyệt";
+  if (status === "rejected") return "Từ chối";
+  if (status === "cancelled") return "Đã hủy";
+  return "Chờ duyệt";
+}
+
+function EmployeeLeaveHistoryCard({
+  onChanged,
+  request
+}: {
+  onChanged: () => void;
+  request: EmployeeLeaveHistoryRow;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const isPending = request.status === "pending";
+  const isRejected = request.status === "rejected";
+  const isCancelled = request.status === "cancelled";
+  const badgeStyle =
+    request.status === "approved"
+      ? styles.leaveBadgeApproved
+      : isRejected || isCancelled
+        ? styles.leaveBadgeRejected
+        : styles.leaveBadgePending;
+  const badgeTextStyle =
+    request.status === "approved"
+      ? styles.leaveBadgeApprovedText
+      : isRejected || isCancelled
+        ? styles.leaveBadgeRejectedText
+        : styles.leaveBadgePendingText;
+
+  async function cancelRequest() {
+    setSubmitting(true);
+    try {
+      const response = await employeeApi.cancelLeaveRequest(request.id);
+      notifySuccess({ message: response.message || "Hủy yêu cầu nghỉ phép thành công." });
+      onChanged();
+    } catch (error) {
+      notifyError(error, "Không thể hủy yêu cầu nghỉ phép. Vui lòng thử lại.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <View style={[styles.leaveCard, (isRejected || isCancelled) && styles.leaveCardRejected]}>
+      <View style={styles.leaveHistoryCardTop}>
+        <View style={styles.leaveHistoryCardTitleRow}>
+          <Ionicons name="calendar-outline" size={18} color="#950100" />
+          <Text style={styles.leaveHistoryCardTitle}>{request.leaveType}</Text>
+        </View>
+        <View style={[styles.leaveBadge, badgeStyle]}>
+          <Text style={[styles.leaveBadgeText, badgeTextStyle]}>{leaveHistoryStatusLabel(request.status)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.leaveDetailBox}>
+        <View style={styles.leaveDetailRow}>
+          <Ionicons name="time-outline" size={16} color="#950100" />
+          <Text numberOfLines={1} style={styles.leaveDateText}>{request.dateRange}</Text>
+        </View>
+        <View style={styles.leaveDetailRow}>
+          <Ionicons name="menu-outline" size={16} color="#5b403c" />
+          <Text numberOfLines={2} style={styles.leaveReasonText}>{request.reason}</Text>
+        </View>
+        {request.rejectionReason ? (
+          <View style={styles.leaveDetailRow}>
+            <Ionicons name="alert-circle-outline" size={16} color="#93000a" />
+            <Text numberOfLines={2} style={styles.leaveReasonText}>{request.rejectionReason}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {isPending ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={submitting}
+          onPress={cancelRequest}
+          style={({ pressed }) => [styles.leaveCancelButton, (pressed || submitting) && styles.pressed]}
+        >
+          <Text style={styles.leaveCancelText}>{submitting ? "Đang hủy" : "Hủy yêu cầu"}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function LeaveTypePickerModal({
+  onClose,
+  onSelect,
+  value,
+  visible
+}: {
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  value: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.transferRejectOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.leaveTypeModal}>
+          <View style={styles.leaveTypeModalHeader}>
+            <Text style={styles.leaveTypeModalTitle}>Chọn loại nghỉ phép</Text>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.personalDateCloseButton}>
+              <Ionicons name="close" size={20} color="#5b403c" />
+            </Pressable>
+          </View>
+          <View style={styles.leaveTypeModalList}>
+            {leaveTypeOptions.map((option) => {
+              const active = option.value === value;
+
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="button"
+                  onPress={() => onSelect(option.value)}
+                  style={({ pressed }) => [styles.leaveTypeOption, active && styles.leaveTypeOptionActive, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.leaveTypeOptionText, active && styles.leaveTypeOptionTextActive]}>{option.label}</Text>
+                  {active ? <Ionicons name="checkmark" size={18} color="#950100" /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -4491,7 +5487,7 @@ const leaveFilterTabs: { label: string; value: LeaveStatusFilter }[] = [
 const fallbackLeaveRows: LeaveRequestCardData[] = [
   {
     id: "leave-nguyen-van-a",
-    name: "Nguyen Văn A",
+    name: "Nguyễn Văn A",
     department: "Phòng Marketing",
     dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
     reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
@@ -4521,7 +5517,7 @@ const fallbackLeaveRows: LeaveRequestCardData[] = [
 const fallbackTransferRows: LeaveRequestCardData[] = [
   {
     id: "transfer-nguyen-van-a",
-    name: "Nguyen Văn A",
+    name: "Nguyễn Văn A",
     department: "Phòng Marketing",
     dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
     reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
@@ -4547,6 +5543,70 @@ const fallbackTransferRows: LeaveRequestCardData[] = [
     avatar: leaveImages.leVanC
   }
 ];
+
+type DepartmentOption = {
+  label: string;
+  value: string;
+};
+
+const fallbackDepartmentOptions: DepartmentOption[] = [
+  { label: "Phòng Kinh doanh", value: "Phòng Kinh doanh" },
+  { label: "Phòng Marketing", value: "Phòng Marketing" },
+  { label: "Phòng Chăm sóc khách hàng", value: "Phòng Chăm sóc khách hàng" },
+  { label: "Phòng Vận hành dự án", value: "Phòng Vận hành dự án" },
+  { label: "Phòng Tài chính", value: "Phòng Tài chính" },
+  { label: "Phòng Nhân sự", value: "Phòng Nhân sự" },
+  { label: "Phòng IT", value: "Phòng IT" }
+];
+
+const hiddenTransferDepartmentNames = [
+  "all",
+  "tất cả",
+  "tat ca",
+  "system",
+  "hệ thống",
+  "he thong",
+  "khách hàng",
+  "khach hang",
+  "phòng khách hàng",
+  "phong khach hang"
+];
+
+function normalizeDepartmentName(value: unknown) {
+  return apiText(value, "").trim().toLocaleLowerCase("vi-VN");
+}
+
+function departmentOptionsFromApi(data: unknown, currentDepartment: string): DepartmentOption[] {
+  const rows = apiList(data);
+  const apiOptions = rows
+    .map((item) => {
+      const value = apiText(item.value ?? item.name ?? item.department ?? item.label, "").trim();
+      const label = apiText(item.label ?? item.name ?? item.department ?? item.value, value).trim();
+
+      return value ? { label: label || value, value } : null;
+    })
+    .filter((item): item is DepartmentOption => item !== null);
+  const source = apiOptions.length > 0 ? apiOptions : fallbackDepartmentOptions;
+  const current = normalizeDepartmentName(currentDepartment);
+  const unique = new Map<string, DepartmentOption>();
+
+  source.forEach((option) => {
+    const key = normalizeDepartmentName(option.value);
+
+    if (
+      !key ||
+      key === current ||
+      key === normalizeDepartmentName("Chưa cập nhật") ||
+      hiddenTransferDepartmentNames.includes(key)
+    ) {
+      return;
+    }
+
+    unique.set(key, option);
+  });
+
+  return Array.from(unique.values());
+}
 
 function normalizeLeaveStatus(status: unknown): LeaveRequestCardData["status"] {
   const value = String(status ?? "").trim().toLowerCase();
@@ -4630,15 +5690,20 @@ function transferRowsFromApi(data: unknown, useFallback = false): LeaveRequestCa
 }
 
 function LeaveRequestCard({
+  collapsibleDetails = false,
   onChanged,
   request,
-  requestType = "leave"
+  requestType = "leave",
+  showActions = true
 }: {
+  collapsibleDetails?: boolean;
   onChanged?: () => void;
   request: LeaveRequestCardData;
   requestType?: "leave" | "transfer";
+  showActions?: boolean;
 }) {
   const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const isPending = request.status === "pending";
@@ -4665,10 +5730,11 @@ function LeaveRequestCard({
       } else {
         await employeeApi.approveLeaveRequest(request.id);
       }
-      notifySuccess({ message: requestType === "transfer" ? "Đã duyệt yêu cầu chuyển phòng." : "Đã duyệt đơn nghỉ phép." });
+      notifySuccess({ message: requestType === "transfer" ? "Đã duyệt yêu cầu chuyển phòng ban." : "Đã duyệt đơn nghỉ phép." });
       onChanged?.();
     } catch (error) {
       notifyError(error);
+      onChanged?.();
     } finally {
       setSubmitting(null);
     }
@@ -4677,7 +5743,7 @@ function LeaveRequestCard({
   async function reject(reason?: string) {
     const normalizedReason = reason?.trim();
 
-    if (requestType === "transfer" && !normalizedReason) {
+    if (!normalizedReason) {
       notifyError(new Error("Vui lòng nhập lý do từ chối."));
       return;
     }
@@ -4687,14 +5753,15 @@ function LeaveRequestCard({
       if (requestType === "transfer") {
         await employeeApi.rejectDepartmentTransfer(request.id, normalizedReason);
       } else {
-        await employeeApi.rejectLeaveRequest(request.id);
+        await employeeApi.rejectLeaveRequest(request.id, normalizedReason);
       }
-      notifySuccess({ message: requestType === "transfer" ? "Đã từ chối yêu cầu chuyển phòng." : "Đã từ chối đơn nghỉ phép." });
+      notifySuccess({ message: requestType === "transfer" ? "Đã từ chối yêu cầu chuyển phòng ban." : "Đã từ chối đơn nghỉ phép." });
       setRejectModalVisible(false);
       setRejectReason("");
       onChanged?.();
     } catch (error) {
       notifyError(error);
+      onChanged?.();
     } finally {
       setSubmitting(null);
     }
@@ -4715,18 +5782,26 @@ function LeaveRequestCard({
         </View>
       </View>
 
-      <View style={styles.leaveDetailBox}>
+      <Pressable
+        accessibilityRole={collapsibleDetails ? "button" : undefined}
+        disabled={!collapsibleDetails}
+        onPress={() => setDetailsExpanded((value) => !value)}
+        style={({ pressed }) => [styles.leaveDetailBox, collapsibleDetails && styles.leaveDetailBoxPressable, pressed && styles.pressed]}
+      >
         <View style={styles.leaveDetailRow}>
           <Ionicons name="calendar-outline" size={16} color="#950100" />
-          <Text numberOfLines={1} style={styles.leaveDateText}>{request.dateRange}</Text>
+          <Text numberOfLines={detailsExpanded ? undefined : 1} style={styles.leaveDateText}>{request.dateRange}</Text>
+          {collapsibleDetails ? (
+            <Ionicons name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color="#8f706b" />
+          ) : null}
         </View>
         <View style={styles.leaveDetailRow}>
           <Ionicons name="menu-outline" size={16} color="#5b403c" />
-          <Text numberOfLines={1} style={styles.leaveReasonText}>{request.reason}</Text>
+          <Text numberOfLines={detailsExpanded ? undefined : 1} style={styles.leaveReasonText}>{request.reason}</Text>
         </View>
-      </View>
+      </Pressable>
 
-      {isPending ? (
+      {isPending && showActions ? (
         <View style={styles.leaveActions}>
           <Pressable
             accessibilityRole="button"
@@ -4740,12 +5815,7 @@ function LeaveRequestCard({
             accessibilityRole="button"
             disabled={submitting !== null}
             onPress={() => {
-              if (requestType === "transfer") {
-                setRejectModalVisible(true);
-                return;
-              }
-
-              reject();
+              setRejectModalVisible(true);
             }}
             style={({ pressed }) => [styles.leaveRejectButton, pressed && styles.pressed]}
           >
@@ -4753,13 +5823,17 @@ function LeaveRequestCard({
           </Pressable>
         </View>
       ) : null}
-      {requestType === "transfer" ? (
+      {showActions ? (
         <Modal animationType="fade" transparent visible={rejectModalVisible} onRequestClose={() => setRejectModalVisible(false)}>
           <View style={styles.transferRejectOverlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setRejectModalVisible(false)} />
             <View style={styles.transferRejectModal}>
               <Text style={styles.transferRejectTitle}>Lý do từ chối</Text>
-              <Text style={styles.transferRejectSubtitle}>Ghi rõ lý do để nhân viên có đủ thông tin điều chỉnh yêu cầu.</Text>
+              <Text style={styles.transferRejectSubtitle}>
+                {requestType === "transfer"
+                  ? "Ghi rõ lý do để nhân viên có đủ thông tin điều chỉnh yêu cầu."
+                  : "Ghi rõ lý do để nhân viên nắm được quyết định duyệt nghỉ phép."}
+              </Text>
               <TextInput
                 multiline
                 onChangeText={setRejectReason}
@@ -4819,7 +5893,7 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
         <Pressable accessibilityRole="button" onPress={onBack} style={styles.leaveHeaderButton}>
           <Ionicons name="arrow-back" size={28} color="#000000" />
         </Pressable>
-        <Text style={styles.leaveHeaderTitle}>Xin chuyển phòng</Text>
+        <Text style={styles.leaveHeaderTitle}>Xin chuyển phòng ban</Text>
         <EmployeeNotificationButton returnTo="/employee/transfer-requests" />
       </View>
 
@@ -4829,7 +5903,7 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
         style={styles.leaveRoot}
       >
         <View style={styles.leaveIntro}>
-          <Text style={styles.leaveTitle}>Danh sách xin chuyển phòng</Text>
+          <Text style={styles.leaveTitle}>Danh sách xin chuyển phòng ban</Text>
           <Text style={styles.leaveSubtitle}>Quản lý, duyệt hoặc từ chối yêu cầu chuyển phòng ban của nhân viên.</Text>
         </View>
 
@@ -4852,11 +5926,11 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
         </ScrollView>
 
         {failed ? (
-          <Text style={styles.leaveStateText}>Không thể tải dữ liệu chuyển phòng. Đang hiển thị dữ liệu mẫu để kiểm giao diện.</Text>
+          <Text style={styles.leaveStateText}>Không thể tải dữ liệu chuyển phòng ban. Đang hiển thị dữ liệu mẫu để kiểm giao diện.</Text>
         ) : null}
-        {loading ? <Text style={styles.leaveStateText}>Đang tải danh sách chuyển phòng...</Text> : null}
+        {loading ? <Text style={styles.leaveStateText}>Đang tải danh sách chuyển phòng ban...</Text> : null}
         {!loading && filteredRows.length === 0 ? (
-          <Text style={styles.leaveStateText}>Chưa có yêu cầu chuyển phòng phù hợp.</Text>
+          <Text style={styles.leaveStateText}>Chưa có yêu cầu chuyển phòng ban phù hợp.</Text>
         ) : null}
 
         <View style={styles.leaveList}>
@@ -4877,11 +5951,29 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
 function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
   const { session } = useAuth();
   const currentDepartment = apiText(session?.user.department, "Chưa cập nhật");
+  const { data: departmentsData, failed: departmentsFailed, loading: departmentsLoading } = useEmployeeApiData(() => employeeApi.departments(), []);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const {
+    data: historyData,
+    failed: historyFailed,
+    loading: historyLoading
+  } = useEmployeeApiData(() => employeeApi.departmentTransferHistory({ per_page: 50 }), [historyRefreshKey]);
   const [targetDepartment, setTargetDepartment] = useState("");
   const [desiredTransferDate, setDesiredTransferDate] = useState(defaultTransferDateValue);
   const [reason, setReason] = useState("");
   const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [departmentPickerVisible, setDepartmentPickerVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const departmentOptions = departmentOptionsFromApi(departmentsData, currentDepartment);
+  const selectedTargetDepartment = departmentOptions.find((option) => option.value === targetDepartment);
+  const historyRows = transferRowsFromApi(historyData);
+
+  useEffect(() => {
+    if (!targetDepartment) return;
+    if (departmentOptions.some((option) => option.value === targetDepartment)) return;
+
+    setTargetDepartment("");
+  }, [departmentOptions, targetDepartment]);
 
   async function submitTransferRequest() {
     const normalizedTarget = targetDepartment.trim();
@@ -4889,6 +5981,11 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
 
     if (!normalizedTarget || !desiredTransferDate || !normalizedReason) {
       notifyError(new Error("Vui lòng nhập phòng ban muốn chuyển, ngày mong muốn và lý do."));
+      return;
+    }
+
+    if (normalizeDepartmentName(normalizedTarget) === normalizeDepartmentName(currentDepartment)) {
+      notifyError(new Error("Phòng ban muốn chuyển không được trùng với phòng ban hiện tại."));
       return;
     }
 
@@ -4912,6 +6009,7 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
       notifySuccess({ message: response.message || "Gửi yêu cầu chuyển phòng ban thành công." });
       setTargetDepartment("");
       setReason("");
+      setHistoryRefreshKey((current) => current + 1);
     } catch (error) {
       notifyError(error, "Không thể gửi yêu cầu chuyển phòng ban.");
     } finally {
@@ -4925,7 +6023,7 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
         <Pressable accessibilityRole="button" onPress={onBack} style={styles.leaveHeaderButton}>
           <Ionicons name="arrow-back" size={28} color="#000000" />
         </Pressable>
-        <Text style={styles.leaveHeaderTitle}>Xin chuyển phòng</Text>
+        <Text style={styles.leaveHeaderTitle}>Xin chuyển phòng ban</Text>
         <EmployeeNotificationButton returnTo="/employee/transfer-requests" />
       </View>
 
@@ -4950,13 +6048,24 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
 
           <View style={styles.transferField}>
             <Text style={styles.transferLabel}>PHÒNG BAN MUỐN CHUYỂN</Text>
-            <TextInput
-              onChangeText={setTargetDepartment}
-              placeholder="Ví dụ: Phòng Kinh doanh"
-              placeholderTextColor="#9ca3af"
-              style={styles.transferInput}
-              value={targetDepartment}
-            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={departmentOptions.length === 0}
+              onPress={() => setDepartmentPickerVisible(true)}
+              style={({ pressed }) => [
+                styles.transferDepartmentSelect,
+                departmentOptions.length === 0 && styles.transferDepartmentSelectDisabled,
+                pressed && styles.pressed
+              ]}
+            >
+              <Text style={[styles.transferDepartmentSelectText, !selectedTargetDepartment && styles.transferDepartmentPlaceholder]}>
+                {selectedTargetDepartment?.label || (departmentsLoading ? "Đang tải phòng ban..." : "Chọn phòng ban muốn chuyển")}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color="#950100" />
+            </Pressable>
+            {departmentsFailed ? (
+              <Text style={styles.transferHelperText}>Không tải được danh sách phòng ban. Đang dùng danh sách mặc định.</Text>
+            ) : null}
           </View>
 
           <View style={styles.transferField}>
@@ -4972,11 +6081,11 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
           </View>
 
           <View style={styles.transferField}>
-            <Text style={styles.transferLabel}>LÝ DO CHUYỂN PHÒNG</Text>
+            <Text style={styles.transferLabel}>LÝ DO CHUYỂN PHÒNG BAN</Text>
             <TextInput
               multiline
               onChangeText={setReason}
-              placeholder="Nhập lý do và bối cảnh chuyển phòng..."
+              placeholder="Nhập lý do và bối cảnh chuyển phòng ban..."
               placeholderTextColor="#9ca3af"
               style={[styles.transferInput, styles.transferTextArea]}
               textAlignVertical="top"
@@ -4994,6 +6103,20 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
             <Text style={styles.transferSubmitText}>{submitting ? "Đang gửi yêu cầu" : "Gửi yêu cầu"}</Text>
           </Pressable>
         </View>
+
+        <View style={[styles.leaveHistoryHeader, styles.transferHistoryHeader]}>
+          <Text style={styles.leaveHistoryTitle}>Lịch sử xin phép chuyển phòng ban</Text>
+        </View>
+
+        {historyLoading ? <Text style={styles.leaveStateText}>Đang tải lịch sử xin phép chuyển phòng ban...</Text> : null}
+        {historyFailed ? <Text style={styles.leaveStateText}>Không thể tải lịch sử xin phép chuyển phòng ban. Vui lòng thử lại.</Text> : null}
+        {!historyLoading && historyRows.length === 0 ? <Text style={styles.leaveStateText}>Chưa có lịch sử xin phép chuyển phòng ban.</Text> : null}
+
+        <View style={styles.leaveList}>
+          {historyRows.map((row) => (
+            <LeaveRequestCard key={row.id} collapsibleDetails request={row} requestType="transfer" showActions={false} />
+          ))}
+        </View>
       </ScrollView>
 
       <PersonalDatePickerModal
@@ -5006,7 +6129,74 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
           setDatePickerVisible(false);
         }}
       />
+      <DepartmentPickerModal
+        currentDepartment={currentDepartment}
+        options={departmentOptions}
+        value={targetDepartment}
+        visible={departmentPickerVisible}
+        onClose={() => setDepartmentPickerVisible(false)}
+        onSelect={(value) => {
+          setTargetDepartment(value);
+          setDepartmentPickerVisible(false);
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+function DepartmentPickerModal({
+  currentDepartment,
+  onClose,
+  onSelect,
+  options,
+  value,
+  visible
+}: {
+  currentDepartment: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  options: DepartmentOption[];
+  value: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.transferRejectOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.departmentPickerModal}>
+          <View style={styles.departmentPickerHeader}>
+            <View style={styles.flex}>
+              <Text style={styles.departmentPickerTitle}>Chọn phòng ban muốn chuyển</Text>
+              <Text style={styles.departmentPickerSubtitle}>Hiện tại: {currentDepartment}</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.personalDateCloseButton}>
+              <Ionicons name="close" size={20} color="#5b403c" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.departmentPickerList}>
+            {options.length === 0 ? (
+              <Text style={styles.leaveStateText}>Chưa có phòng ban phù hợp để chọn.</Text>
+            ) : null}
+            {options.map((option) => {
+              const active = option.value === value;
+
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="button"
+                  onPress={() => onSelect(option.value)}
+                  style={({ pressed }) => [styles.departmentPickerOption, active && styles.departmentPickerOptionActive, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.departmentPickerOptionText, active && styles.departmentPickerOptionTextActive]}>{option.label}</Text>
+                  {active ? <Ionicons name="checkmark-circle" size={20} color="#950100" /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -5184,11 +6374,13 @@ function attachmentType(attachment: LearningLessonAttachment): "pdf" | "doc" {
 
 function LessonVideoPlayer({
   lessonId,
+  progressSyncDisabled = false,
   videoUrl,
   initialWatchSeconds = 0,
   onProgressUpdate
 }: {
   lessonId: string;
+  progressSyncDisabled?: boolean;
   videoUrl: string;
   initialWatchSeconds?: number;
   onProgressUpdate?: (progress: LearningLessonProgressUpdate) => void;
@@ -5222,6 +6414,11 @@ function LessonVideoPlayer({
     try {
       action();
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (actionName === "tạm dừng" && message.includes("NativeSharedObjectNotFoundException")) {
+        return;
+      }
+
       appLogger.warn("learning.video", `Không thể ${actionName} video.`, { error });
     }
   }, []);
@@ -5304,6 +6501,10 @@ function LessonVideoPlayer({
   }, []);
 
   const syncProgress = useCallback(async (watchSeconds = currentSecondsRef.current, force = false) => {
+    if (progressSyncDisabled) {
+      return;
+    }
+
     const nextSeconds = Math.max(0, Math.floor(watchSeconds));
     if (syncingRef.current || nextSeconds <= 0 || (!force && nextSeconds === lastSyncedSecondsRef.current)) {
       return;
@@ -5324,7 +6525,7 @@ function LessonVideoPlayer({
     } finally {
       syncingRef.current = false;
     }
-  }, [lessonId, onProgressUpdate]);
+  }, [lessonId, onProgressUpdate, progressSyncDisabled]);
 
   useEffect(() => {
     if (!isEnded) {
@@ -5534,6 +6735,7 @@ export function LessonDetailScreen({
   onProgressUpdate?: (progress: LearningLessonProgressUpdate) => void;
 }) {
   const [courseQuizStatus, setCourseQuizStatus] = useState<LessonCourseQuizStatus>("unknown");
+  const [courseQuizStatusKey, setCourseQuizStatusKey] = useState("");
   const [courseQuizResultLoading, setCourseQuizResultLoading] = useState(false);
   const description = htmlToPlainText(lesson.content);
   const durationSeconds = lesson.duration_seconds ?? (lesson.duration_minutes ?? 0) * 60;
@@ -5542,20 +6744,27 @@ export function LessonDetailScreen({
   const watchLabel = formatWatchTime(lesson.current_watch_seconds);
   const isCompleted = lesson.status === "completed";
   const hasNextLesson = Boolean(lesson.next_lesson_id);
-  const courseQuizPending = !hasNextLesson && courseQuizStatus === "unknown";
-  const hasCourseQuiz = !hasNextLesson && courseQuizStatus !== "unknown" && courseQuizStatus !== "none";
-  const courseQuizHasResult = courseQuizStatus === "passed" || courseQuizStatus === "failed" || courseQuizStatus === "completed";
-  const courseQuizIsGrading = courseQuizStatus === "grading";
+  const lessonLabelQuizStatus = !hasNextLesson && isCompleted ? lessonCourseQuizStatusFromLabel(lesson.status_label) : null;
+  const expectedCourseQuizStatusKey = `${lesson.id}:${lesson.course_id}:${lesson.next_lesson_id ?? ""}`;
+  const effectiveCourseQuizStatus = courseQuizStatusKey === expectedCourseQuizStatusKey
+    ? courseQuizStatus
+    : hasNextLesson
+      ? "none"
+      : lessonLabelQuizStatus ?? "unknown";
+  const courseQuizPending = !hasNextLesson && effectiveCourseQuizStatus === "unknown";
+  const hasCourseQuiz = !hasNextLesson && effectiveCourseQuizStatus !== "unknown" && effectiveCourseQuizStatus !== "none";
+  const courseQuizHasResult = effectiveCourseQuizStatus === "passed" || effectiveCourseQuizStatus === "failed" || effectiveCourseQuizStatus === "completed";
+  const courseQuizIsGrading = effectiveCourseQuizStatus === "grading";
   const courseQuizActionDisabled =
-    !hasNextLesson && (courseQuizPending || courseQuizIsGrading || courseQuizStatus === "locked" || courseQuizResultLoading);
+    !hasNextLesson && (courseQuizPending || courseQuizIsGrading || effectiveCourseQuizStatus === "locked" || courseQuizResultLoading);
   const nextActionLabel = (() => {
     if (hasNextLesson) return "Bài tiếp theo";
     if (courseQuizPending) return "Đang kiểm tra bài thi...";
     if (courseQuizResultLoading) return "Đang tải...";
     if (courseQuizIsGrading) return "Đang chấm";
     if (courseQuizHasResult) return "Xem lại bài kiểm tra";
-    if (courseQuizStatus === "locked") return "Bài kiểm tra chưa mở";
-    if (hasCourseQuiz) return courseQuizStatus === "in_progress" ? "Tiếp tục bài kiểm tra" : "Làm bài kiểm tra";
+    if (effectiveCourseQuizStatus === "locked") return "Bài kiểm tra chưa mở";
+    if (hasCourseQuiz) return effectiveCourseQuizStatus === "in_progress" ? "Tiếp tục bài kiểm tra" : "Làm bài kiểm tra";
     return "Về trang Học viện Đào tạo";
   })();
   const completedNotice = (() => {
@@ -5575,12 +6784,19 @@ export function LessonDetailScreen({
 
     if (!lesson.course_id || lesson.next_lesson_id) {
       setCourseQuizStatus("none");
+      setCourseQuizStatusKey(expectedCourseQuizStatusKey);
       return () => {
         mounted = false;
       };
     }
 
-    setCourseQuizStatus("unknown");
+    setCourseQuizStatus(lessonLabelQuizStatus ?? "unknown");
+    setCourseQuizStatusKey(expectedCourseQuizStatusKey);
+
+    const setLoadedCourseQuizStatus = (status: LessonCourseQuizStatus) => {
+      setCourseQuizStatus(status);
+      setCourseQuizStatusKey(expectedCourseQuizStatusKey);
+    };
 
     async function loadCourseQuizStatus() {
       const resultResponse = await employeeApi.courseQuizResult(lesson.course_id).catch(() => null);
@@ -5588,25 +6804,29 @@ export function LessonDetailScreen({
 
       if (resultResponse) {
         const result = isApiObject(resultResponse.data) ? resultResponse.data : {};
-        setCourseQuizStatus(quizResultStatus(result));
-        return;
+        const resultStatus = quizResultStatus(result);
+
+        if (["passed", "failed", "completed", "grading"].includes(resultStatus)) {
+          setLoadedCourseQuizStatus(resultStatus);
+          return;
+        }
       }
 
       const availabilityResponse = await employeeApi.courseQuizAvailability(lesson.course_id).catch(() => null);
       if (!mounted) return;
 
       if (!availabilityResponse) {
-        setCourseQuizStatus("none");
+        setLoadedCourseQuizStatus("none");
         return;
       }
 
       if (availabilityResponse.status === 404) {
-        setCourseQuizStatus("none");
+        setLoadedCourseQuizStatus("none");
         return;
       }
 
       if (availabilityResponse.status === 403) {
-        setCourseQuizStatus("locked");
+        setLoadedCourseQuizStatus("locked");
         return;
       }
 
@@ -5614,7 +6834,7 @@ export function LessonDetailScreen({
       const attempt = isApiObject(responseData.attempt) ? responseData.attempt : {};
       const attemptStatus = normalizeLessonCourseQuizStatus(attempt.status ?? responseData.status);
 
-      setCourseQuizStatus(attemptStatus === "available" ? "available" : attemptStatus);
+      setLoadedCourseQuizStatus(attemptStatus === "available" ? "available" : attemptStatus);
     }
 
     void loadCourseQuizStatus();
@@ -5622,7 +6842,7 @@ export function LessonDetailScreen({
     return () => {
       mounted = false;
     };
-  }, [lesson.course_id, lesson.next_lesson_id]);
+  }, [expectedCourseQuizStatusKey, lesson.course_id, lesson.next_lesson_id, lessonLabelQuizStatus]);
 
   const openNextLesson = useCallback(async () => {
     if (lesson.next_lesson_id) {
@@ -5637,7 +6857,7 @@ export function LessonDetailScreen({
       return;
     }
 
-    if (courseQuizIsGrading || courseQuizStatus === "locked") {
+    if (courseQuizIsGrading || effectiveCourseQuizStatus === "locked") {
       return;
     }
 
@@ -5679,7 +6899,7 @@ export function LessonDetailScreen({
     courseQuizHasResult,
     courseQuizIsGrading,
     courseQuizPending,
-    courseQuizStatus,
+    effectiveCourseQuizStatus,
     hasCourseQuiz,
     lesson.course_id,
     lesson.next_lesson_id
@@ -5699,6 +6919,7 @@ export function LessonDetailScreen({
             initialWatchSeconds={lesson.current_watch_seconds}
             lessonId={lesson.id}
             onProgressUpdate={onProgressUpdate}
+            progressSyncDisabled={isCompleted}
             videoUrl={lesson.video_url}
           />
         ) : (
@@ -5770,9 +6991,10 @@ export function LessonDetailScreen({
             lesson.attachments.map((attachment, index) => (
               <LessonAttachment
                 key={`${attachmentTitle(attachment)}-${index}`}
-                title={attachmentTitle(attachment)}
                 size={attachmentSize(attachment)}
+                title={attachmentTitle(attachment)}
                 type={attachmentType(attachment)}
+                url={mediaUrl(attachment.url ?? attachment.file_url ?? attachment.fileUrl)}
               />
             ))
           ) : (
@@ -5784,11 +7006,22 @@ export function LessonDetailScreen({
   );
 }
 
-function LessonAttachment({ title, size, type }: { title: string; size: string; type: "pdf" | "doc" }) {
+function LessonAttachment({ title, size, type, url }: { title: string; size: string; type: "pdf" | "doc"; url?: string }) {
   const isPdf = type === "pdf";
+  const openAttachment = () => {
+    if (!url) {
+      notifyError("Tài liệu chưa có đường dẫn tải xuống.");
+      return;
+    }
+
+    Linking.openURL(url).catch((error) => {
+      appLogger.warn("learning.attachment", "Không thể mở tài liệu đính kèm.", { error, url });
+      notifyError(error, "Không thể mở tài liệu đính kèm.");
+    });
+  };
 
   return (
-    <View style={styles.lessonAttachmentRow}>
+    <Pressable accessibilityRole="button" onPress={openAttachment} style={({ pressed }) => [styles.lessonAttachmentRow, pressed && styles.pressed]}>
       <View style={[styles.lessonAttachmentIcon, isPdf ? styles.lessonAttachmentIconPdf : styles.lessonAttachmentIconDoc]}>
         <Ionicons name={isPdf ? "document-text-outline" : "document-outline"} size={22} color={isPdf ? employeePalette.redDark : "#3f3000"} />
       </View>
@@ -5796,8 +7029,8 @@ function LessonAttachment({ title, size, type }: { title: string; size: string; 
         <Text style={styles.lessonAttachmentTitle}>{title}</Text>
         <Text style={styles.lessonAttachmentSize}>{size}</Text>
       </View>
-      <Ionicons name="download-outline" size={22} color="#e3beb8" />
-    </View>
+      <Ionicons name="download-outline" size={22} color={url ? employeePalette.redDark : "#e3beb8"} />
+    </Pressable>
   );
 }
 
@@ -6033,8 +7266,9 @@ export function QuizScreen() {
       router.replace({
         pathname: "/employee/quiz-result",
         params: {
-          score: apiText(result.score, "0"),
-          total: apiText(result.total_questions, "0"),
+          score: formatScoreParam(result.score, "0"),
+          maxScore: formatScoreParam(result.max_score ?? result.maxScore, "10"),
+          totalQuestions: apiText(result.total_questions, "0"),
           correct: apiText(result.correct_count, "0"),
           courseId,
           passed: String(passed),
@@ -6189,11 +7423,11 @@ export function QuizScreen() {
 }
 
 export function QuizResultScreen() {
-  const params = useLocalSearchParams<{ correct?: string; courseId?: string; details?: string; passed?: string; pendingReview?: string; score?: string; total?: string }>();
+  const params = useLocalSearchParams<{ correct?: string; courseId?: string; details?: string; maxScore?: string; passed?: string; pendingReview?: string; score?: string; total?: string; totalQuestions?: string }>();
   const courseId = apiText(params.courseId, "");
-  const score = apiNumber(params.score, 8);
-  const total = apiNumber(params.total, 10) || 10;
-  const correct = apiNumber(params.correct, score);
+  const score = apiNumber(params.score, 0);
+  const maxScore = apiNumber(params.maxScore ?? params.total, 10) || 10;
+  const totalQuestions = apiNumber(params.totalQuestions ?? params.total, 0);
   const passed = params.passed ? params.passed === "true" : score >= 8;
   const parsedDetails = useMemo(() => {
     if (!params.details) return [];
@@ -6226,7 +7460,7 @@ export function QuizResultScreen() {
     };
   });
   const hasPendingReview = params.pendingReview === "true" || questions.some((question) => question.pending);
-  const questionTotal = questions.length > 0 ? questions.length : total;
+  const questionTotal = questions.length > 0 ? questions.length : totalQuestions;
   const backToRequiredCourse = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -6270,8 +7504,8 @@ export function QuizResultScreen() {
               <Text style={styles.resultPendingTitle}>Đang chấm bài</Text>
             ) : (
               <View style={styles.resultScoreRow}>
-                <Text style={styles.resultScoreBig}>{Math.round(correct || score)}</Text>
-                <Text style={styles.resultScoreTotal}>/{total}</Text>
+                <Text style={styles.resultScoreBig}>{formatScoreValue(score)}</Text>
+                <Text style={styles.resultScoreTotal}>/{formatScoreValue(maxScore)}</Text>
               </View>
             )}
           </View>
@@ -6380,36 +7614,23 @@ function ResultQuestionCard({
 export function CertificatesScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
-  const { data } = useEmployeeApiData(() => employeeApi.courses(), []);
-  const payload: ApiObject = isApiObject(data) ? data : {};
-  const apiRows = apiList(payload.certificates ?? payload.items ?? payload.data);
-  const certificates = apiRows.length > 0
-    ? apiRows.map((item, index) => {
-        const imageCandidate = item.image_url ?? item.thumbnail_url ?? item.image;
-        const image = typeof imageCandidate === "string" && imageCandidate.length > 0
-          ? { uri: imageCandidate }
-          : certificateFallbackImages[index % certificateFallbackImages.length];
-        const rawStatus = apiText(item.status ?? item.state, "verified").toLowerCase();
+  const { data, failed, loading } = useEmployeeApiData(loadLearningCertificateData, []);
+  const [certificateFilter, setCertificateFilter] = useState<CertificateFilterValue>("all");
+  const [filterVisible, setFilterVisible] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const certificates = data?.certificates ?? [];
+  const normalizedSearch = searchText.trim().toLocaleLowerCase("vi-VN");
+  const visibleCertificates = certificates.filter((certificate) => {
+    const matchesFilter = certificateFilter === "all" || certificate.status === certificateFilter;
+    const matchesSearch = !normalizedSearch ||
+      certificate.title.toLocaleLowerCase("vi-VN").includes(normalizedSearch) ||
+      certificate.provider.toLocaleLowerCase("vi-VN").includes(normalizedSearch);
 
-        return {
-          id: apiText(item.id, `certificate-${index}`),
-          image,
-          issuedAt: apiText(item.issued_at ?? item.issuedAt ?? item.date, "15/05/2023"),
-          provider: apiText(item.provider ?? item.organization ?? item.issuer, "Hiệp hội Bất động sản Việt Nam"),
-          status: rawStatus.includes("new") || rawStatus.includes("mới")
-            ? "new"
-            : rawStatus.includes("pending") || rawStatus.includes("chờ")
-              ? "pending"
-              : "verified",
-          title: apiText(item.title ?? item.name, "Môi Giới Bất Động Sản Cao Cấp")
-        } satisfies CertificateCardItem;
-      })
-    : certificateFallbackRows;
-  const totalCount = apiNumber(payload.total ?? payload.total_count, apiRows.length > 0 ? certificates.length : 12);
-  const pendingCount = apiNumber(payload.pending ?? payload.pending_count, apiRows.length > 0
-    ? certificates.filter((item) => item.status === "pending").length
-    : 4
-  );
+    return matchesFilter && matchesSearch;
+  });
+  const totalCount = certificates.length;
+  const pendingCount = certificates.filter((item) => item.status === "pending").length;
+  const activeFilterLabel = certificateFilterOptions.find((item) => item.value === certificateFilter)?.label ?? "Lọc";
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.certificatesSafe}>
@@ -6432,7 +7653,9 @@ export function CertificatesScreen() {
         <View style={styles.certificatesHero}>
           <Text style={styles.certificatesHeroTitle}>Thành tích chuyên môn</Text>
           <Text style={styles.certificatesHeroText}>
-            Bạn đã hoàn thành xuất sắc 8 chứng chỉ trong năm nay. Tiếp tục phát huy nhé!
+            {totalCount > 0
+              ? "Các chứng chỉ được ghi nhận sau khi bạn hoàn thành khóa học bắt buộc."
+              : "Hoàn thành khóa học bắt buộc để nhận chứng chỉ chuyên môn."}
           </Text>
           <View style={styles.certificatesHeroStats}>
             <View style={styles.certificatesHeroBadge}>
@@ -6456,33 +7679,96 @@ export function CertificatesScreen() {
 
         <View style={styles.certificatesSearchBox}>
           <Ionicons name="search-outline" size={20} color="#a1a1aa" />
-          <Text style={styles.certificatesSearchText}>Tìm kiếm chứng chỉ...</Text>
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            onChangeText={setSearchText}
+            placeholder="Tìm kiếm chứng chỉ..."
+            placeholderTextColor="#a1a1aa"
+            style={styles.certificatesSearchText}
+            value={searchText}
+          />
         </View>
 
         <Pressable
           accessibilityRole="button"
-          onPress={() => undefined}
-          style={({ pressed }) => [styles.certificatesFilterButton, pressed && styles.pressed]}
+          onPress={() => setFilterVisible(true)}
+          style={({ pressed }) => [styles.certificatesFilterButton, certificateFilter !== "all" && styles.certificatesFilterButtonActive, pressed && styles.pressed]}
         >
-          <Ionicons name="filter" size={19} color="#191c1d" />
-          <Text style={styles.certificatesFilterText}>Lọc</Text>
+          <Ionicons name="filter" size={19} color={certificateFilter !== "all" ? employeePalette.redDark : "#191c1d"} />
+          <Text style={[styles.certificatesFilterText, certificateFilter !== "all" && styles.certificatesFilterTextActive]}>{activeFilterLabel}</Text>
         </Pressable>
 
         <View style={styles.certificatesList}>
-          {certificates.map((item) => (
+          {loading ? <Text style={styles.bodyText}>Đang tải chứng chỉ...</Text> : null}
+          {failed ? <Text style={styles.bodyText}>Không thể tải chứng chỉ.</Text> : null}
+          {!loading && !failed && certificates.length === 0 ? (
+            <Text style={styles.bodyText}>Chưa có chứng chỉ hoàn thành khóa học.</Text>
+          ) : null}
+          {!loading && !failed && certificates.length > 0 && visibleCertificates.length === 0 ? (
+            <Text style={styles.bodyText}>Không tìm thấy chứng chỉ phù hợp.</Text>
+          ) : null}
+          {visibleCertificates.map((item) => (
             <CertificateListCard key={item.id} certificate={item} />
           ))}
         </View>
       </ScrollView>
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => undefined}
-        style={({ pressed }) => [styles.certificatesFab, pressed && styles.pressed]}
-      >
-        <Ionicons name="add-circle-outline" size={24} color="#ffffff" />
-      </Pressable>
+      <CertificateFilterModal
+        onClose={() => setFilterVisible(false)}
+        onSelect={(value) => {
+          setCertificateFilter(value);
+          setFilterVisible(false);
+        }}
+        selected={certificateFilter}
+        visible={filterVisible}
+      />
     </SafeAreaView>
+  );
+}
+
+function CertificateFilterModal({
+  onClose,
+  onSelect,
+  selected,
+  visible
+}: {
+  onClose: () => void;
+  onSelect: (value: CertificateFilterValue) => void;
+  selected: CertificateFilterValue;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <Pressable style={styles.certificatesFilterBackdrop} onPress={onClose}>
+        <Pressable style={styles.certificatesFilterModal} onPress={(event) => event.stopPropagation()}>
+          <View style={styles.certificatesFilterModalHeader}>
+            <Text style={styles.certificatesFilterModalTitle}>Lọc chứng chỉ</Text>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.certificatesFilterCloseButton}>
+              <Ionicons name="close" size={20} color={employeePalette.text} />
+            </Pressable>
+          </View>
+          <View style={styles.certificatesFilterModalList}>
+            {certificateFilterOptions.map((option) => {
+              const active = option.value === selected;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={option.value}
+                  onPress={() => onSelect(option.value)}
+                  style={[styles.certificatesFilterOption, active && styles.certificatesFilterOptionActive]}
+                >
+                  <Text style={[styles.certificatesFilterOptionText, active && styles.certificatesFilterOptionTextActive]}>{option.label}</Text>
+                  {active ? <Ionicons name="checkmark" size={20} color={employeePalette.goldDark} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -6516,43 +7802,154 @@ function CertificateListCard({ certificate }: { certificate: CertificateCardItem
   );
 }
 
+type InventoryAreaFilterValue = "all" | "available" | "soldOut" | "featured";
+
+type InventoryAreaCardItem = {
+  available: string;
+  hot?: boolean;
+  id?: string;
+  image: ImageSourcePropType;
+  lotId?: string;
+  name: string;
+  total: string;
+};
+
+const inventoryAreaFilterOptions: Array<{ label: string; value: InventoryAreaFilterValue }> = [
+  { label: "Tất cả khu đất", value: "all" },
+  { label: "Còn hàng", value: "available" },
+  { label: "Hết hàng", value: "soldOut" },
+  { label: "Khu nổi bật", value: "featured" }
+];
+
+function inventoryAreaLotCount(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? Math.trunc(count) : null;
+}
+
+function inventoryAreaAvailability(area: ApiObject) {
+  const remainingLots = inventoryAreaLotCount(area.remaining_lots ?? area.remainingLots);
+  const totalLots = inventoryAreaLotCount(area.total_lots ?? area.totalLots);
+
+  if (remainingLots !== null && totalLots !== null) {
+    return `Còn ${remainingLots}/${totalLots} lô`;
+  }
+
+  return apiText(area.available_label ?? area.available ?? area.available_count, "Còn hàng");
+}
+
+function inventoryAreaTotal(area: ApiObject) {
+  const totalLots = inventoryAreaLotCount(area.total_lots ?? area.totalLots);
+  return totalLots !== null ? `Tổng: ${totalLots} lô` : apiText(area.total, "Tổng: --");
+}
+
+function inventoryAreaHasStock(area: ApiObject) {
+  const remainingLots = inventoryAreaLotCount(area.remaining_lots ?? area.remainingLots);
+  if (remainingLots !== null) return remainingLots > 0;
+
+  const status = apiText(area.status ?? area.label_status ?? area.lable_status, "").toLowerCase();
+  return !status.includes("hết");
+}
+
+function inventoryAreaMatchesFilter(area: ApiObject, filter: InventoryAreaFilterValue) {
+  if (filter === "all") return true;
+  if (filter === "featured") return apiBoolean(area.is_featured ?? area.isFeatured ?? area.is_hot ?? area.hot, false);
+  if (filter === "available") return inventoryAreaHasStock(area);
+  return !inventoryAreaHasStock(area);
+}
+
+function inventoryAreaCardFromRecord(area: ApiObject, index: number): InventoryAreaCardItem {
+  const type = apiText(area.type, "area").toLowerCase();
+  const lotCode = apiText(area.code ?? area.lot_code ?? area.lotCode, "").trim();
+  const areaId = apiText(
+    area.area_id ??
+      area.areaId ??
+      (type === "area" ? area.target_id : undefined) ??
+      (type === "area" ? area.id : undefined),
+    ""
+  );
+  const lotId = type === "lot" ? apiText(area.lot_id ?? area.lotId ?? area.id, "") : "";
+  const areaName = apiText(area.name ?? area.title, "Khu đất");
+
+  return {
+    available: inventoryAreaAvailability(area),
+    hot: apiBoolean(area.is_featured ?? area.isFeatured ?? area.is_hot ?? area.hot, index === 0),
+    id: areaId,
+    image: mediaSource(
+      area.sales_board_image ?? area.salesBoardImage,
+      index % 2 === 0 ? inventoryImages.zoneA : inventoryImages.zoneB
+    ),
+    lotId,
+    name: lotCode ? `Lô ${lotCode} - ${areaName}` : areaName,
+    total: inventoryAreaTotal(area)
+  };
+}
+
 export function InventoryListScreen() {
-  const { data, failed, loading } = useEmployeeApiData(() => employeeApi.areas(), []);
-  const areaRows = apiList(data);
-  const formatLotCount = (value: unknown) => {
-    if (value === null || value === undefined || value === "") return null;
-    const count = Number(value);
-    return Number.isFinite(count) && count >= 0 ? Math.trunc(count) : null;
-  };
-  const formatAreaAvailability = (area: ApiObject) => {
-    const remainingLots = formatLotCount(area.remaining_lots ?? area.remainingLots);
-    const totalLots = formatLotCount(area.total_lots ?? area.totalLots);
+  const [areaRows, setAreaRows] = useState<ApiObject[]>([]);
+  const [debouncedSearchText, setDebouncedSearchText] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [filterPickerVisible, setFilterPickerVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState("");
+  const [selectedFilter, setSelectedFilter] = useState<InventoryAreaFilterValue>("all");
+  const filteredRows = useMemo(
+    () => areaRows.filter((area) => inventoryAreaMatchesFilter(area, selectedFilter)),
+    [areaRows, selectedFilter]
+  );
+  const zones = useMemo(
+    () => filteredRows.map((area, index) => inventoryAreaCardFromRecord(area, index)),
+    [filteredRows]
+  );
+  const hasSearchText = Boolean(debouncedSearchText);
 
-    if (remainingLots !== null && totalLots !== null) {
-      return `Còn ${remainingLots}/${totalLots} Lô`;
-    }
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearchText(searchText.trim());
+    }, 350);
 
-    return apiText(area.available_label ?? area.available ?? area.available_count, "Còn hàng");
-  };
-  const formatAreaTotal = (area: ApiObject) => {
-    const totalLots = formatLotCount(area.total_lots ?? area.totalLots);
-    return totalLots !== null ? `Tổng: ${totalLots} lô` : apiText(area.total, "Tổng: --");
-  };
-  const zones = areaRows.length > 0
-    ? areaRows.map((area, index) => ({
-        id: apiText(area.id, ""),
-        available: formatAreaAvailability(area),
-        hot: Boolean(area.is_hot ?? index === 0),
-        image: index % 2 === 0 ? inventoryImages.zoneA : inventoryImages.zoneB,
-        name: apiText(area.name ?? area.title, "Khu đất"),
-        total: formatAreaTotal(area)
-      }))
-    : [
-        { available: "Còn 12/45 Lô", hot: true, image: inventoryImages.zoneA, name: "Láng hòa lạc", total: "Tổng: 45 lô" },
-        { available: "Còn 5/30 Lô", image: inventoryImages.zoneB, name: "Mỹ Đình", total: "Tổng: 30 lô" },
-        { available: "Còn 12/45 Lô", image: inventoryImages.zoneA, name: "Chương Mỹ", total: "Tổng: 45 lô" },
-        { available: "Còn 5/30 Lô", image: inventoryImages.zoneB, name: "Cầu Giấy", total: "Tổng: 30 lô" }
-      ];
+    return () => clearTimeout(handle);
+  }, [searchText]);
+
+  useEffect(() => {
+    let mounted = true;
+    const params = selectedFilter === "featured" && !debouncedSearchText
+      ? { filters: { is_featured: "true" } }
+      : undefined;
+    const request = debouncedSearchText
+      ? employeeApi.searchAreas(debouncedSearchText)
+      : employeeApi.areas(params);
+
+    setLoading(true);
+    setFailed(false);
+
+    request
+      .then((response) => {
+        if (!mounted) return;
+        setAreaRows(apiList(response.data));
+      })
+      .catch((error) => {
+        if (!mounted) return;
+
+        if (error instanceof ApiRequestError && error.status === 404) {
+          setAreaRows([]);
+          return;
+        }
+
+        setAreaRows([]);
+        setFailed(true);
+        appLogger.warn("employee.inventory", "Không thể tải danh sách khu đất.", { error });
+      })
+      .finally(() => {
+        if (mounted) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [debouncedSearchText, selectedFilter]);
 
   return (
     <SafeAreaView style={styles.inventoryAreaSafe}>
@@ -6574,23 +7971,101 @@ export function InventoryListScreen() {
         <View style={styles.inventoryAreaSearchRow}>
           <View style={styles.inventoryAreaSearchInput}>
             <Ionicons name="search" size={22} color="#8f706b" />
-            <Text style={styles.inventoryAreaSearchText}>Tìm kiếm khu vực...</Text>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+              onChangeText={setSearchText}
+              placeholder="Tìm khu đất, mã lô..."
+              placeholderTextColor="#8f706b"
+              returnKeyType="search"
+              style={styles.inventoryAreaSearchText}
+              value={searchText}
+            />
+            {searchText ? (
+              <Pressable accessibilityRole="button" onPress={() => setSearchText("")} style={styles.inventoryAreaClearButton}>
+                <Ionicons name="close" size={18} color={employeePalette.muted} />
+              </Pressable>
+            ) : null}
           </View>
-          <Pressable accessibilityRole="button" style={styles.inventoryAreaFilterButton}>
-            <Ionicons name="filter" size={22} color={employeePalette.muted} />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setFilterPickerVisible(true)}
+            style={[styles.inventoryAreaFilterButton, selectedFilter !== "all" && styles.inventoryAreaFilterButtonActive]}
+          >
+            <Ionicons name="filter" size={22} color={selectedFilter !== "all" ? employeePalette.redDark : employeePalette.muted} />
           </Pressable>
         </View>
 
-        {loading ? <Text style={styles.bodyText}>Đang tải khu vực...</Text> : null}
-        {failed ? <Text style={styles.bodyText}>Không thể tải API khu vực, đang hiển thị dữ liệu dự phòng.</Text> : null}
+        {loading ? <Text style={styles.bodyText}>Đang tải khu đất...</Text> : null}
+        {failed ? <Text style={styles.bodyText}>Không thể tải danh sách khu đất.</Text> : null}
+        {!loading && !failed && zones.length === 0 ? (
+          <Text style={styles.bodyText}>{hasSearchText ? "Không tìm thấy khu đất phù hợp." : "Chưa có dữ liệu khu đất."}</Text>
+        ) : null}
         <View style={styles.inventoryAreaGrid}>
           {zones.map((zone) => (
-            <InventoryZoneCard key={zone.name} {...zone} id={"id" in zone ? zone.id : undefined} />
+            <InventoryZoneCard key={`${zone.id || zone.name}-${zone.lotId || "area"}`} {...zone} />
           ))}
         </View>
       </ScrollView>
 
+      <InventoryAreaFilterPicker
+        onClose={() => setFilterPickerVisible(false)}
+        onSelect={(value) => {
+          setSelectedFilter(value);
+          setFilterPickerVisible(false);
+        }}
+        selectedFilter={selectedFilter}
+        visible={filterPickerVisible}
+      />
+
     </SafeAreaView>
+  );
+}
+
+function InventoryAreaFilterPicker({
+  onClose,
+  onSelect,
+  selectedFilter,
+  visible
+}: {
+  onClose: () => void;
+  onSelect: (value: InventoryAreaFilterValue) => void;
+  selectedFilter: InventoryAreaFilterValue;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <Pressable style={styles.inventoryAreaFilterBackdrop} onPress={onClose}>
+        <Pressable style={styles.inventoryAreaFilterModal} onPress={(event) => event.stopPropagation()}>
+          <View style={styles.inventoryAreaFilterModalHeader}>
+            <Text style={styles.inventoryAreaFilterModalTitle}>Lọc khu đất</Text>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.inventoryAreaFilterCloseButton}>
+              <Ionicons color={employeePalette.text} name="close" size={20} />
+            </Pressable>
+          </View>
+          <View style={styles.inventoryAreaFilterModalList}>
+            {inventoryAreaFilterOptions.map((option) => {
+              const active = option.value === selectedFilter;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={option.value}
+                  onPress={() => onSelect(option.value)}
+                  style={[styles.inventoryAreaFilterOption, active && styles.inventoryAreaFilterOptionActive]}
+                >
+                  <Text style={[styles.inventoryAreaFilterOptionText, active && styles.inventoryAreaFilterOptionTextActive]}>
+                    {option.label}
+                  </Text>
+                  {active ? <Ionicons color={employeePalette.goldDark} name="checkmark" size={20} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -6599,13 +8074,15 @@ function InventoryZoneCard({
   hot,
   id,
   image,
+  lotId,
   name,
   total
 }: {
   available: string;
   hot?: boolean;
   id?: string;
-  image: number;
+  image: ImageSourcePropType;
+  lotId?: string;
   name: string;
   total: string;
 }) {
@@ -6615,7 +8092,7 @@ function InventoryZoneCard({
       onPress={() =>
         router.push({
           pathname: "/employee/inventory-map",
-          params: id ? { areaId: id } : undefined
+          params: id ? { areaId: id, ...(lotId ? { lotId } : {}) } : undefined
         })
       }
       style={({ pressed }) => [styles.inventoryAreaCard, pressed && styles.pressed]}
@@ -6650,10 +8127,12 @@ export function InventoryMapScreen() {
   const mapZoomMin = 1;
   const mapZoomMax = 2.5;
   const mapZoomStep = 0.25;
-  const params = useLocalSearchParams<{ areaId?: string }>();
+  const params = useLocalSearchParams<{ areaId?: string; lotId?: string }>();
   const rawAreaId = params.areaId;
+  const rawLotId = params.lotId;
   const areaId = Array.isArray(rawAreaId) ? rawAreaId[0] : rawAreaId;
-  const [selectedLotId, setSelectedLotId] = useState("");
+  const routeLotId = Array.isArray(rawLotId) ? rawLotId[0] : rawLotId;
+  const [selectedLotId, setSelectedLotId] = useState(routeLotId ?? "");
   const [mapCommentDraft, setMapCommentDraft] = useState("");
   const [mapCommentSubmitting, setMapCommentSubmitting] = useState(false);
   const [pagedAreaComments, setPagedAreaComments] = useState<ApiObject[]>([]);
@@ -6691,27 +8170,14 @@ export function InventoryMapScreen() {
       ? { html: `<meta name="viewport" content="width=device-width, initial-scale=1" /><style>html,body,iframe{height:100%;margin:0;width:100%;} iframe{border:0;}</style>${salesBoardEmbed}` }
       : { uri: salesBoardEmbed }
     : null;
-  const fallbackLots = useMemo(
-    () =>
-      Array.from({ length: 28 }).map((_, index) => ({
-        code: "A1",
-        id: "",
-        status: index === 10 ? "held" : index === 26 || index === 27 ? "sold" : "available"
-      })) satisfies { code: string; id: string; status: InventoryLotStatus }[],
-    []
-  );
   const lotItems = useMemo(
     () =>
-      apiLots.length > 0
-        ? sortInventoryLots(apiLots).map((lot, index) => ({
-            code: inventoryLotCode(lot, `L${index + 1}`),
-            id: apiText(lot.id ?? lot.lot_id ?? lot.lotId, ""),
-            status: inventoryLotStatus(lot)
-          }))
-        : areaId
-          ? []
-          : fallbackLots,
-    [apiLots, areaId, fallbackLots]
+      sortInventoryLots(apiLots).map((lot, index) => ({
+        code: inventoryLotCode(lot, `L${index + 1}`),
+        id: apiText(lot.id ?? lot.lot_id ?? lot.lotId, ""),
+        status: inventoryLotStatus(lot)
+      })),
+    [apiLots]
   );
   const activeLotId = selectedLotId || lotItems.find((lot) => lot.id)?.id || "";
   const { data: activeLotData } = useEmployeeApiData(
@@ -6750,6 +8216,12 @@ export function InventoryMapScreen() {
       return undefined;
     }, [areaId])
   );
+
+  useEffect(() => {
+    if (routeLotId) {
+      setSelectedLotId(routeLotId);
+    }
+  }, [routeLotId]);
 
   useEffect(() => {
     if (!selectedLotId) return;
@@ -7206,6 +8678,18 @@ function AreaCommentsSection({
 
 type LessonCourseQuizStatus = "unknown" | "available" | "locked" | "none" | "grading" | "passed" | "failed" | "completed" | "in_progress";
 
+function lessonCourseQuizStatusFromLabel(value: unknown): LessonCourseQuizStatus | null {
+  const label = apiText(value, "").trim().toLocaleLowerCase("vi-VN");
+
+  if (!label) return null;
+  if (label.includes("xem lại")) return "completed";
+  if (label.includes("chưa đạt")) return "failed";
+  if (label.includes("đang chấm")) return "grading";
+  if (label.includes("làm bài kiểm tra")) return "available";
+
+  return null;
+}
+
 function normalizeLessonCourseQuizStatus(value: unknown): LessonCourseQuizStatus {
   const status = apiText(value, "").trim().toLowerCase();
 
@@ -7281,6 +8765,26 @@ export function LotDetailScreen() {
     lot.description,
     "Lô đất góc 2 mặt tiền cực hiếm tại phân khu trung tâm The Pearl. View trực diện công viên nội khu và rạch cảnh quan. Cơ sở hạ tầng đã hoàn thiện 100%, sẵn sàng xây dựng ngay. Rất thích hợp để xây biệt thự nghỉ dưỡng hoặc shophouse thương mại cao cấp."
   );
+  const nestedArea = isApiObject(lot.area) ? lot.area : {};
+  const nestedProject = isApiObject(nestedArea.project) ? nestedArea.project : {};
+  const lotLocationQuery = apiText(
+    nestedArea.location ?? nestedProject.location ?? nestedArea.project_name ?? nestedProject.name ?? lotArea,
+    lotArea
+  );
+  const lotDirectionUrl = directionUrlFromRecord(lot) || directionUrlFromRecord(nestedArea) || directionUrlFromRecord(nestedProject) ||
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lotLocationQuery)}`;
+  const lotShareUrl = apiText(
+    lot.share_url ?? lot.shareUrl ?? lot.url ?? lot.public_url ?? lot.publicUrl,
+    lotDirectionUrl
+  );
+  const lotShareMessage = [
+    `${lotName} - ${lotArea}`,
+    `Giá bán: ${totalPrice}`,
+    `Diện tích: ${lotAreaSize}`,
+    `Hướng: ${apiText(lot.direction, "Chưa có")}`,
+    `Pháp lý: ${lotLegal}`,
+    lotShareUrl ? `Xem vị trí: ${lotShareUrl}` : ""
+  ].filter(Boolean).join("\n");
 
   useEffect(() => {
     setLotImageIndex(0);
@@ -7328,6 +8832,27 @@ export function LotDetailScreen() {
     }
   }
 
+  async function openLotDirections() {
+    try {
+      await Linking.openURL(lotDirectionUrl);
+    } catch (error) {
+      appLogger.warn("employee.lot.direction", "Không thể mở Google Maps cho lô đất.", { lotId, lotDirectionUrl, error });
+      notifyError(error, "Không thể mở Google Maps cho lô đất.");
+    }
+  }
+
+  async function shareLot() {
+    try {
+      await Share.share({
+        message: lotShareMessage,
+        title: `${lotName} - ${lotArea}`
+      });
+    } catch (error) {
+      appLogger.warn("employee.lot.share", "Không thể chia sẻ lô đất.", { lotId, error });
+      notifyError(error, "Không thể chia sẻ lô đất.");
+    }
+  }
+
   return (
     <SafeAreaView style={styles.lotDetailSafe}>
       <ScrollView contentContainerStyle={styles.lotDetailScroll} showsVerticalScrollIndicator={false}>
@@ -7355,10 +8880,10 @@ export function LotDetailScreen() {
               <Ionicons name="arrow-back" size={28} color={employeePalette.text} />
             </Pressable>
             <View style={styles.lotDetailHeroRightActions}>
-              <Pressable accessibilityRole="button" style={styles.lotDetailHeroButton}>
+              <Pressable accessibilityRole="button" onPress={openLotDirections} style={styles.lotDetailHeroButton}>
                 <Ionicons name="map-outline" size={27} color={employeePalette.text} />
               </Pressable>
-              <Pressable accessibilityRole="button" style={styles.lotDetailHeroButton}>
+              <Pressable accessibilityRole="button" onPress={shareLot} style={styles.lotDetailHeroButton}>
                 <Ionicons name="share-social-outline" size={27} color={employeePalette.text} />
               </Pressable>
             </View>
@@ -7665,7 +9190,7 @@ function formatNotificationTime(value: unknown) {
 
 function notificationCategory(actionType: string) {
   if (actionType.includes("leave")) return "NGHỈ PHÉP";
-  if (actionType.includes("transfer")) return "CHUYỂN PHÒNG";
+  if (actionType.includes("transfer")) return "CHUYỂN PHÒNG BAN";
   if (actionType.includes("deposit")) return "ĐẶT CỌC";
   if (actionType.includes("lot") || actionType.includes("inventory")) return "BẢNG HÀNG";
   if (actionType.includes("news") || actionType.includes("post")) return "TIN NỘI BỘ";
@@ -7691,28 +9216,208 @@ function notificationHref(item: NotificationRow): Href | null {
   return null;
 }
 
+function newsCommentKey(comment: ApiObject) {
+  const id = apiText(comment.id, "").trim();
+  if (id) return id;
+
+  return [
+    apiText(comment.news_id ?? comment.newsId, ""),
+    apiText(comment.user_id ?? comment.userId, ""),
+    apiText(comment.content ?? comment.text, ""),
+    apiText(comment.created_at ?? comment.createdAt, "")
+  ].filter(Boolean).join("|");
+}
+
+function prependNewsComment(comments: ApiObject[], comment: ApiObject) {
+  const nextKey = newsCommentKey(comment);
+
+  if (nextKey && comments.some((item) => newsCommentKey(item) === nextKey)) {
+    return comments;
+  }
+
+  return [comment, ...comments];
+}
+
+function normalizeRealtimeNewsComment(payload: unknown, fallbackNewsId: string) {
+  const root = isApiObject(payload) ? payload : {};
+  const data = isApiObject(root.data) ? root.data : {};
+  const source = Object.keys(data).length > 0 ? data : root;
+  const comment = isApiObject(source.comment) ? source.comment : source;
+  const newsId = apiText(source.news_id ?? source.newsId ?? comment.news_id ?? comment.newsId, fallbackNewsId).trim();
+  const content = apiText(comment.content ?? comment.text, "").trim();
+
+  if (!newsId || !content) {
+    return null;
+  }
+
+  return {
+    newsId,
+    comment: {
+      ...comment,
+      news_id: newsId
+    }
+  };
+}
+
 export function CommentsScreen() {
   const c = useCopy().notifications;
+  const params = useLocalSearchParams<{ postId?: string; title?: string }>();
+  const postId = paramValue(params.postId) ?? "";
+  const routeTitle = paramValue(params.title) ?? "";
+  const [commentDraft, setCommentDraft] = useState("");
+  const [comments, setComments] = useState<ApiObject[]>([]);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const { data, failed, loading } = useEmployeeApiData(
+    () => postId ? employeeApi.internalNewsDetail(postId) : Promise.resolve({ data: {} }),
+    [postId]
+  );
+  const detailPayload = isApiObject(data) ? data : {};
+  const detail = isApiObject(detailPayload.detail) ? detailPayload.detail : detailPayload;
+  const fetchedComments = useMemo(() => apiList(detailPayload.comments), [detailPayload.comments]);
+  const postTitle = apiText(detail.title ?? routeTitle, "Bình luận bài viết");
+  const postSummary = htmlToPlainText(apiText(detail.summary ?? detail.content, ""));
+
+  useEffect(() => {
+    setComments(fetchedComments);
+  }, [fetchedComments]);
+
+  const handleRealtimeNewsComment = useCallback((payload: unknown) => {
+    const realtimeComment = normalizeRealtimeNewsComment(payload, postId);
+    if (!realtimeComment || realtimeComment.newsId !== postId) {
+      return;
+    }
+
+    setComments((current) => prependNewsComment(current, realtimeComment.comment));
+  }, [postId]);
+
+  useRealtimeEvent("news.comment.created", handleRealtimeNewsComment);
+  useRealtimeRoom(postId ? `news:${postId}` : "");
+
+  async function submitComment() {
+    const content = commentDraft.trim();
+
+    if (!postId || !content || commentSubmitting) {
+      return;
+    }
+
+    setCommentSubmitting(true);
+    try {
+      const response = await employeeApi.addInternalNewsComment(postId, content);
+      const createdComment = isApiObject(response.data) ? response.data : {};
+      setComments((current) => prependNewsComment(current, createdComment));
+      setCommentDraft("");
+      notifySuccess({ message: response.message || "Đã gửi bình luận." });
+    } catch (error) {
+      appLogger.warn("employee.news.comment", "Không thể gửi bình luận bài viết nội bộ.", { postId, error });
+      notifyError(error, "Không thể gửi bình luận.");
+    } finally {
+      setCommentSubmitting(false);
+    }
+  }
+
   return (
-    <EmployeePage title={c.comments} subtitle="Kinh Doanh Dự Án Cao Cấp" back={back}>
-      <EmployeeCard>
-        <Text style={styles.listTitle}>Ban quản lý</Text>
-        <Text style={styles.bodyText}>Cập nhật chính sách hoa hồng quý 3 và danh sách sản phẩm ưu tiên.</Text>
-      </EmployeeCard>
-      {["Khách đang cân nhắc, hẹn quay lại chiều nay để xem thực tế lô đất.", "Lô này có pháp lý đầy đủ, sổ hồng sẵn sàng bàn giao."].map((comment, index) => (
-        <EmployeeCard key={comment}>
-          <Text style={styles.listTitle}>{index === 0 ? "Minh Anh" : "Tuấn Kiệt"}</Text>
-          <Text style={styles.bodyText}>{comment}</Text>
+    <EmployeePage title={c.comments} subtitle="Bảng tin nội bộ" back={back}>
+      {!postId ? (
+        <EmployeeCard>
+          <Text style={styles.listTitle}>Chưa chọn bài viết</Text>
+          <Text style={styles.bodyText}>Vui lòng mở bình luận từ một bài viết trong tab Tin tức.</Text>
         </EmployeeCard>
-      ))}
-      <EmployeeInputPreview label="BÌNH LUẬN" value="Nhập nội dung trao đổi..." icon="chatbubble-outline" />
-      <EmployeeButton title={c.send} icon="send-outline" />
+      ) : (
+        <>
+          <EmployeeCard>
+            <Text style={styles.listTitle}>{postTitle}</Text>
+            {postSummary ? <Text numberOfLines={3} style={styles.bodyText}>{postSummary}</Text> : null}
+          </EmployeeCard>
+
+          {loading ? <Text style={styles.bodyText}>Đang tải bình luận...</Text> : null}
+          {failed ? <Text style={styles.bodyText}>Không thể tải bình luận. Vui lòng thử lại.</Text> : null}
+          {!loading && !failed && comments.length === 0 ? <Text style={styles.bodyText}>Chưa có bình luận nào.</Text> : null}
+
+          {comments.map((comment, index) => {
+            const commentUser = isApiObject(comment.user) ? comment.user : {};
+            const name = apiText(comment.user_name ?? comment.userName ?? commentUser.name, "Người dùng hệ thống");
+
+            return (
+              <EmployeeCard key={newsCommentKey(comment) || `${name}-${index}`}>
+                <Text style={styles.listTitle}>{name}</Text>
+                <Text style={styles.bodyText}>{apiText(comment.content ?? comment.text, "")}</Text>
+                <Text style={styles.commentTimeText}>{formatApiDateTime(comment.created_at ?? comment.createdAt, "Vừa xong")}</Text>
+              </EmployeeCard>
+            );
+          })}
+
+          <View style={styles.commentsComposer}>
+            <TextInput
+              editable={!commentSubmitting}
+              multiline
+              onChangeText={setCommentDraft}
+              placeholder="Nhập nội dung trao đổi..."
+              placeholderTextColor="#8f706b"
+              style={styles.commentsInput}
+              textAlignVertical="top"
+              value={commentDraft}
+            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={commentSubmitting || !commentDraft.trim()}
+              onPress={submitComment}
+              style={({ pressed }) => [
+                styles.commentsSendButton,
+                (pressed || commentSubmitting || !commentDraft.trim()) && styles.pressed
+              ]}
+            >
+              <Ionicons name="send-outline" size={18} color="#ffffff" />
+              <Text style={styles.commentsSendText}>{commentSubmitting ? "Đang gửi" : c.send}</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
     </EmployeePage>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  commentTimeText: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8
+  },
+  commentsComposer: {
+    backgroundColor: "#ffffff",
+    borderColor: employeePalette.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12
+  },
+  commentsInput: {
+    color: employeePalette.text,
+    fontFamily: appFonts.regular,
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 88,
+    paddingHorizontal: 0,
+    paddingVertical: 0
+  },
+  commentsSendButton: {
+    alignItems: "center",
+    alignSelf: "flex-end",
+    backgroundColor: employeePalette.redDark,
+    borderRadius: 10,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 42,
+    paddingHorizontal: 16
+  },
+  commentsSendText: {
+    color: "#ffffff",
+    fontFamily: appFonts.semiBold,
+    fontSize: 14,
+    lineHeight: 20
+  },
   notificationSafe: {
     backgroundColor: "#ffffff",
     flex: 1
@@ -7995,8 +9700,9 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontFamily: appFonts.semiBold,
     fontSize: 16,
+    includeFontPadding: true,
     letterSpacing: 0.8,
-    lineHeight: 16
+    lineHeight: 22
   },
   pointHistoryStatsGrid: {
     flexDirection: "row",
@@ -8076,6 +9782,31 @@ const styles = StyleSheet.create({
   pointHistoryList: {
     gap: 12,
     marginTop: 16
+  },
+  pointHistoryEmpty: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#f0e7e4",
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 120,
+    paddingHorizontal: 18,
+    paddingVertical: 24
+  },
+  pointHistoryEmptyTitle: {
+    color: employeePalette.text,
+    fontFamily: appFonts.semiBold,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlign: "center"
+  },
+  pointHistoryEmptyText: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 6,
+    textAlign: "center"
   },
   pointHistoryItem: {
     alignItems: "center",
@@ -8272,11 +10003,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13
   },
   certificatesSearchText: {
-    color: "#a1a1aa",
+    color: employeePalette.text,
+    flex: 1,
     fontFamily: appFonts.regular,
     fontSize: 16,
     includeFontPadding: true,
-    lineHeight: 24
+    lineHeight: 24,
+    paddingVertical: 0
   },
   certificatesFilterButton: {
     alignItems: "center",
@@ -8290,12 +10023,84 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 17
   },
+  certificatesFilterButtonActive: {
+    backgroundColor: "#fff7f6",
+    borderColor: employeePalette.redDark
+  },
   certificatesFilterText: {
     color: "#191c1d",
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     includeFontPadding: true,
     lineHeight: 24
+  },
+  certificatesFilterTextActive: {
+    color: employeePalette.redDark
+  },
+  certificatesFilterBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 20
+  },
+  certificatesFilterModal: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    overflow: "hidden",
+    width: "100%"
+  },
+  certificatesFilterModalHeader: {
+    alignItems: "center",
+    borderBottomColor: employeePalette.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14
+  },
+  certificatesFilterModalTitle: {
+    color: employeePalette.text,
+    flex: 1,
+    fontFamily: appFonts.bold,
+    fontSize: 16,
+    lineHeight: 22
+  },
+  certificatesFilterCloseButton: {
+    alignItems: "center",
+    height: 32,
+    justifyContent: "center",
+    width: 32
+  },
+  certificatesFilterModalList: {
+    padding: 12
+  },
+  certificatesFilterOption: {
+    alignItems: "center",
+    borderColor: employeePalette.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 11
+  },
+  certificatesFilterOptionActive: {
+    backgroundColor: "#fff7df",
+    borderColor: "#f5c14b"
+  },
+  certificatesFilterOptionText: {
+    color: employeePalette.text,
+    flex: 1,
+    fontFamily: appFonts.bold,
+    fontSize: 14,
+    lineHeight: 20,
+    paddingRight: 10
+  },
+  certificatesFilterOptionTextActive: {
+    color: employeePalette.goldDark
   },
   certificatesList: {
     gap: 20,
@@ -8463,6 +10268,10 @@ const styles = StyleSheet.create({
     gap: 7,
     marginBottom: 56
   },
+  leaveIntroCompact: {
+    gap: 7,
+    marginBottom: 20
+  },
   leaveTitle: {
     color: "#191c1d",
     fontFamily: appFonts.bold,
@@ -8476,6 +10285,84 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.regular,
     fontSize: 16,
     lineHeight: 25.6
+  },
+  leaveFormCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e3beb8",
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 16,
+    marginBottom: 24,
+    padding: 17,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 20
+  },
+  leaveFormTitle: {
+    color: "#191c1d",
+    fontFamily: appFonts.bold,
+    fontSize: 18,
+    lineHeight: 24
+  },
+  leaveTypeButton: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e1e3e4",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 50,
+    justifyContent: "space-between",
+    paddingHorizontal: 17
+  },
+  leaveTypeButtonText: {
+    color: "#191c1d",
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 24
+  },
+  leaveSubmitButton: {
+    alignItems: "center",
+    backgroundColor: "#950100",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 8,
+    height: 50,
+    justifyContent: "center",
+    shadowColor: "#950100",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 15,
+    elevation: 3
+  },
+  leaveSubmitText: {
+    color: "#ffffff",
+    fontFamily: appFonts.semiBold,
+    fontSize: 16,
+    letterSpacing: 0.32,
+    lineHeight: 18
+  },
+  leaveHistoryHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12
+  },
+  transferHistoryHeader: {
+    marginTop: 28
+  },
+  leaveHistoryTitle: {
+    color: "#191c1d",
+    fontFamily: appFonts.bold,
+    fontSize: 20,
+    lineHeight: 26
+  },
+  leaveHistoryMeta: {
+    color: "#8f706b",
+    fontFamily: appFonts.regular,
+    fontSize: 13,
+    lineHeight: 18
   },
   leaveFilterScroll: {
     marginBottom: 31,
@@ -8502,7 +10389,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 22
   },
   leaveFilterTextActive: {
     color: "#ffffff"
@@ -8536,6 +10423,26 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     flexDirection: "row",
     justifyContent: "space-between"
+  },
+  leaveHistoryCardTop: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between"
+  },
+  leaveHistoryCardTitleRow: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 8,
+    minWidth: 0
+  },
+  leaveHistoryCardTitle: {
+    color: "#191c1d",
+    flex: 1,
+    fontFamily: appFonts.semiBold,
+    fontSize: 18,
+    lineHeight: 24
   },
   leavePerson: {
     alignItems: "center",
@@ -8591,7 +10498,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.2,
-    lineHeight: 16
+    lineHeight: 18
   },
   leaveBadgePendingText: {
     color: "#5b403c"
@@ -8610,6 +10517,9 @@ const styles = StyleSheet.create({
     gap: 14,
     paddingHorizontal: 8,
     paddingVertical: 10
+  },
+  leaveDetailBoxPressable: {
+    minHeight: 88
   },
   leaveDetailRow: {
     alignItems: "center",
@@ -8651,7 +10561,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 22
   },
   leaveRejectButton: {
     alignItems: "center",
@@ -8668,7 +10578,69 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     letterSpacing: 0.32,
-    lineHeight: 16
+    lineHeight: 22
+  },
+  leaveCancelButton: {
+    alignItems: "center",
+    borderColor: "#8f706b",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center"
+  },
+  leaveCancelText: {
+    color: "#8f706b",
+    fontFamily: appFonts.semiBold,
+    fontSize: 15,
+    lineHeight: 18
+  },
+  leaveTypeModal: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    gap: 12,
+    padding: 20,
+    width: "100%"
+  },
+  leaveTypeModalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  leaveTypeModalTitle: {
+    color: "#191c1d",
+    fontFamily: appFonts.bold,
+    fontSize: 20,
+    lineHeight: 26
+  },
+  leaveTypeModalList: {
+    gap: 8
+  },
+  leaveTypeOption: {
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
+    borderColor: "#e1e3e4",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  leaveTypeOptionActive: {
+    backgroundColor: "#ffdad4",
+    borderColor: "#950100"
+  },
+  leaveTypeOptionText: {
+    color: "#191c1d",
+    flex: 1,
+    fontFamily: appFonts.regular,
+    fontSize: 15,
+    lineHeight: 20
+  },
+  leaveTypeOptionTextActive: {
+    color: "#6a0100",
+    fontFamily: appFonts.semiBold
   },
   transferCreateContent: {
     paddingBottom: 48,
@@ -8735,6 +10707,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12
   },
+  transferDepartmentSelect: {
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
+    borderColor: "#e1e3e4",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: 14
+  },
+  transferDepartmentSelectDisabled: {
+    opacity: 0.65
+  },
+  transferDepartmentSelectText: {
+    color: "#191c1d",
+    flex: 1,
+    fontFamily: appFonts.regular,
+    fontSize: 15,
+    lineHeight: 21
+  },
+  transferDepartmentPlaceholder: {
+    color: "#9ca3af"
+  },
+  transferHelperText: {
+    color: "#8f706b",
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    lineHeight: 18
+  },
   transferTextArea: {
     minHeight: 112
   },
@@ -8789,6 +10792,64 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 20,
     width: "100%"
+  },
+  departmentPickerModal: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    maxHeight: "78%",
+    padding: 20,
+    width: "100%"
+  },
+  departmentPickerHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    marginBottom: 14
+  },
+  departmentPickerTitle: {
+    color: "#191c1d",
+    fontFamily: appFonts.bold,
+    fontSize: 20,
+    lineHeight: 26
+  },
+  departmentPickerSubtitle: {
+    color: "#8f706b",
+    fontFamily: appFonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4
+  },
+  departmentPickerList: {
+    gap: 8
+  },
+  departmentPickerOption: {
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
+    borderColor: "#e1e3e4",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  departmentPickerOptionActive: {
+    backgroundColor: "#ffdad4",
+    borderColor: "#950100"
+  },
+  departmentPickerOptionText: {
+    color: "#191c1d",
+    flex: 1,
+    fontFamily: appFonts.regular,
+    fontSize: 15,
+    lineHeight: 20
+  },
+  departmentPickerOptionTextActive: {
+    color: "#6a0100",
+    fontFamily: appFonts.semiBold
   },
   transferRejectTitle: {
     color: "#191c1d",
@@ -9085,6 +11146,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20
   },
+  documentViewerSafe: {
+    backgroundColor: "#ffffff",
+    flex: 1
+  },
+  documentViewerHeader: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderBottomColor: "#f5f5f5",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    height: EMPLOYEE_HEADER_HEIGHT,
+    justifyContent: "space-between",
+    paddingHorizontal: 16
+  },
+  documentViewerHeaderButton: {
+    alignItems: "center",
+    height: 38,
+    justifyContent: "center",
+    width: 38
+  },
+  documentViewerTitle: {
+    color: employeePalette.text,
+    flex: 1,
+    fontFamily: appFonts.bold,
+    fontSize: 17,
+    lineHeight: 24,
+    textAlign: "center"
+  },
+  documentViewerBody: {
+    backgroundColor: "#f8f9fa",
+    flex: 1
+  },
+  documentViewerImage: {
+    height: "100%",
+    width: "100%"
+  },
+  documentViewerWebView: {
+    backgroundColor: "#ffffff",
+    flex: 1
+  },
+  documentViewerMessage: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    padding: 20,
+    textAlign: "center"
+  },
   personalSafe: {
     backgroundColor: "#ffffff",
     flex: 1
@@ -9134,12 +11243,22 @@ const styles = StyleSheet.create({
     marginBottom: 48
   },
   personalAvatarWrap: {
+    alignItems: "center",
+    height: 128,
+    justifyContent: "center",
+    marginBottom: 20,
+    position: "relative",
+    width: 128
+  },
+  personalAvatarFrame: {
+    alignItems: "center",
+    backgroundColor: "#1f2933",
     borderColor: "#ffffff",
     borderRadius: 64,
     borderWidth: 4,
     height: 128,
-    marginBottom: 20,
-    padding: 4,
+    justifyContent: "center",
+    overflow: "hidden",
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.1,
@@ -9147,16 +11266,30 @@ const styles = StyleSheet.create({
     width: 128
   },
   personalAvatarImage: {
-    borderRadius: 56,
+    borderRadius: 60,
     height: "100%",
     width: "100%"
+  },
+  personalAvatarFallback: {
+    alignItems: "center",
+    borderRadius: 60,
+    height: "100%",
+    justifyContent: "center",
+    width: "100%"
+  },
+  personalAvatarInitial: {
+    color: "#ffffff",
+    fontFamily: appFonts.bold,
+    fontSize: 40,
+    lineHeight: 48
   },
   personalEditAvatar: {
     alignItems: "center",
     backgroundColor: "#950100",
     borderRadius: 999,
     bottom: 4,
-    height: 27,
+    elevation: 6,
+    height: 26.5,
     justifyContent: "center",
     position: "absolute",
     right: 4,
@@ -9164,7 +11297,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
-    width: 27
+    width: 26.5,
+    zIndex: 2
   },
   personalName: {
     color: "#6a0100",
@@ -9560,8 +11694,14 @@ const styles = StyleSheet.create({
   personalDocActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 20,
+    gap: 8,
     paddingLeft: 10
+  },
+  personalDocActionButton: {
+    alignItems: "center",
+    height: 34,
+    justifyContent: "center",
+    width: 34
   },
   personalUploadButton: {
     alignItems: "center",
@@ -11087,6 +13227,22 @@ const styles = StyleSheet.create({
   profileHeroAvatarButton: {
     borderRadius: 48
   },
+  profileHeroAvatarFallback: {
+    alignItems: "center",
+    backgroundColor: "#1f2933",
+    borderColor: "#ffffff",
+    borderRadius: 48,
+    borderWidth: 4,
+    height: 96,
+    justifyContent: "center",
+    width: 96
+  },
+  profileHeroAvatarInitial: {
+    color: "#ffffff",
+    fontFamily: appFonts.bold,
+    fontSize: 30,
+    lineHeight: 36
+  },
   profileVerifyBadge: {
     alignItems: "center",
     backgroundColor: "#e7f5f7",
@@ -12461,9 +14617,19 @@ const styles = StyleSheet.create({
   },
   inventoryAreaSearchText: {
     color: "#6b7280",
+    flex: 1,
     fontFamily: appFonts.regular,
     fontSize: 16,
-    lineHeight: 22
+    height: "100%",
+    lineHeight: 22,
+    paddingVertical: 0
+  },
+  inventoryAreaClearButton: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 28,
+    justifyContent: "center",
+    width: 28
   },
   inventoryAreaFilterButton: {
     alignItems: "center",
@@ -12479,6 +14645,75 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     width: 44,
     elevation: 1
+  },
+  inventoryAreaFilterButtonActive: {
+    backgroundColor: "#fff7f6",
+    borderColor: employeePalette.redDark
+  },
+  inventoryAreaFilterBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 20
+  },
+  inventoryAreaFilterModal: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    overflow: "hidden",
+    width: "100%"
+  },
+  inventoryAreaFilterModalHeader: {
+    alignItems: "center",
+    borderBottomColor: employeePalette.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14
+  },
+  inventoryAreaFilterModalTitle: {
+    color: employeePalette.text,
+    flex: 1,
+    fontFamily: appFonts.bold,
+    fontSize: 16,
+    lineHeight: 22
+  },
+  inventoryAreaFilterCloseButton: {
+    alignItems: "center",
+    height: 32,
+    justifyContent: "center",
+    width: 32
+  },
+  inventoryAreaFilterModalList: {
+    padding: 12
+  },
+  inventoryAreaFilterOption: {
+    alignItems: "center",
+    borderColor: employeePalette.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 11
+  },
+  inventoryAreaFilterOptionActive: {
+    backgroundColor: "#fff7df",
+    borderColor: "#f5c14b"
+  },
+  inventoryAreaFilterOptionText: {
+    color: employeePalette.text,
+    flex: 1,
+    fontFamily: appFonts.bold,
+    fontSize: 14,
+    lineHeight: 20,
+    paddingRight: 10
+  },
+  inventoryAreaFilterOptionTextActive: {
+    color: employeePalette.goldDark
   },
   inventoryAreaGrid: {
     flexDirection: "row",
@@ -12658,10 +14893,12 @@ const styles = StyleSheet.create({
     width: "100%"
   },
   inventoryMapControls: {
+    elevation: 8,
     gap: 8,
     position: "absolute",
     right: 15,
-    top: 54
+    top: 54,
+    zIndex: 10
   },
   inventoryMapControl: {
     alignItems: "center",
@@ -13489,6 +15726,38 @@ const styles = StyleSheet.create({
     top: 10,
     width: 28
   },
+  newsCreateAttachmentPreview: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "rgba(227, 190, 184, 0.7)",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    minHeight: 44,
+    paddingHorizontal: 12
+  },
+  newsCreateAttachmentTitleRow: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 8
+  },
+  newsCreateAttachmentName: {
+    color: employeePalette.text,
+    flex: 1,
+    fontFamily: appFonts.semiBold,
+    fontSize: 14,
+    lineHeight: 18
+  },
+  newsCreateAttachmentRemove: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 30,
+    justifyContent: "center",
+    width: 30
+  },
   newsCreateFooter: {
     alignItems: "center",
     borderTopColor: "rgba(227, 190, 184, 0.3)",
@@ -13735,6 +16004,30 @@ const styles = StyleSheet.create({
     height: 224,
     resizeMode: "cover",
     width: "100%"
+  },
+  newsPostAttachmentList: {
+    gap: 8,
+    paddingTop: 2
+  },
+  newsPostAttachmentChip: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#fff7f6",
+    borderColor: "rgba(149, 1, 0, 0.16)",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    maxWidth: "100%",
+    minHeight: 38,
+    paddingHorizontal: 10
+  },
+  newsPostAttachmentText: {
+    color: employeePalette.text,
+    flexShrink: 1,
+    fontFamily: appFonts.semiBold,
+    fontSize: 13,
+    lineHeight: 17
   },
   newsEditForm: {
     gap: 10

@@ -1,13 +1,15 @@
 import {
   Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
+  useRef,
   useState } from "react";
 import { Image,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
@@ -41,37 +43,44 @@ const projectImages = {
 
 const filters = ["Tất cả", "Căn hộ", "Biệt thự", "Shophouse"] as const;
 
+const filterTypeMap: Record<string, string | undefined> = {
+  "Tất cả": undefined,
+  "Căn hộ": "Căn hộ dịch vụ",
+  "Biệt thự": "Biệt thự nghỉ dưỡng đồi thông",
+  "Shophouse": "Shophouse ven sông",
+};
+
 const projects = [
   {
     badge: "MỞ BÁN",
     image: projectImages.grandHeritage,
-    location: "Quận 1, TP. Hồ Chí Minh",
-    price: "12 - 45 Tỷ",
-    title: "The Grand Heritage",
+    location: "Phường Bãi Cháy, Quảng Ninh",
+    price: "5.2 Tỷ",
+    title: "The Solaria",
     tone: "gold"
   },
   {
-    badge: "SẮP RA MẮT",
+    badge: "MỞ BÁN",
     image: projectImages.coastalAzure,
-    location: "Cam Ranh, Khánh Hòa",
-    price: "28 - 80 Tỷ",
-    title: "Coastal Azure Villas",
-    tone: "neutral"
-  },
-  {
-    badge: "ĐANG NHẬN CỌC",
-    image: projectImages.silkRoad,
-    location: "Thủ Đức, TP. Hồ Chí Minh",
-    price: "6 - 15 Tỷ",
-    title: "The Silk Road Residences",
+    location: "Xã Đông Dư, Gia Lâm, Hà Nội",
+    price: "3.9 Tỷ",
+    title: "Eco Garden",
     tone: "gold"
   },
   {
-    badge: "CHỈ CÒN 2 CĂN",
+    badge: "MỞ BÁN",
+    image: projectImages.silkRoad,
+    location: "Phường Thảo Điền, TP. Hồ Chí Minh",
+    price: "7.6 Tỷ",
+    title: "Riverfront City",
+    tone: "gold"
+  },
+  {
+    badge: "MỞ BÁN",
     image: projectImages.urbanGold,
-    location: "Long Biên, Hà Nội",
-    price: "18 - 32 Tỷ",
-    title: "Urban Gold Shophouse",
+    location: "Phường Mũi Né, Phan Thiết, Bình Thuận",
+    price: "12.2 Tỷ",
+    title: "Coastal Bay",
     tone: "gold"
   }
 ] as const;
@@ -79,23 +88,41 @@ const projects = [
 export default function CustomerProjectsScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [apiProjects, setApiProjects] = useState<PublicProject[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState<typeof filters[number]>("Tất cả");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
+  const params = useLocalSearchParams<{ focus?: string }>();
 
-  useEffect(() => {
-    let active = true;
+  const fetchProjects = (filter: typeof filters[number], query: string) => {
+    setLoading(true);
+    let promise;
+    if (query.trim()) {
+      promise = customerPublicApi.searchProjects({ q: query.trim(), per_page: 20 });
+    } else {
+      promise = customerPublicApi.projects({ type: filterTypeMap[filter], per_page: 20 });
+    }
 
-    customerPublicApi
-      .projects({ per_page: 20 })
+    promise
       .then((response) => {
-        if (active) setApiProjects(response.data.data ?? []);
+        setApiProjects(response.data.data ?? []);
       })
       .catch((error) => {
         appLogger.warn("customer.projects", "Không thể tải danh sách dự án.", { error });
+      })
+      .finally(() => {
+        setLoading(false);
       });
+  };
 
-    return () => {
-      active = false;
-    };
-  }, []);
+  useEffect(() => {
+    fetchProjects("Tất cả", "");
+    if (params.focus === "true") {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 300);
+    }
+  }, [params.focus]);
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
@@ -119,23 +146,52 @@ export default function CustomerProjectsScreen() {
 
       <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
         <View style={styles.searchAndFilters}>
-          <Pressable accessibilityRole="button" style={styles.searchBox}>
+          <View style={styles.searchBox}>
             <Ionicons name="search-outline" size={22} color={palette.brown} />
-            <Text style={styles.searchPlaceholder}>Tìm kiếm dự án, vị trí...</Text>
-          </Pressable>
+            <TextInput
+              ref={searchInputRef}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Tìm kiếm dự án, vị trí..."
+              placeholderTextColor={palette.muted}
+              style={styles.searchInput}
+              returnKeyType="search"
+              onSubmitEditing={() => fetchProjects(selectedFilter, searchQuery)}
+            />
+            {searchQuery.length > 0 && (
+              <Pressable
+                accessibilityLabel="Xóa từ khóa"
+                accessibilityRole="button"
+                onPress={() => {
+                  setSearchQuery("");
+                  fetchProjects(selectedFilter, "");
+                }}
+                style={styles.clearButton}
+              >
+                <Ionicons name="close-circle" size={20} color={palette.muted} />
+              </Pressable>
+            )}
+          </View>
 
           <View style={styles.filterWrap}>
-            {filters.map((filter, index) => (
-              <Pressable
-                accessibilityRole="button"
-                key={filter}
-                style={[styles.filterButton, index === 0 ? styles.filterActive : styles.filterInactive]}
-              >
-                <Text style={[styles.filterText, index === 0 ? styles.filterTextActive : styles.filterTextInactive]}>
-                  {filter}
-                </Text>
-              </Pressable>
-            ))}
+            {filters.map((filter) => {
+              const isActive = selectedFilter === filter;
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={filter}
+                  onPress={() => {
+                    setSelectedFilter(filter);
+                    fetchProjects(filter, searchQuery);
+                  }}
+                  style={[styles.filterButton, isActive ? styles.filterActive : styles.filterInactive]}
+                >
+                  <Text style={[styles.filterText, isActive ? styles.filterTextActive : styles.filterTextInactive]}>
+                    {filter}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 
@@ -273,12 +329,18 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1
   },
-  searchPlaceholder: {
-    color: palette.muted,
+  searchInput: {
+    color: palette.text,
     flex: 1,
     fontFamily: appFonts.regular,
     fontSize: 16,
-    lineHeight: 24
+    height: "100%",
+    paddingVertical: 0
+  },
+  clearButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 4
   },
   filterWrap: {
     flexDirection: "row",

@@ -26,6 +26,8 @@ export default function EmployeeLayout() {
         <Stack.Screen name="leave-requests" />
         <Stack.Screen name="transfer-requests" />
         <Stack.Screen name="department-staff" />
+        <Stack.Screen name="document-viewer" />
+        <Stack.Screen name="inventory-list" />
         <Stack.Screen name="inventory-map" />
         <Stack.Screen name="lot-detail" />
         <Stack.Screen name="planning-check" />

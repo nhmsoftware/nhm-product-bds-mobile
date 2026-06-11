@@ -153,6 +153,10 @@ export const customerPublicApi = {
     return getData<PaginatedData<PublicProject>>("/api/v1/public/projects", params);
   },
 
+  searchProjects(params: { q: string; per_page?: number; page?: number }) {
+    return getData<PaginatedData<PublicProject>>("/api/v1/public/projects/search", params);
+  },
+
   projectDetail(id: string) {
     return getData<PublicProject>(`/api/v1/public/projects/${encodeURIComponent(id)}`);
   },

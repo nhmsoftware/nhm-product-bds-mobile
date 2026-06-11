@@ -71,6 +71,7 @@ export default function CustomerNewsScreen() {
 
   useEffect(() => {
     let active = true;
+    appLogger.info("customer.search", "Bắt đầu tải dữ liệu tin tức/dự án cho màn hình Tin tức...");
 
     Promise.all([
       customerPublicApi.news({ page: 1, per_page: 3 }),
@@ -78,11 +79,15 @@ export default function CustomerNewsScreen() {
     ])
       .then(([newsResponse, projectResponse]) => {
         if (!active) return;
+        appLogger.info("customer.search", "Tải thành công dữ liệu tin tức/dự án.", {
+          newsCount: (newsResponse.data.featured?.length ?? 0) + (newsResponse.data.list?.length ?? 0),
+          projectsCount: projectResponse.data.data?.length ?? 0
+        });
         setApiNews([...(newsResponse.data.featured ?? []), ...(newsResponse.data.list ?? [])].slice(0, 3));
         setApiProjects(projectResponse.data.data ?? []);
       })
       .catch((error) => {
-        appLogger.warn("customer.search", "Không thể tải dữ liệu tin tức/dự án.", { error });
+        appLogger.warn("customer.search", "Lỗi tải dữ liệu tin tức/dự án hoặc xử lý response.", { error });
       });
 
     return () => {
@@ -137,23 +142,30 @@ export default function CustomerNewsScreen() {
           </View>
 
           <View style={styles.newsCard}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                featuredNews
+                  ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(featuredNews) })
+                  : undefined
+              }
+            >
               <Image source={mediaSource(featuredNews?.thumbnail, newsImages.news)} style={styles.newsImage} />
-            <View style={styles.newsBody}>
-              <View style={styles.newsCategory}>
-                <Ionicons name="newspaper-outline" size={13} color={palette.darkRed} />
-                <Text style={styles.newsCategoryText}>TIN TỨC THỊ TRƯỜNG</Text>
+              <View style={[styles.newsBody, { paddingBottom: 0 }]}>
+                <View style={styles.newsCategory}>
+                  <Ionicons name="newspaper-outline" size={13} color={palette.darkRed} />
+                  <Text style={styles.newsCategoryText}>TIN TỨC THỊ TRƯỜNG</Text>
+                </View>
+                <Text style={styles.newsTitle}>{featuredNews?.title || "Cập nhật xu hướng bất\nđộng sản cao cấp"}</Text>
+                <Text style={styles.newsDescription}>
+                  {featuredNews?.summary || "Phân tích chuyên sâu về sự biến động của phân khúc biệt thự nghỉ dưỡng và căn hộ hạng sang tại các đô thị lớn."}
+                </Text>
               </View>
-              <Text style={styles.newsTitle}>{featuredNews?.title || "Cập nhật xu hướng bất\nđộng sản cao cấp"}</Text>
-              <Text style={styles.newsDescription}>
-                {featuredNews?.summary || "Phân tích chuyên sâu về sự biến động của phân khúc biệt thự nghỉ dưỡng và căn hộ hạng sang tại các đô thị lớn."}
-              </Text>
+            </Pressable>
+            <View style={{ paddingHorizontal: 24, paddingBottom: 24, paddingTop: 16 }}>
               <Pressable
                 accessibilityRole="button"
-                onPress={() =>
-                  featuredNews
-                    ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(featuredNews) })
-                    : router.push("/(app)/market-news")
-                }
+                onPress={() => router.push("/(app)/market-news")}
                 style={styles.readMore}
               >
                 <Text style={styles.readMoreText}>Xem tất cả bài viết</Text>

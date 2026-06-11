@@ -2,8 +2,6 @@ import { Stack } from "expo-router";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import "react-native-reanimated";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppFlashMessage } from "@/components/AppFlashMessage";
@@ -32,24 +30,22 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <LayoutModeProvider>
-          <LanguageProvider>
-            <AuthProvider>
-              <NotificationProvider>
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="index" />
-                  <Stack.Screen name="(auth)" />
-                  <Stack.Screen name="(app)" />
-                  <Stack.Screen name="+not-found" />
-                </Stack>
-                <AppFlashMessage />
-              </NotificationProvider>
-            </AuthProvider>
-          </LanguageProvider>
-        </LayoutModeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <LayoutModeProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <NotificationProvider>
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="index" />
+                <Stack.Screen name="(auth)" />
+                <Stack.Screen name="(app)" />
+                <Stack.Screen name="+not-found" />
+              </Stack>
+              <AppFlashMessage />
+            </NotificationProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </LayoutModeProvider>
+    </SafeAreaProvider>
   );
 }

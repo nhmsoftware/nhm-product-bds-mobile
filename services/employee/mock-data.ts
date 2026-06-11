@@ -9,7 +9,7 @@ import type {
 export const employeeKpis: EmployeeKpi[] = [
   {
     label: "Tin tức nội bộ mới",
-    value: "124",
+    value: "0",
     helper: "Xem ngay",
     tone: "red",
     icon: "newspaper-outline"

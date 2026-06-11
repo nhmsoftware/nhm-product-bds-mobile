@@ -3,39 +3,72 @@ import type { AppAccessRole, AuthRole, AuthSession } from "@/services/auth/types
 
 export const DEMO_AUTH_ENABLED = true;
 
-export type DemoLoginRole = AppAccessRole | "manager" | "director";
+export type DemoLoginRole = AppAccessRole | "employee2" | "manager" | "director" | "ceo" | "super_admin";
 
 export const DEMO_LOGIN_OPTIONS: Array<{
   role: DemoLoginRole;
-  labelKey: "auth.login.demoCustomer" | "auth.login.demoEmployee" | "auth.login.demoManager" | "auth.login.demoDirector";
+  labelKey:
+    | "auth.login.demoCustomer"
+    | "auth.login.demoEmployee"
+    | "auth.login.demoEmployee2"
+    | "auth.login.demoManager"
+    | "auth.login.demoDirector"
+    | "auth.login.demoCeo"
+    | "auth.login.demoSuperAdmin";
 }> = [
   { role: "customer", labelKey: "auth.login.demoCustomer" },
   { role: "employee", labelKey: "auth.login.demoEmployee" },
+  { role: "employee2", labelKey: "auth.login.demoEmployee2" },
   { role: "manager", labelKey: "auth.login.demoManager" },
-  { role: "director", labelKey: "auth.login.demoDirector" }
+  { role: "director", labelKey: "auth.login.demoDirector" },
+  { role: "ceo", labelKey: "auth.login.demoCeo" },
+  { role: "super_admin", labelKey: "auth.login.demoSuperAdmin" }
 ];
 
 export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const accessRole = normalizeAccessRole(role);
+  const sessionRole: AuthRole = role === "employee2" ? "employee" : role;
+  const accessRole = normalizeAccessRole(sessionRole);
   const isEmployeeAccess = accessRole === "employee";
-  const demoRole: AuthRole = role;
-  const isDirector = role === "director";
-  const isManager = role === "manager";
-  const fullName = isDirector
-    ? "Giám đốc Demo"
-    : isManager
-    ? "Mai Đức Dương"
-    : isEmployeeAccess
-      ? "Nguyễn Văn Huy"
-      : "Nguyễn Minh";
-  const email = isDirector
-    ? "director@gmail.com"
-    : isManager
-    ? "maiducduong201@gmail.com"
-    : isEmployeeAccess
-      ? "employee@nhmbds.local"
-      : "demo@nhmbds.local";
+  const demoRole: AuthRole = sessionRole;
+  const demoProfiles: Record<DemoLoginRole, { fullName: string; email: string; phone: string }> = {
+    customer: {
+      fullName: "Khách hàng Demo",
+      email: "customer@test.com",
+      phone: "0901 234 567"
+    },
+    employee: {
+      fullName: "Nguyễn Văn Nhân Viên",
+      email: "employee@test.com",
+      phone: "0900 000 001"
+    },
+    employee2: {
+      fullName: "Võ Thị Nhân Viên Mới",
+      email: "employee2@test.com",
+      phone: "0900 000 006"
+    },
+    manager: {
+      fullName: "Trần Thị Trưởng Phòng",
+      email: "manager@test.com",
+      phone: "0900 000 002"
+    },
+    director: {
+      fullName: "Lê Văn Giám Đốc",
+      email: "director@test.com",
+      phone: "0900 000 003"
+    },
+    ceo: {
+      fullName: "Phạm Thị Tổng Giám Đốc",
+      email: "ceo@test.com",
+      phone: "0900 000 004"
+    },
+    super_admin: {
+      fullName: "Super Admin Test",
+      email: "superadmin@test.com",
+      phone: "0900 000 005"
+    }
+  };
+  const profile = demoProfiles[role];
 
   return {
     accessToken: "demo-local-session",
@@ -43,9 +76,9 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
     isDemo: true,
     user: {
       id: isEmployeeAccess ? `demo-${role}` : "demo-customer",
-      fullName,
-      email,
-      phone: isEmployeeAccess ? "0902 456 789" : "0901 234 567",
+      fullName: profile.fullName,
+      email: profile.email,
+      phone: profile.phone,
       role: demoRole,
       isActive: true,
       emailVerified: true

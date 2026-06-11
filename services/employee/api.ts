@@ -121,7 +121,10 @@ export type InternalNewsThumbnail = {
   uri: string;
 };
 
+export type InternalNewsAttachment = InternalNewsThumbnail;
+
 export type CreateInternalNewsInput = {
+  attachments?: InternalNewsAttachment[];
   content: string;
   thumbnail?: InternalNewsThumbnail;
   title?: string;
@@ -236,6 +239,10 @@ export const employeeApi = {
       form.append("thumbnail", input.thumbnail as unknown as Blob);
     }
 
+    input.attachments?.forEach((attachment) => {
+      form.append("attachments[]", attachment as unknown as Blob);
+    });
+
     return apiClient
       .post<ApiResponse<JsonRecord>>("/api/v1/news/internal", form, {
         headers: {
@@ -262,6 +269,10 @@ export const employeeApi = {
     } else if (input.thumbnail_url !== undefined) {
       form.append("thumbnail_url", input.thumbnail_url);
     }
+
+    input.attachments?.forEach((attachment) => {
+      form.append("attachments[]", attachment as unknown as Blob);
+    });
 
     return apiClient
       .post<ApiResponse<JsonRecord>>(`/api/v1/news/internal/${id}`, form, {
@@ -359,12 +370,12 @@ export const employeeApi = {
     return apiClient.put<ApiResponse<JsonRecord>>("/api/v1/notifications/read-all").then((response) => response.data);
   },
 
-  areas() {
-    return getData<JsonRecord>("/api/v1/areas");
+  areas(params?: Record<string, unknown>) {
+    return getData<JsonRecord>("/api/v1/areas", params);
   },
 
   searchAreas(query: string) {
-    return getData<JsonRecord>("/api/v1/areas/search", { q: query });
+    return getData<JsonRecord>("/api/v1/areas/search", { keyword: query });
   },
 
   inventoryMap(areaId: string, params?: Record<string, unknown>) {
@@ -407,12 +418,16 @@ export const employeeApi = {
     return apiClient.put(`/api/v1/leave/requests/${id}/approve`).then((response) => response.data);
   },
 
-  rejectLeaveRequest(id: string, reason?: string) {
+  rejectLeaveRequest(id: string, reason: string) {
     return apiClient.put(`/api/v1/leave/requests/${id}/reject`, { reason }).then((response) => response.data);
   },
 
   departmentTransfers(params?: Record<string, unknown>) {
     return getData<JsonRecord>("/api/v1/department-transfers", params);
+  },
+
+  departmentTransferHistory(params?: Record<string, unknown>) {
+    return getData<JsonRecord>("/api/v1/department-transfers/history", params);
   },
 
   createDepartmentTransfer(input: CreateDepartmentTransferInput) {
@@ -433,6 +448,14 @@ export const employeeApi = {
 
   updateEmployeeProfile(input: JsonRecord) {
     return apiClient.put("/api/v1/auth/employee-profile", input).then((response) => response.data);
+  },
+
+  uploadEmployeeAvatar(form: FormData) {
+    return apiClient.post("/api/v1/auth/employee-profile/avatar", form, {
+      headers: {
+        "Content-Type": "multipart/form-data"
+      }
+    }).then((response) => response.data);
   },
 
   uploadEmployeeDocument(form: FormData) {
@@ -457,6 +480,10 @@ export const employeeApi = {
 
   teamMembers() {
     return getData<JsonRecord>("/api/v1/auth/team/members");
+  },
+
+  departments() {
+    return getData<JsonRecord>("/api/v1/auth/departments");
   },
 
   teamKpiOverview() {

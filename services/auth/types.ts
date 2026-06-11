@@ -38,6 +38,7 @@ export type AuthRole = AppAccessRole | BackendAuthRole;
 export type AuthUser = {
   id: string;
   staffCode?: string;
+  cccd?: string | null;
   fullName: string;
   email: string;
   phone?: string;

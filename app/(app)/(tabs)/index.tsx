@@ -1,16 +1,23 @@
 import {
-  Ionicons } from "@expo/vector-icons";
+  Ionicons
+} from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { router,
-  type Href } from "expo-router";
+import {
+  router,
+  type Href
+} from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect,
+import {
+  useEffect,
   useRef,
-  useState } from "react";
-import { Image,
+  useState
+} from "react";
+import {
+  Image,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View
 } from "react-native";
@@ -52,16 +59,16 @@ const quickActions: {
   label: string;
   destination: Href;
 }[] = [
-  { icon: "map-outline", label: "Check\nQuy hoạch", destination: "/(app)/(tabs)/inquiries" },
-  { icon: "document-text-outline", label: "Hỗ trợ\npháp lý", destination: "/(app)/legal-knowledge" },
-  { icon: "images-outline", label: "Điểm đến", destination: "/(app)/(tabs)/saved" },
-  { icon: "cash-outline", label: "Cơ hội\nđầu tư", destination: "/(app)/(tabs)/saved" }
-];
+    { icon: "map-outline", label: "Check\nQuy hoạch", destination: "/(app)/(tabs)/inquiries" },
+    { icon: "document-text-outline", label: "Hỗ trợ\npháp lý", destination: "/(app)/legal-knowledge" },
+    { icon: "images-outline", label: "Điểm đến", destination: "/(app)/(tabs)/saved" },
+    { icon: "cash-outline", label: "Cơ hội\nđầu tư", destination: "/(app)/(tabs)/saved" }
+  ];
 
 const projects = [
-  { image: homeImages.riverside, name: "KN Riverside", location: "Hòa Lạc, Hà Nội", price: "28 - 45 Tỷ" },
-  { image: homeImages.centralPoint, name: "KN Central Point", location: "Phạm Hùng, Hà Nội", price: "35 - 60 Tỷ" },
-  { image: homeImages.riverside, name: "KN Garden City", location: "Thạch Thất, Hà Nội", price: "12 - 25 Tỷ" }
+  { image: homeImages.riverside, name: "The Solaria", location: "Phường Bãi Cháy, Quảng Ninh", price: "5.2 Tỷ" },
+  { image: homeImages.centralPoint, name: "Eco Garden", location: "Xã Đông Dư, Gia Lâm, Hà Nội", price: "3.9 Tỷ" },
+  { image: homeImages.riverside, name: "Coastal Bay", location: "Phường Mũi Né, Phan Thiết, Bình Thuận", price: "12.2 Tỷ" }
 ] as const;
 
 const newsItems = [
@@ -79,7 +86,7 @@ const newsItems = [
   }
 ] as const;
 
-const heroSlides = [
+const fallbackHeroSlides = [
   {
     brand: "KHỞI NGUYÊN LAND",
     cta: "KHÁM PHÁ NGAY",
@@ -106,6 +113,13 @@ const heroSlides = [
   }
 ] as const;
 
+type FallbackHeroSlide = (typeof fallbackHeroSlides)[number];
+type HomeHeroSlide = PublicNews | FallbackHeroSlide;
+
+function isPublicNewsSlide(slide: HomeHeroSlide): slide is PublicNews {
+  return "id" in slide;
+}
+
 export default function CustomerHomeScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -114,9 +128,33 @@ export default function CustomerHomeScreen() {
   const activeHeroIndexRef = useRef(0);
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
   const [featuredProjects, setFeaturedProjects] = useState<PublicProject[]>([]);
+  const [featuredNewsSlides, setFeaturedNewsSlides] = useState<PublicNews[]>([]);
   const [latestNews, setLatestNews] = useState<PublicNews[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PublicProject[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const handleSearch = (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    customerPublicApi
+      .searchProjects({ q: query.trim(), per_page: 20 })
+      .then((response) => {
+        setSearchResults(response.data.data ?? []);
+      })
+      .catch((error) => {
+        appLogger.warn("customer.home.search", "Không thể tìm kiếm dự án.", { error });
+      });
+  };
+  const heroSlides = featuredNewsSlides.length > 0 ? featuredNewsSlides : fallbackHeroSlides;
 
   useEffect(() => {
+    if (heroSlides.length <= 1) return;
+
     const timer = setInterval(() => {
       const nextIndex = (activeHeroIndexRef.current + 1) % heroSlides.length;
       activeHeroIndexRef.current = nextIndex;
@@ -125,7 +163,13 @@ export default function CustomerHomeScreen() {
     }, heroAutoplayMs);
 
     return () => clearInterval(timer);
-  }, [heroSlideWidth]);
+  }, [heroSlideWidth, heroSlides.length]);
+
+  useEffect(() => {
+    activeHeroIndexRef.current = 0;
+    setActiveHeroIndex(0);
+    heroScrollRef.current?.scrollTo({ animated: false, x: 0, y: 0 });
+  }, [heroSlides.length]);
 
   useEffect(() => {
     let active = true;
@@ -136,8 +180,11 @@ export default function CustomerHomeScreen() {
     ])
       .then(([projectResponse, newsResponse]) => {
         if (!active) return;
+        const featuredNews = newsResponse.data.featured ?? [];
+
         setFeaturedProjects(projectResponse.data.data ?? []);
-        setLatestNews([...(newsResponse.data.featured ?? []), ...(newsResponse.data.list ?? [])].slice(0, 3));
+        setFeaturedNewsSlides(featuredNews);
+        setLatestNews([...featuredNews, ...(newsResponse.data.list ?? [])].slice(0, 3));
       })
       .catch((error) => {
         appLogger.warn("customer.home", "Không thể tải dữ liệu trang chủ khách hàng.", { error });
@@ -164,9 +211,9 @@ export default function CustomerHomeScreen() {
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
-        <View style={[styles.headerLayer, { height: 368 + insets.top }]}>
+        <View style={[styles.headerLayer, { height: searchQuery.trim() ? 242 + insets.top : 368 + insets.top }]}>
           <View style={[styles.header, { height: 242 + insets.top, paddingTop: 11 + insets.top }]}>
-            <Image source={homeImages.headerBackground} style={styles.headerBackground} />
+            <Image source={homeImages.headerBackground} style={[styles.headerBackground, { height: 242 + insets.top }]} />
             <View style={styles.headerTop}>
               <Pressable accessibilityRole="button" onPress={() => router.push("/(app)/(tabs)")} style={styles.logoBlock}>
                 <Text style={styles.logo}>KN</Text>
@@ -186,145 +233,235 @@ export default function CustomerHomeScreen() {
                 <Ionicons name="notifications-outline" size={24} color={palette.white} />
               </Pressable>
             </View>
-            <Pressable
-              accessibilityLabel="Tìm kiếm dự án, khu vực, tin tức"
-              accessibilityRole="button"
-              onPress={() => router.push("/(app)/(tabs)/search")}
-              style={styles.search}
-            >
+            <View style={styles.search}>
               <Ionicons name="search-outline" size={20} color={palette.lightMuted} />
-              <Text style={styles.searchPlaceholder}>Tìm kiếm dự án, khu vực, tin tức...</Text>
-            </Pressable>
-          </View>
-
-          <View style={[styles.hero, { top: 144 + insets.top }]}> 
-            <ScrollView
-              ref={heroScrollRef}
-              bounces={false}
-              decelerationRate="fast"
-              directionalLockEnabled
-              horizontal
-              nestedScrollEnabled
-              onMomentumScrollEnd={(event) => handleHeroMomentumEnd(event.nativeEvent.contentOffset.x)}
-              overScrollMode="never"
-              pagingEnabled
-              scrollEventThrottle={16}
-              showsHorizontalScrollIndicator={false}
-            >
-              {heroSlides.map((slide, index) => (
-                <View key={`${slide.title}-${index}`} style={[styles.heroSlide, { width: heroSlideWidth }]}> 
-                  <Image source={slide.image} style={[styles.heroImage, { width: heroSlideWidth }]} />
-                  <View style={styles.heroOverlay} />
-                  <View style={styles.heroCopy}>
-                    <View style={styles.heroBrandRow}>
-                      <Text allowFontScaling={false} style={styles.heroBrand}>KN</Text>
-                      <Text allowFontScaling={false} style={styles.heroBrand}>{slide.brand}</Text>
-                    </View>
-                    <Text allowFontScaling={false} style={styles.heroTitle}>{slide.title}</Text>
-                    <Pressable accessibilityRole="button" style={styles.heroButton}>
-                      <Text allowFontScaling={false} numberOfLines={1} style={styles.heroButtonText}>{slide.cta}</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-            <View style={styles.pagination}>
-              {heroSlides.map((slide, index) => (
-                <View
-                  key={`${slide.cta}-${index}`}
-                  style={index === activeHeroIndex ? styles.paginationActive : styles.paginationDot}
-                />
-              ))}
+              <TextInput
+                value={searchQuery}
+                onChangeText={(text) => {
+                  setSearchQuery(text);
+                  handleSearch(text);
+                }}
+                placeholder="Tìm kiếm dự án..."
+                placeholderTextColor={palette.lightMuted}
+                style={styles.searchInput}
+                returnKeyType="search"
+                onSubmitEditing={() => handleSearch(searchQuery)}
+              />
+              {searchQuery.length > 0 && (
+                <Pressable
+                  accessibilityLabel="Xóa từ khóa"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setSearchQuery("");
+                    setSearchResults([]);
+                  }}
+                  style={styles.clearButton}
+                >
+                  <Ionicons name="close-circle" size={20} color={palette.lightMuted} />
+                </Pressable>
+              )}
             </View>
           </View>
+
+          {!searchQuery.trim() && (
+            <View style={[styles.hero, { top: 144 + insets.top }]}>
+              <ScrollView
+                ref={heroScrollRef}
+                bounces={true}
+                decelerationRate="fast"
+                directionalLockEnabled
+                horizontal
+                nestedScrollEnabled
+                onMomentumScrollEnd={(event) => handleHeroMomentumEnd(event.nativeEvent.contentOffset.x)}
+                overScrollMode="always"
+                pagingEnabled
+                scrollEventThrottle={16}
+                showsHorizontalScrollIndicator={false}
+              >
+                {heroSlides.map((slide, index) => {
+                  const isApiSlide = isPublicNewsSlide(slide);
+                  const slideTitle = isApiSlide ? slide.title || "Tin tức nổi bật đang cập nhật" : slide.title;
+                  const slideBrand = isApiSlide ? "KHỞI NGUYÊN LAND" : slide.brand;
+                  const slideCta = isApiSlide ? "ĐỌC NGAY" : slide.cta;
+
+                  return (
+                    <Pressable
+                      key={isApiSlide ? slide.id : `${slide.title}-${index}`}
+                      accessibilityRole="button"
+                      delayPressIn={80}
+                      onPress={() =>
+                        isApiSlide
+                          ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(slide) })
+                          : router.push("/(app)/(tabs)/search")
+                      }
+                      style={[styles.heroSlide, { width: heroSlideWidth }]}
+                    >
+                      <Image
+                        source={isApiSlide ? mediaSource(slide.thumbnail, homeImages.hero) : slide.image}
+                        style={[styles.heroImage, { width: heroSlideWidth }]}
+                      />
+                      <View style={styles.heroOverlay} />
+                      <View style={styles.heroCopy}>
+                        <View style={styles.heroBrandRow}>
+                          <Text allowFontScaling={false} style={styles.heroBrand}>KN</Text>
+                          <Text allowFontScaling={false} numberOfLines={1} style={styles.heroBrand}>{slideBrand}</Text>
+                        </View>
+                        <Text allowFontScaling={false} numberOfLines={2} style={styles.heroTitle}>{slideTitle}</Text>
+                        <View style={styles.heroButton}>
+                          <Text allowFontScaling={false} numberOfLines={1} style={styles.heroButtonText}>{slideCta}</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              <View style={styles.pagination}>
+                {heroSlides.map((slide, index) => (
+                  <View
+                    key={`${isPublicNewsSlide(slide) ? slide.id : slide.title}-${index}`}
+                    style={index === activeHeroIndex ? styles.paginationActive : styles.paginationDot}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
         </View>
 
-        <View style={styles.main}>
-          <View style={styles.quickActions}>
-            {quickActions.map((action) => (
-              <Pressable
-                key={action.label}
-                accessibilityRole="button"
-                onPress={() => router.push(action.destination)}
-                style={styles.quickAction}
-              >
-                <View style={styles.quickIcon}>
-                  <Ionicons name={action.icon} size={24} color={palette.red} />
-                </View>
-                <Text style={styles.quickLabel}>{action.label}</Text>
-              </Pressable>
-            ))}
+        {searchQuery.trim().length > 0 ? (
+          <View style={styles.searchResultsContainer}>
+            <Text style={styles.searchResultsTitle}>
+              Kết quả tìm kiếm cho "{searchQuery}" ({searchResults.length})
+            </Text>
+            {searchResults.length > 0 ? (
+              <View style={styles.searchResultsList}>
+                {searchResults.map((project, index) => {
+                  const isApiProject = "id" in project;
+                  return (
+                    <Pressable
+                      key={isApiProject ? project.id : project.name}
+                      accessibilityRole="button"
+                      onPress={() =>
+                        isApiProject
+                          ? router.push({ pathname: "/(app)/project-detail", params: { id: project.id } })
+                          : undefined
+                      }
+                      style={styles.searchResultCard}
+                    >
+                      <Image
+                        source={
+                          isApiProject
+                            ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image)
+                            : project.image
+                        }
+                        style={styles.searchResultImage}
+                      />
+                      <View style={styles.searchResultInfo}>
+                        <Text style={styles.searchResultName} numberOfLines={2}>{project.name}</Text>
+                        <View style={styles.searchResultLocationRow}>
+                          <Ionicons name="location-outline" size={14} color={palette.muted} />
+                          <Text style={styles.searchResultLocation} numberOfLines={1}>{project.location}</Text>
+                        </View>
+                        <Text style={styles.searchResultPrice}>{isApiProject ? formatProjectPrice(project.price) : project.price}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.noResults}>
+                <Ionicons name="search-outline" size={48} color={palette.lightMuted} />
+                <Text style={styles.noResultsText}>Không tìm thấy dự án nào phù hợp</Text>
+              </View>
+            )}
           </View>
+        ) : (
+          <View style={styles.main}>
+            <View style={styles.quickActions}>
+              {quickActions.map((action) => (
+                <Pressable
+                  key={action.label}
+                  accessibilityRole="button"
+                  onPress={() => router.push(action.destination)}
+                  style={styles.quickAction}
+                >
+                  <View style={styles.quickIcon}>
+                    <Ionicons name={action.icon} size={24} color={palette.red} />
+                  </View>
+                  <Text style={styles.quickLabel}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
 
-          <HomeSectionHeader title="DỰ ÁN NỔI BẬT" link="Xem tất cả" onPress={() => router.push("/(app)/(tabs)/saved")} />
-          <ScrollView
-            alwaysBounceVertical={false}
-            alwaysBounceHorizontal
-            bounces
-            horizontal
-            contentContainerStyle={styles.projectSliderContent}
-            directionalLockEnabled
-            overScrollMode="always"
-            showsHorizontalScrollIndicator={false}
-            style={styles.projectSlider}
-          >
-            {(featuredProjects.length > 0 ? featuredProjects : projects).map((project, index) => {
-              const isApiProject = "id" in project;
-              return (
-              <Pressable
-                key={isApiProject ? project.id : project.name}
-                accessibilityRole="button"
-                onPress={() =>
-                  isApiProject
-                    ? router.push({ pathname: "/(app)/project-detail", params: { id: project.id } })
-                    : undefined
-                }
-                style={styles.projectCard}
-              >
-                <Image
-                  source={
-                    isApiProject
-                      ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image)
-                      : project.image
-                  }
-                  style={styles.projectImage}
-                />
-                <Text style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.name}</Text>
-                <Text style={styles.projectLocation}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
-                <Text style={styles.projectPrice}>{isApiProject ? formatProjectPrice(project.price) : project.price}</Text>
-              </Pressable>
-              );
-            })}
-          </ScrollView>
+            <HomeSectionHeader title="DỰ ÁN NỔI BẬT" link="Xem tất cả" onPress={() => router.push("/(app)/(tabs)/saved")} />
+            <ScrollView
+              alwaysBounceVertical={false}
+              alwaysBounceHorizontal
+              bounces
+              horizontal
+              contentContainerStyle={styles.projectSliderContent}
+              directionalLockEnabled
+              overScrollMode="always"
+              showsHorizontalScrollIndicator={false}
+              style={styles.projectSlider}
+            >
+              {(featuredProjects.length > 0 ? featuredProjects : projects).map((project, index) => {
+                const isApiProject = "id" in project;
+                return (
+                  <Pressable
+                    key={isApiProject ? project.id : project.name}
+                    accessibilityRole="button"
+                    onPress={() =>
+                      isApiProject
+                        ? router.push({ pathname: "/(app)/project-detail", params: { id: project.id } })
+                        : undefined
+                    }
+                    style={styles.projectCard}
+                  >
+                    <Image
+                      source={
+                        isApiProject
+                          ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image)
+                          : project.image
+                      }
+                      style={styles.projectImage}
+                    />
+                    <Text style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.name}</Text>
+                    <Text style={styles.projectLocation}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
+                    <Text style={styles.projectPrice}>{isApiProject ? formatProjectPrice(project.price) : project.price}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
 
-          <HomeSectionHeader title="TIN TỨC THỊ TRƯỜNG" link="Xem thêm" onPress={() => router.push("/(app)/(tabs)/search")} />
-          <View style={styles.newsList}>
-            {(latestNews.length > 0 ? latestNews : newsItems).map((item, index) => {
-              const isApiNews = "id" in item;
-              return (
-              <Pressable
-                key={isApiNews ? item.id : item.title}
-                accessibilityRole="button"
-                onPress={() =>
-                  isApiNews
-                    ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(item) })
-                    : undefined
-                }
-                style={styles.newsCard}
-              >
-                <Image
-                  source={isApiNews ? mediaSource(item.thumbnail, newsItems[index % newsItems.length].image) : item.image}
-                  style={styles.newsImage}
-                />
-                <View style={styles.newsCopy}>
-                  <Text style={styles.newsTitle}>{isApiNews ? item.title || "Tin tức đang cập nhật" : item.title}</Text>
-                  <Text style={styles.newsDate}>{isApiNews ? formatDate(item.published_at) : "24 Tháng 5, 2024"}</Text>
-                </View>
-              </Pressable>
-              );
-            })}
+            <HomeSectionHeader title="TIN TỨC THỊ TRƯỜNG" link="Xem thêm" onPress={() => router.push("/(app)/(tabs)/search")} />
+            <View style={styles.newsList}>
+              {(latestNews.length > 0 ? latestNews : newsItems).map((item, index) => {
+                const isApiNews = "id" in item;
+                return (
+                  <Pressable
+                    key={isApiNews ? item.id : item.title}
+                    accessibilityRole="button"
+                    onPress={() =>
+                      isApiNews
+                        ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(item) })
+                        : undefined
+                    }
+                    style={styles.newsCard}
+                  >
+                    <Image
+                      source={isApiNews ? mediaSource(item.thumbnail, newsItems[index % newsItems.length].image) : item.image}
+                      style={styles.newsImage}
+                    />
+                    <View style={styles.newsCopy}>
+                      <Text style={styles.newsTitle}>{isApiNews ? item.title || "Tin tức đang cập nhật" : item.title}</Text>
+                      <Text style={styles.newsDate}>{isApiNews ? formatDate(item.published_at) : "24 Tháng 5, 2024"}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-        </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -442,12 +579,87 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
     paddingRight: 12
   },
-  searchPlaceholder: {
-    color: palette.lightMuted,
+  searchInput: {
+    color: palette.text,
     flex: 1,
     fontFamily: appFonts.regular,
     fontSize: 14,
+    height: "100%",
+    paddingVertical: 0
+  },
+  clearButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 2
+  },
+  searchResultsContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 40
+  },
+  searchResultsTitle: {
+    color: palette.text,
+    fontFamily: appFonts.bold,
+    fontSize: 18,
+    marginBottom: 16
+  },
+  searchResultsList: {
+    gap: 16
+  },
+  searchResultCard: {
+    backgroundColor: palette.white,
+    borderRadius: 12,
+    flexDirection: "row",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    height: 100
+  },
+  searchResultImage: {
+    width: 100,
+    height: 100,
+    resizeMode: "cover"
+  },
+  searchResultInfo: {
+    flex: 1,
+    padding: 12,
+    justifyContent: "space-between"
+  },
+  searchResultName: {
+    color: palette.text,
+    fontFamily: appFonts.semiBold,
+    fontSize: 15,
     lineHeight: 18
+  },
+  searchResultLocationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  searchResultLocation: {
+    color: palette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    flex: 1
+  },
+  searchResultPrice: {
+    color: palette.red,
+    fontFamily: appFonts.bold,
+    fontSize: 14
+  },
+  noResults: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    gap: 12
+  },
+  noResultsText: {
+    color: palette.lightMuted,
+    fontFamily: appFonts.regular,
+    fontSize: 15
   },
   hero: {
     borderRadius: 16,

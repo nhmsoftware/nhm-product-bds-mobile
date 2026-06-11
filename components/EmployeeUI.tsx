@@ -18,6 +18,7 @@ import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { employeePalette } from "@/libs/employee-theme";
+import { mediaUrl } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
 import { useAuth } from "@/services/auth/store";
 import { useNotificationState } from "@/services/notifications/provider";
@@ -105,6 +106,7 @@ export function EmployeeTopBar({
   const { session } = useAuth();
   const pathname = usePathname();
   const name = session?.user.fullName || "N";
+  const avatarUri = mediaUrl(session?.user.avatar);
   const backIcon = backType === "home" ? "home-outline" : "arrow-back";
   const longTitle = title ? title.length > 25 : false;
 
@@ -115,7 +117,7 @@ export function EmployeeTopBar({
           <Ionicons name={backIcon} size={22} color={employeePalette.text} />
         </Pressable>
       ) : (
-        <EmployeeAvatarButton label={name} />
+        <EmployeeAvatarButton imageUri={avatarUri} label={name} />
       )}
       {title ? (
         <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.topTitle, longTitle && styles.topTitleLong]}>
@@ -371,10 +373,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#1f2933",
     borderRadius: 999,
-    height: 32,
+    height: 40,
     justifyContent: "center",
     overflow: "hidden",
-    width: 32
+    width: 40
   },
   avatarImage: {
     height: "100%",
@@ -384,7 +386,7 @@ const styles = StyleSheet.create({
   avatarText: {
     color: "#ffffff",
     fontFamily: appFonts.bold,
-    fontSize: 12
+    fontSize: 15
   },
   backButton: {
     alignItems: "center",

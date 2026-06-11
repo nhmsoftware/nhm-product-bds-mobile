@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Defs, LinearGradient, Path, Rect, Stop, Svg } from "react-native-svg";
 
@@ -10,10 +10,10 @@ import { EMPLOYEE_HEADER_HEIGHT, EmployeeAvatarButton, EmployeeNotificationButto
 import { employeePalette } from "@/libs/employee-theme";
 import { useI18n, type TranslationKey } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
+import { mediaUrl } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
 import { useAuth } from "@/services/auth/store";
 import { employeeApi } from "@/services/employee/api";
-import { employeeHomeActions, employeeKpis } from "@/services/employee/mock-data";
 
 const kpiCopy: { labelKey: TranslationKey; helperKey: TranslationKey }[] = [
   { labelKey: "employee.kpi.news.label", helperKey: "employee.kpi.news.helper" },
@@ -35,15 +35,16 @@ const actionCopy: { titleKey: TranslationKey; descriptionKey: TranslationKey }[]
   }
 ];
 
-const fallbackNewsCount = employeeKpis[0]?.value ?? "0";
-const fallbackPointTotal = employeeKpis[1]?.value ?? "0";
-const fallbackPointRank = employeeKpis[1]?.helper ?? "";
+const fallbackNewsCount = "0";
+const fallbackPointTotal = "0";
+const fallbackPointRank = "";
 
 type DashboardRecord = Record<string, unknown>;
 
 type EmployeeHomeRoute =
   | "/employee/check-in"
   | "/employee/inventory"
+  | "/employee/inventory-list"
   | "/employee/learning"
   | "/employee/news"
   | "/employee/notifications"
@@ -142,6 +143,36 @@ function formatDashboardRank(value: unknown, fallback: string) {
   return rank.toLowerCase() === "vàng" ? "Hạng Vàng (Gold Tier)" : `Hạng ${rank}`;
 }
 
+function formatRewardRank(value: unknown, fallback: string) {
+  const rankValue = isDashboardRecord(value) ? value.label : value;
+  const rankId = isDashboardRecord(value) ? dashboardText(value.id) : "";
+  if (rankId) {
+    const normalizedId = rankId.toLowerCase();
+    if (normalizedId === "4" || normalizedId === "platinum") return "Hạng Bạch Kim (Platinum Tier)";
+    if (normalizedId === "3" || normalizedId === "gold") return "Hạng Vàng (Gold Tier)";
+    if (normalizedId === "2" || normalizedId === "silver") return "Hạng Bạc (Silver Tier)";
+    if (normalizedId === "1" || normalizedId === "bronze") return "Hạng Đồng (Bronze Tier)";
+  }
+
+  const rank = dashboardText(rankValue).trim();
+  if (!rank) {
+    return fallback;
+  }
+
+  const normalized = rank.toLowerCase();
+  if (normalized.includes("platinum") || normalized.includes("bạch kim")) return "Hạng Bạch Kim (Platinum Tier)";
+  if (normalized.includes("gold") || normalized.includes("vàng")) return "Hạng Vàng (Gold Tier)";
+  if (normalized.includes("silver") || normalized.includes("bạc")) return "Hạng Bạc (Silver Tier)";
+  if (normalized.includes("bronze") || normalized.includes("đồng")) return "Hạng Đồng (Bronze Tier)";
+
+  return /^hạng\b/i.test(rank) ? rank : `Hạng ${rank}`;
+}
+
+function formatKpiStars(value: unknown) {
+  const stars = Number(value);
+  return Number.isFinite(stars) ? `${stars.toLocaleString("en-US")} sao KPI` : "";
+}
+
 function normalizeDashboardModuleKind(module: DashboardRecord) {
   const marker = `${dashboardText(module.icon)} ${dashboardText(module.title)}`.toLowerCase();
 
@@ -181,16 +212,16 @@ function dashboardModuleIcon(kind: string): keyof typeof Ionicons.glyphMap {
   return "calendar-outline";
 }
 
-function dashboardModuleTarget(kind: string): EmployeeHomeRoute {
-  if (kind === "learning") return "/employee/required-learning";
-  if (kind === "inventory") return "/employee/inventory";
+function dashboardModuleTarget(kind: string, learningTarget: EmployeeHomeRoute): EmployeeHomeRoute {
+  if (kind === "learning") return learningTarget;
+  if (kind === "inventory") return "/employee/inventory-list";
   if (kind === "notifications") return "/employee/notifications";
   if (kind === "attendance") return "/employee/check-in";
   if (kind === "kpi") return "/employee/point-history";
   return "/employee/news";
 }
 
-function dashboardModulesToActions(modules: DashboardRecord[]): HomeActionRow[] {
+function dashboardModulesToActions(modules: DashboardRecord[], learningTarget: EmployeeHomeRoute): HomeActionRow[] {
   const byKind = new Map<string, DashboardRecord>();
 
   modules.forEach((module) => {
@@ -208,11 +239,28 @@ function dashboardModulesToActions(modules: DashboardRecord[]): HomeActionRow[] 
       return {
         description: dashboardText(module.description, ""),
         icon: dashboardModuleIcon(kind),
-        target: dashboardModuleTarget(kind),
+        target: dashboardModuleTarget(kind, learningTarget),
         title: dashboardText(module.title, "")
       } satisfies HomeActionRow;
     })
     .filter((item): item is HomeActionRow => Boolean(item && item.title));
+}
+
+function learningTargetFromCoursePayload(value: unknown): EmployeeHomeRoute {
+  const payload = isDashboardRecord(value) ? value : {};
+  const course = isDashboardRecord(payload.course) ? payload.course : null;
+
+  if (!course) {
+    return "/employee/required-learning";
+  }
+
+  const progress = isDashboardRecord(course.progress) ? course.progress : {};
+  const status = dashboardText(progress.status ?? course.status, "").toLowerCase();
+  const percent = Number(progress.percent ?? course.progress_percent ?? course.progressPercent ?? 0);
+
+  return status === "completed" || (Number.isFinite(percent) && percent >= 100)
+    ? "/employee/learning"
+    : "/employee/required-learning";
 }
 
 function openHomeTarget(target: EmployeeHomeRoute) {
@@ -235,26 +283,18 @@ export default function EmployeeHomeScreen() {
   const [newsCount, setNewsCount] = useState(fallbackNewsCount);
   const [pointTotal, setPointTotal] = useState(fallbackPointTotal);
   const [pointRank, setPointRank] = useState(fallbackPointRank);
-  const [dashboardActions, setDashboardActions] = useState<HomeActionRow[]>([]);
+  const [dashboardModules, setDashboardModules] = useState<DashboardRecord[]>([]);
+  const [learningTarget, setLearningTarget] = useState<EmployeeHomeRoute>("/employee/required-learning");
   const fullName = dashboardName || session?.user.fullName || t("employee.home.fallbackName");
-  const actionRows = dashboardActions.length > 0
-    ? dashboardActions
-    : employeeHomeActions.map((item, index) => {
-        const copy = actionCopy[index];
-        const target =
-          index === 0
-            ? "/employee/notifications"
-            : index === 1
-              ? "/employee/inventory"
-              : "/employee/required-learning";
-
-        return {
-          description: copy ? t(copy.descriptionKey) : item.description,
-          icon: item.icon,
-          target,
-          title: copy ? t(copy.titleKey) : item.title
-        } satisfies HomeActionRow;
-      });
+  const currentAvatarUri = mediaUrl(session?.user.avatar) || avatarUri;
+  const actionRows = dashboardModules.length > 0
+    ? dashboardModulesToActions(dashboardModules, learningTarget)
+    : actionCopy.map((copy, index) => ({
+        description: t(copy.descriptionKey),
+        icon: index === 0 ? "notifications-outline" : index === 1 ? "business-outline" : "school-outline",
+        target: index === 0 ? "/employee/notifications" : index === 1 ? "/employee/inventory-list" : learningTarget,
+        title: t(copy.titleKey)
+      } satisfies HomeActionRow));
 
   useEffect(() => {
     let mounted = true;
@@ -273,11 +313,13 @@ export default function EmployeeHomeScreen() {
         const newsModule = modules.find((module) => normalizeDashboardModuleKind(module) === "news");
 
         setDashboardName(dashboardText(user.name, ""));
-        setAvatarUri(dashboardText(user.avatar) || null);
-        setNewsCount(formatDashboardNumber(latestNews.length || newsModule?.count, fallbackNewsCount));
+        setAvatarUri(mediaUrl(user.avatar) || null);
+        const apiNewsCount = Array.isArray(overview.latest_news) ? latestNews.length : newsModule?.count;
+
+        setNewsCount(formatDashboardNumber(apiNewsCount, fallbackNewsCount));
         setPointTotal(formatDashboardNumber(kpi.points, fallbackPointTotal));
         setPointRank(formatDashboardRank(kpi.ranking, fallbackPointRank));
-        setDashboardActions(dashboardModulesToActions(modules));
+        setDashboardModules(modules);
       })
       .catch((error) => {
         appLogger.warn("employee.dashboard", "Không thể tải dashboard employee.", { error });
@@ -288,10 +330,56 @@ export default function EmployeeHomeScreen() {
     };
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+
+      employeeApi
+        .courses()
+        .then((response) => {
+          if (mounted) {
+            setLearningTarget(learningTargetFromCoursePayload(response.data));
+          }
+        })
+        .catch((error) => {
+          appLogger.warn("employee.learning_target", "Không thể tải tiến độ khóa học bắt buộc.", { error });
+        });
+
+      return () => {
+        mounted = false;
+      };
+    }, [])
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    employeeApi
+      .rewardPointOverview()
+      .then((response) => {
+        if (!mounted) return;
+
+        const overview = isDashboardRecord(response.data) ? response.data : {};
+        const totalPoints = overview.total_points ?? overview.reward_points ?? overview.points ?? overview.balance;
+        const rank = overview.rank ?? overview.rank_label ?? overview.tier;
+        const kpiStars = formatKpiStars(overview.kpi_stars ?? overview.stars ?? overview.kpiStars);
+
+        setPointTotal(formatDashboardNumber(totalPoints, fallbackPointTotal));
+        setPointRank(rank ? formatRewardRank(rank, fallbackPointRank) : kpiStars || fallbackPointRank);
+      })
+      .catch((error) => {
+        appLogger.warn("employee.reward_points", "Không thể tải điểm tích lũy.", { error });
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <Screen edges={["top", "left", "right"]} padded={false} safeBackgroundColor="#ffffff">
       <View style={styles.topBar}>
-        <EmployeeAvatarButton imageUri={avatarUri} label={fullName} />
+        <EmployeeAvatarButton imageUri={currentAvatarUri} label={fullName} />
         <EmployeeNotificationButton returnTo="/employee" />
       </View>
 
@@ -303,17 +391,16 @@ export default function EmployeeHomeScreen() {
         </View>
 
         <View style={styles.stats}>
-          {employeeKpis.map((item, index) => {
+          {kpiCopy.map((copy, index) => {
             const isPointCard = index === 1;
             const primaryColor = isPointCard ? employeePalette.goldDark : employeePalette.red;
             const softColor = isPointCard ? employeePalette.goldSoft : employeePalette.redSoft;
             const hintColor = isPointCard ? employeePalette.goldDark : employeePalette.gold;
-            const copy = kpiCopy[index];
             const target = isPointCard ? "/employee/point-history" : "/employee/news";
 
             return (
               <Pressable
-                key={item.label}
+                key={copy.labelKey}
                 accessibilityRole="button"
                 onPress={() => router.push(target)}
                 style={({ pressed }) => [
@@ -324,12 +411,12 @@ export default function EmployeeHomeScreen() {
               >
                 <StatCardBackground tone={isPointCard ? "gold" : "red"} />
                 <View style={styles.statCopy}>
-                  <Text style={styles.statLabel}>{copy ? t(copy.labelKey) : item.label}</Text>
+                  <Text style={styles.statLabel}>{t(copy.labelKey)}</Text>
                   <Text style={[styles.statValue, { color: primaryColor }]}>
                     {index === 0 ? newsCount : pointTotal}
                   </Text>
                   <Text style={[styles.statHint, { color: hintColor }]}>
-                    {index === 1 && pointRank ? pointRank : copy ? t(copy.helperKey) : item.helper}
+                    {index === 1 && pointRank ? pointRank : t(copy.helperKey)}
                   </Text>
                 </View>
                 <View style={[styles.statIcon, { backgroundColor: softColor }]}>

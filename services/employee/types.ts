@@ -101,6 +101,7 @@ export type MandatoryLearningCourse = {
 
 export type MandatoryLearningCoursesData = {
   course: MandatoryLearningCourse | null;
+  courses?: MandatoryLearningCourse[];
 };
 
 export type LearningLessonAttachment = {

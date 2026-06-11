@@ -8,6 +8,11 @@ export function mediaUrl(path?: unknown) {
   }
 
   const value = path.trim();
+  const localUrlMatch = value.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?=\/|$)/i);
+  if (localUrlMatch) {
+    return value.replace(localUrlMatch[0], API_URL);
+  }
+
   if (/^https?:\/\//i.test(value)) {
     return value;
   }

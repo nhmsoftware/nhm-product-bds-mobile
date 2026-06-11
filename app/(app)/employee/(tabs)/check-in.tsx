@@ -17,6 +17,7 @@ import { EmployeeAvatarButton, EmployeeNotificationButton } from "@/components/E
 import { employeePalette } from "@/libs/employee-theme";
 import { useI18n } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
+import { mediaUrl } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { useAuth } from "@/services/auth/store";
@@ -335,6 +336,7 @@ export default function EmployeeCheckInScreen() {
   const primaryColor = checkedIn ? employeePalette.red : employeePalette.green;
   const punchDisabled = submitting;
   const fullName = session?.user.fullName || t("employee.home.fallbackName");
+  const avatarUri = mediaUrl(session?.user.avatar);
 
   const applyTodayStatus = useCallback((data: AttendanceTodayStatus) => {
     const nextStatus = getTodayUiStatus(data);
@@ -476,7 +478,7 @@ export default function EmployeeCheckInScreen() {
   return (
     <Screen edges={["top", "left", "right"]} padded={false} safeBackgroundColor="#ffffff">
       <View style={styles.topBar}>
-        <EmployeeAvatarButton label={fullName} />
+        <EmployeeAvatarButton imageUri={avatarUri} label={fullName} />
         <EmployeeNotificationButton returnTo="/employee/check-in" />
       </View>
 

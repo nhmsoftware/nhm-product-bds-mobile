@@ -28,24 +28,34 @@ import { useAuth } from "@/services/auth/store";
 
 const apiDemoCredentials: Partial<Record<DemoLoginRole, { username: string; password: string }>> = {
   customer: {
-    username: "maiducduong050820041@gmail.com",
-    password: "password"
+    username: "customer@test.com",
+    password: "password123"
   },
   employee: {
-    username: "maiducduong05082004@gmail.com",
-    password: "Duong2004@"
+    username: "employee@test.com",
+    password: "password123"
+  },
+  employee2: {
+    username: "employee2@test.com",
+    password: "password123"
   },
   manager: {
-    username: "maiducduong201@gmail.com",
-    password: "Duong2004@"
+    username: "manager@test.com",
+    password: "password123"
   },
   director: {
-    username: "director@gmail.com",
-    password: "Duong2004@"
+    username: "director@test.com",
+    password: "password123"
+  },
+  ceo: {
+    username: "ceo@test.com",
+    password: "password123"
+  },
+  super_admin: {
+    username: "superadmin@test.com",
+    password: "password123"
   }
 };
-
-const visibleDemoLoginOptions = DEMO_LOGIN_OPTIONS.filter((option) => option.role !== "director");
 
 export default function LoginScreen() {
   const { t } = useI18n();
@@ -151,7 +161,7 @@ export default function LoginScreen() {
 
       {DEMO_AUTH_ENABLED ? (
         <View style={styles.demoActions}>
-          {visibleDemoLoginOptions.map((option) => (
+          {DEMO_LOGIN_OPTIONS.map((option) => (
             <AuthButton
               key={option.role}
               title={t(option.labelKey)}
