@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 import { Button } from "@/components/Button";
@@ -27,23 +27,25 @@ function CustomerProfileContent() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let active = true;
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-    profileApi
-      .getProfile()
-      .then((response) => {
-        if (active) setProfile(response.data);
-      })
-      .catch((error) => notifyError(error, "Không thể tải thông tin cá nhân. Vui lòng thử lại."))
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+      profileApi
+        .getProfile()
+        .then((response) => {
+          if (active) setProfile(response.data);
+        })
+        .catch((error) => notifyError(error, "Không thể tải thông tin cá nhân. Vui lòng thử lại."))
+        .finally(() => {
+          if (active) setLoading(false);
+        });
 
-    return () => {
-      active = false;
-    };
-  }, []);
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   if (loading || !profile) {
     return (
@@ -90,7 +92,7 @@ function CustomerProfileContent() {
       </Card>
 
       <View style={styles.actions}>
-        <Button onPress={() => router.push("/(app)/profile/edit")} title="CHỈNH SỬA HỒ SƠ" variant="danger" style={styles.brandButton} />
+        <Button onPress={() => router.push("/(app)/profile/edit")} title="CHỈNH SỬA HỒ SƠ" variant="brand" />
         <Button onPress={() => router.push("/(app)/profile/change-password")} title="ĐỔI MẬT KHẨU" variant="secondary" />
       </View>
     </Screen>
@@ -115,10 +117,6 @@ const styles = StyleSheet.create({
   actions: {
     gap: 12,
     marginTop: 16
-  },
-  brandButton: {
-    backgroundColor: "#6a0100",
-    borderColor: "#6a0100"
   },
   avatarImage: {
     height: "100%",

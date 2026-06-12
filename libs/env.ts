@@ -13,5 +13,6 @@ export const STORAGE_KEYS = {
   auth: "nhm-bds.auth",
   language: "nhm-bds.language",
   layoutMode: "nhm-bds.layout_mode",
-  savedListings: "nhm-bds.saved_listings"
+  savedListings: "nhm-bds.saved_listings",
+  consultationHistory: "nhm-bds.consultation_history"
 } as const;

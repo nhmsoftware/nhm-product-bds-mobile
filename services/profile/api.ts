@@ -52,45 +52,33 @@ export const profileApi = {
   },
 
   async updateProfile(input: UpdateProfileInput) {
-    try {
-      const response = await putData<{
-        id: string;
-        cccd?: string | null;
-        name?: string;
-        email: string;
-        phone?: string;
-        address?: string | null;
-        avatar?: string | null;
-      }>("/api/v1/auth/profile", {
-        name: input.fullName,
-        email: input.email,
-        phone: input.phone,
-        address: input.address
-      });
+    const response = await putData<{
+      id: string;
+      cccd?: string | null;
+      name?: string;
+      email: string;
+      phone?: string;
+      address?: string | null;
+      avatar?: string | null;
+    }>("/api/v1/auth/profile", {
+      name: input.fullName,
+      email: input.email,
+      phone: input.phone,
+      address: input.address
+    });
 
-      const address = response.data.address || input.address || "Chưa cập nhật";
-      sampleProfile = {
-        ...sampleProfile,
-        id: response.data.id,
-        cccd: response.data.cccd ?? sampleProfile.cccd ?? null,
-        fullName: response.data.name || input.fullName,
-        email: response.data.email,
-        phone: response.data.phone || input.phone,
-        address,
-        avatar: response.data.avatar ?? sampleProfile.avatar ?? null,
-        preferredCity: address
-      };
-      return createResponse(sampleProfile, response.message || translate("notifications.profileUpdated"));
-    } catch {
-      // Fall back to local update if backend profile fields are incomplete during development.
-    }
-
+    const address = response.data.address || input.address || "Chưa cập nhật";
     sampleProfile = {
       ...sampleProfile,
-      ...input,
-      preferredCity: input.address
+      id: response.data.id,
+      cccd: response.data.cccd ?? sampleProfile.cccd ?? null,
+      fullName: response.data.name || input.fullName,
+      email: response.data.email,
+      phone: response.data.phone || input.phone,
+      address,
+      avatar: response.data.avatar ?? sampleProfile.avatar ?? null,
+      preferredCity: address
     };
-
-    return createResponse(sampleProfile, translate("notifications.profileUpdated"));
+    return createResponse(sampleProfile, response.message || translate("notifications.profileUpdated"));
   }
 };

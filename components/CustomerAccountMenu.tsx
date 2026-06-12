@@ -26,10 +26,7 @@ type MenuItem = {
 
 const menuItems: MenuItem[] = [
   { icon: "person-outline", label: "Thông tin cá nhân", route: "/(app)/profile" },
-  { icon: "create-outline", label: "Chỉnh sửa hồ sơ", route: "/(app)/profile/edit" },
-  { icon: "heart-outline", label: "Dự án đã lưu / đã quan tâm", route: "/(app)/(tabs)/saved" },
-  { icon: "chatbubble-ellipses-outline", label: "Lịch sử yêu cầu tư vấn", route: "/(app)/(tabs)/profile" },
-  { icon: "settings-outline", label: "Cài đặt / đổi mật khẩu", route: "/(app)/profile/change-password" },
+  { icon: "chatbubble-ellipses-outline", label: "Lịch sử yêu cầu tư vấn", route: "/(app)/profile/consultation-history" },
   { icon: "log-out-outline", label: "Đăng xuất", tone: "danger" }
 ];
 

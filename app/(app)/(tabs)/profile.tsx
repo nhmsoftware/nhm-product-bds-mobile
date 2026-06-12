@@ -21,6 +21,7 @@ import { appLogger } from "@/libs/logger";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { customerPublicApi, type ConsultationSetting, type PublicProject } from "@/services/customer/api";
+import { saveConsultationToHistory } from "@/services/customer/history";
 
 const palette = {
   background: "#f8f9fa",
@@ -109,6 +110,17 @@ export default function ContactScreen() {
         ...(content.trim() ? { content: content.trim() } : {})
       });
       notifySuccess({ message: response.message || "Gửi yêu cầu tư vấn thành công." });
+      
+      // Save to local history
+      await saveConsultationToHistory({
+        type: "consultation",
+        fullName: fullName.trim(),
+        phone: normalizedPhone,
+        email: email.trim() || undefined,
+        projectName: selectedProject?.name || undefined,
+        content: content.trim() || undefined
+      });
+
       setFullName("");
       setPhone("");
       setEmail("");
@@ -179,6 +191,17 @@ export default function ContactScreen() {
       });
 
       notifySuccess({ message: response.message || "Đặt lịch hẹn thành công." });
+
+      // Save to local history
+      await saveConsultationToHistory({
+        type: "callback",
+        fullName: callbackFullName.trim(),
+        phone: normalizedPhone,
+        email: email.trim() || undefined,
+        projectName: selectedProject?.name || undefined,
+        preferredCallbackTime: preferredTime
+      });
+
       setCallbackFullName("");
       setCallbackPhone("");
       setCallbackPreferredTime("");

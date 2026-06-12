@@ -17,6 +17,7 @@ export type ThemeColors = {
   ink: string;
   glassBackground: string;
   glassBorder: string;
+  brandPrimary: string;
 };
 
 export type ThemeRadius = {
@@ -77,7 +78,8 @@ export const appThemes: Record<LayoutMode, AppTheme> = {
       accent: "#d97706",
       ink: "#ffffff",
       glassBackground: "rgba(255, 255, 255, 0.86)",
-      glassBorder: "rgba(15, 118, 110, 0.18)"
+      glassBorder: "rgba(15, 118, 110, 0.18)",
+      brandPrimary: "#6a0100"
     },
     radius: {
       sm: 4,
@@ -123,7 +125,8 @@ export const appThemes: Record<LayoutMode, AppTheme> = {
       accent: "#f59e0b",
       ink: "#07100d",
       glassBackground: "rgba(21, 29, 26, 0.82)",
-      glassBorder: "rgba(255, 255, 255, 0.08)"
+      glassBorder: "rgba(255, 255, 255, 0.08)",
+      brandPrimary: "#6a0100"
     },
     radius: {
       sm: 4,

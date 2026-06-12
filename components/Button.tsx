@@ -13,7 +13,7 @@ type ButtonProps = {
   title: string;
   onPress?: () => void;
   loading?: boolean;
-  variant?: "primary" | "secondary" | "danger" | "ghost";
+  variant?: "primary" | "secondary" | "danger" | "ghost" | "brand";
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 };
@@ -28,10 +28,11 @@ export function Button({
 }: ButtonProps) {
   const theme = useAppTheme();
   const isPrimary = variant === "primary";
+  const isBrand = variant === "brand";
   const isDanger = variant === "danger";
 
   let indicatorColor = theme.colors.ink;
-  if (!isPrimary) {
+  if (!isPrimary && !isBrand) {
     indicatorColor = isDanger ? theme.colors.danger : theme.colors.primary;
   }
 
@@ -39,6 +40,11 @@ export function Button({
     primary: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
+      ...theme.shadow
+    },
+    brand: {
+      backgroundColor: theme.colors.brandPrimary,
+      borderColor: theme.colors.brandPrimary,
       ...theme.shadow
     },
     secondary: {
@@ -58,6 +64,7 @@ export function Button({
 
   const textStyles = {
     primary: { color: theme.colors.ink },
+    brand: { color: theme.colors.ink },
     secondary: { color: theme.colors.text },
     danger: { color: "#ffffff" },
     ghost: { color: theme.colors.muted }

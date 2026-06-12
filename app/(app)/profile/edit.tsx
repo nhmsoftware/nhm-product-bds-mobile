@@ -109,6 +109,7 @@ function EditProfileContent() {
           loading={submitting}
           disabled={!fullName || !phone || !email}
           onPress={handleSubmit}
+          variant="brand"
         />
       </Card>
     </Screen>

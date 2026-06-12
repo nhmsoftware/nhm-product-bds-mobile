@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -65,6 +65,21 @@ function categoryLabel(value?: string | null) {
       return "Khác";
     default:
       return value?.trim() || null;
+  }
+}
+
+function getFallbackTags(category?: string | null): string[] {
+  switch (category) {
+    case "market":
+      return ["Xu hướng", "Đầu tư"];
+    case "project":
+      return ["Dự án", "Quy hoạch"];
+    case "investment":
+      return ["Đầu tư", "Sinh lời"];
+    case "legal":
+      return ["Pháp lý", "Thủ tục"];
+    default:
+      return ["Tin tức", "Thị trường"];
   }
 }
 
@@ -250,7 +265,8 @@ export default function NewsDetailScreen() {
   }, [newsId, reloadToken]);
 
   async function toggleLike() {
-    if (!newsId) {
+    const targetId = detail?.id ?? newsId;
+    if (!targetId) {
       notifyError("Không tìm thấy mã bài viết để thích.");
       return;
     }
@@ -262,7 +278,7 @@ export default function NewsDetailScreen() {
     setLiking(true);
 
     try {
-      const response = await customerPublicApi.likeNews(newsId);
+      const response = await customerPublicApi.likeNews(targetId);
       const apiLiked = response.data.is_liked ?? response.data.liked;
       if (typeof apiLiked === "boolean") {
         setLiked(apiLiked);
@@ -279,13 +295,25 @@ export default function NewsDetailScreen() {
     }
   }
 
+  async function handleShare() {
+    try {
+      await Share.share({
+        message: detail?.title || "Tin tức thị trường",
+        title: detail?.title || "Tin tức thị trường"
+      });
+    } catch (error) {
+      appLogger.warn("customer.newsShare", "Không thể chia sẻ bài viết.", { error });
+    }
+  }
+
   const imageUrls = normalizeImageUrls(detail?.attachments);
   const heroImage = mediaUrl(detail?.thumbnail) || imageUrls[0] || null;
   const extraImages = heroImage ? imageUrls.filter((url) => url !== heroImage) : imageUrls;
   const contentBlocks = normalizeContentBlocks(detail?.content_blocks ?? detail?.contentBlocks);
   const hasContentBlocks = contentBlocks.length > 0;
   const paragraphs = toParagraphs(detail?.content);
-  const tags = normalizeTags(detail?.tags);
+  const parsedTags = normalizeTags(detail?.tags);
+  const tags = parsedTags.length > 0 ? parsedTags : getFallbackTags(detail?.category);
   const quoteText = detail?.quote?.text?.trim();
   const quoteAuthor = detail?.quote?.author?.trim();
   const category = categoryLabel(detail?.category);
@@ -428,6 +456,15 @@ export default function NewsDetailScreen() {
               <View style={styles.buttonRow}>
                 <Pressable
                   accessibilityRole="button"
+                  onPress={handleShare}
+                  style={styles.shareButton}
+                >
+                  <Ionicons name="share-social-outline" size={16} color={palette.white} />
+                  <Text style={styles.shareButtonText}>Chia sẻ</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
                   disabled={liking}
                   onPress={toggleLike}
                   style={({ pressed }) => [styles.favoriteButton, liked && styles.favoriteButtonActive, (pressed || liking) && styles.pressed]}
@@ -439,14 +476,12 @@ export default function NewsDetailScreen() {
 
               {tags.length > 0 ? (
                 <View style={styles.tagRow}>
-                  <Text style={styles.tagLabel}>TAG:</Text>
-                  <View style={styles.tagWrap}>
-                    {tags.map((tag) => (
-                      <View key={tag} style={styles.tagPill}>
-                        <Text style={styles.tagPillText}>{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
+                  <Text style={styles.tagLabel}>TAGS:</Text>
+                  {tags.map((tag) => (
+                    <Text key={tag} style={styles.tag}>
+                      {tag.toUpperCase()}
+                    </Text>
+                  ))}
                 </View>
               ) : null}
             </View>
@@ -785,6 +820,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12
   },
+  shareButton: {
+    alignItems: "center",
+    backgroundColor: palette.darkRed,
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 4,
+    height: 48,
+    justifyContent: "center",
+    paddingHorizontal: 22
+  },
+  shareButtonText: {
+    color: palette.white,
+    fontFamily: appFonts.semiBold,
+    fontSize: 16,
+    letterSpacing: 0.32,
+    lineHeight: 22
+  },
   favoriteButton: {
     alignItems: "center",
     borderColor: "#8f706b",
@@ -814,32 +866,23 @@ const styles = StyleSheet.create({
     opacity: 0.82
   },
   tagRow: {
-    gap: 10
-  },
-  tagWrap: {
+    alignItems: "center",
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
+    gap: 16
   },
   tagLabel: {
     color: palette.brown,
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 16
+    lineHeight: 18
   },
-  tagPill: {
-    backgroundColor: "rgba(106, 1, 0, 0.08)",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  tagPillText: {
+  tag: {
     color: palette.darkRed,
     fontFamily: appFonts.bold,
     fontSize: 12,
-    letterSpacing: 0.4,
-    lineHeight: 16
+    letterSpacing: 1.2,
+    lineHeight: 18
   },
   relatedSection: {
     backgroundColor: palette.pale,
