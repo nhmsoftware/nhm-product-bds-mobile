@@ -122,14 +122,25 @@ export default function CustomerNewsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Image source={newsImages.hero} style={styles.heroImage} />
+          <Image source={mediaSource(featuredNews?.thumbnail, newsImages.hero)} style={styles.heroImage} />
           <View style={styles.heroGradient} />
           <View style={styles.heroCopy}>
             <View style={styles.heroPill}>
-              <Text style={styles.heroPillText}>ELITE ESTATE MANAGEMENT</Text>
+              <Text style={styles.heroPillText}>{newsCategoryLabel(featuredNews?.category).toUpperCase()}</Text>
             </View>
-            <Text style={styles.heroTitle}>Nâng Tầm Trải Nghiệm Bất Động Sản Hạng Sang</Text>
-            <Pressable accessibilityRole="button" style={styles.heroButton}>
+            <Text numberOfLines={2} style={styles.heroTitle}>{featuredNews?.title || "Bài viết nổi bật đang cập nhật"}</Text>
+            <Text numberOfLines={2} style={styles.heroDescription}>
+              {featuredNews?.summary || "Xem nhanh nội dung nổi bật nhất trong dòng tin thị trường hôm nay."}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                featuredNews
+                  ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(featuredNews) })
+                  : undefined
+              }
+              style={styles.heroButton}
+            >
               <Text style={styles.heroButtonText}>Khám Phá Ngay</Text>
             </Pressable>
           </View>
@@ -181,7 +192,11 @@ export default function CustomerNewsScreen() {
               <Ionicons name="map-outline" size={24} color={palette.white} />
               <Text style={styles.planningTitle}>Quy hoạch</Text>
               <Text style={styles.planningText}>Tra cứu bản đồ quy hoạch chi tiết các{"\n"}vùng kinh tế trọng điểm.</Text>
-              <Pressable accessibilityRole="button" style={styles.planningButton}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/(app)/(tabs)/inquiries")}
+                style={styles.planningButton}
+              >
                 <Text style={styles.planningButtonText}>Truy cập</Text>
               </Pressable>
             </View>
@@ -193,7 +208,12 @@ export default function CustomerNewsScreen() {
                 <Ionicons name="business-outline" size={15} color={palette.goldDark} />
                 <Text style={styles.projectsLabelText}>DỰ ÁN TIÊU BIỂU</Text>
               </View>
-              <Text style={styles.projectsLink}>Xem tất cả</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/(app)/(tabs)/saved")}
+              >
+                <Text style={styles.projectsLink}>Xem tất cả</Text>
+              </Pressable>
             </View>
             <View style={styles.projectList}>
               {(apiProjects.length > 0 ? apiProjects : projects).map((project, index) => {
@@ -250,6 +270,23 @@ function projectStatusLabel(status?: string | number | null) {
   if (status === 2 || status === "2" || status === "reserved") return "ĐANG NHẬN CỌC";
   if (status === 3 || status === "3" || status === "sold_out") return "HẾT HÀNG";
   return "ĐANG CẬP NHẬT";
+}
+
+function newsCategoryLabel(value?: string | null) {
+  switch (value) {
+    case "market":
+      return "Tin tức thị trường";
+    case "project":
+      return "Dự án";
+    case "investment":
+      return "Đầu tư";
+    case "legal":
+      return "Pháp lý";
+    case "other":
+      return "Khác";
+    default:
+      return value?.trim() || "Tin tức thị trường";
+  }
 }
 
 const styles = StyleSheet.create({
@@ -336,11 +373,21 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 30,
     letterSpacing: -1.6,
-    lineHeight: 50,
+    lineHeight: 38,
     marginTop: 8,
     textShadowColor: "rgba(0, 0, 0, 0.3)",
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 10
+  },
+  heroDescription: {
+    color: "rgba(255, 255, 255, 0.84)",
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8
   },
   heroButton: {
     alignItems: "center",

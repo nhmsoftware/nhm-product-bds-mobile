@@ -132,15 +132,12 @@ export default function CustomerHomeScreen() {
   const [latestNews, setLatestNews] = useState<PublicNews[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PublicProject[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
 
   const handleSearch = (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
-      setIsSearching(false);
       return;
     }
-    setIsSearching(true);
     customerPublicApi
       .searchProjects({ q: query.trim(), per_page: 20 })
       .then((response) => {
@@ -166,12 +163,6 @@ export default function CustomerHomeScreen() {
   }, [heroSlideWidth, heroSlides.length]);
 
   useEffect(() => {
-    activeHeroIndexRef.current = 0;
-    setActiveHeroIndex(0);
-    heroScrollRef.current?.scrollTo({ animated: false, x: 0, y: 0 });
-  }, [heroSlides.length]);
-
-  useEffect(() => {
     let active = true;
 
     Promise.all([
@@ -195,8 +186,12 @@ export default function CustomerHomeScreen() {
     };
   }, []);
 
-  function handleHeroMomentumEnd(offsetX: number) {
-    const nextIndex = Math.round(offsetX / heroSlideWidth);
+  function handleHeroScroll(offsetX: number) {
+    if (heroSlideWidth <= 0) return;
+
+    const nextIndex = Math.min(heroSlides.length - 1, Math.max(0, Math.round(offsetX / heroSlideWidth)));
+    if (activeHeroIndexRef.current === nextIndex) return;
+
     activeHeroIndexRef.current = nextIndex;
     setActiveHeroIndex(nextIndex);
   }
@@ -272,7 +267,8 @@ export default function CustomerHomeScreen() {
                 directionalLockEnabled
                 horizontal
                 nestedScrollEnabled
-                onMomentumScrollEnd={(event) => handleHeroMomentumEnd(event.nativeEvent.contentOffset.x)}
+                onMomentumScrollEnd={(event) => handleHeroScroll(event.nativeEvent.contentOffset.x)}
+                onScroll={(event) => handleHeroScroll(event.nativeEvent.contentOffset.x)}
                 overScrollMode="always"
                 pagingEnabled
                 scrollEventThrottle={16}
@@ -281,14 +277,13 @@ export default function CustomerHomeScreen() {
                 {heroSlides.map((slide, index) => {
                   const isApiSlide = isPublicNewsSlide(slide);
                   const slideTitle = isApiSlide ? slide.title || "Tin tức nổi bật đang cập nhật" : slide.title;
-                  const slideBrand = isApiSlide ? "KHỞI NGUYÊN LAND" : slide.brand;
+                  const slideBrand = isApiSlide ? "TIN NỔI BẬT" : slide.brand;
                   const slideCta = isApiSlide ? "ĐỌC NGAY" : slide.cta;
 
                   return (
                     <Pressable
                       key={isApiSlide ? slide.id : `${slide.title}-${index}`}
                       accessibilityRole="button"
-                      delayPressIn={80}
                       onPress={() =>
                         isApiSlide
                           ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(slide) })
@@ -330,29 +325,19 @@ export default function CustomerHomeScreen() {
         {searchQuery.trim().length > 0 ? (
           <View style={styles.searchResultsContainer}>
             <Text style={styles.searchResultsTitle}>
-              Kết quả tìm kiếm cho "{searchQuery}" ({searchResults.length})
+              Kết quả tìm kiếm cho “{searchQuery}” ({searchResults.length})
             </Text>
             {searchResults.length > 0 ? (
               <View style={styles.searchResultsList}>
-                {searchResults.map((project, index) => {
-                  const isApiProject = "id" in project;
-                  return (
+                {searchResults.map((project, index) => (
                     <Pressable
-                      key={isApiProject ? project.id : project.name}
+                      key={project.id}
                       accessibilityRole="button"
-                      onPress={() =>
-                        isApiProject
-                          ? router.push({ pathname: "/(app)/project-detail", params: { id: project.id } })
-                          : undefined
-                      }
+                      onPress={() => router.push({ pathname: "/(app)/project-detail", params: { id: project.id } })}
                       style={styles.searchResultCard}
                     >
                       <Image
-                        source={
-                          isApiProject
-                            ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image)
-                            : project.image
-                        }
+                        source={mediaSource(project.image ?? project.banner, projects[index % projects.length].image)}
                         style={styles.searchResultImage}
                       />
                       <View style={styles.searchResultInfo}>
@@ -361,11 +346,10 @@ export default function CustomerHomeScreen() {
                           <Ionicons name="location-outline" size={14} color={palette.muted} />
                           <Text style={styles.searchResultLocation} numberOfLines={1}>{project.location}</Text>
                         </View>
-                        <Text style={styles.searchResultPrice}>{isApiProject ? formatProjectPrice(project.price) : project.price}</Text>
+                        <Text style={styles.searchResultPrice}>{formatProjectPrice(project.price)}</Text>
                       </View>
                     </Pressable>
-                  );
-                })}
+                ))}
               </View>
             ) : (
               <View style={styles.noResults}>
@@ -425,8 +409,8 @@ export default function CustomerHomeScreen() {
                       }
                       style={styles.projectImage}
                     />
-                    <Text style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.name}</Text>
-                    <Text style={styles.projectLocation}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
+                    <Text numberOfLines={2} style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.name}</Text>
+                    <Text numberOfLines={2} style={styles.projectLocation}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
                     <Text style={styles.projectPrice}>{isApiProject ? formatProjectPrice(project.price) : project.price}</Text>
                   </Pressable>
                 );
@@ -801,7 +785,7 @@ const styles = StyleSheet.create({
     lineHeight: 16
   },
   projectSlider: {
-    height: 247,
+    height: 292,
     marginTop: -16
   },
   projectSliderContent: {
@@ -810,7 +794,7 @@ const styles = StyleSheet.create({
     paddingRight: 32
   },
   projectCard: {
-    height: 247,
+    minHeight: 292,
     width: 176
   },
   projectImage: {

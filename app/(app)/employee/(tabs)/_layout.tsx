@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, Tabs } from "expo-router";
+import { router, Tabs, usePathname } from "expo-router";
 import { useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -11,14 +11,22 @@ import { employeeApi } from "@/services/employee/api";
 
 export default function EmployeeTabsLayout() {
   const { session } = useAuth();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const checkingLearningAccess = useRef(false);
   const bottomInset = Math.max(insets.bottom, 10);
+  const learningReturnTo = pathname && pathname !== "/employee/learning" ? pathname : "/employee";
+
+  function openRequiredLearning() {
+    router.push({
+      pathname: "/employee/required-learning",
+      params: { returnTo: learningReturnTo }
+    });
+  }
 
   async function openLearningTab() {
-    router.navigate("/employee/learning");
-
     if (canUseDemoLearning(session)) {
+      router.navigate("/employee/learning");
       return;
     }
 
@@ -31,12 +39,13 @@ export default function EmployeeTabsLayout() {
       const access = await employeeApi.learningAccess();
 
       if (access.mandatoryLearningCompleted) {
+        router.navigate("/employee/learning");
         return;
       }
 
-      router.push("/employee/required-learning");
+      openRequiredLearning();
     } catch {
-      router.push("/employee/required-learning");
+      openRequiredLearning();
     } finally {
       checkingLearningAccess.current = false;
     }

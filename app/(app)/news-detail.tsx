@@ -1,23 +1,17 @@
-import {
-  Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect,
-  useState } from "react";
-import { Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View
-} from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ApiRequestError } from "@/libs/api";
 import { appLogger } from "@/libs/logger";
-import { mediaSource } from "@/libs/media";
+import { mediaUrl } from "@/libs/media";
 import { notifyError } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
-import { customerPublicApi, type PublicNews } from "@/services/customer/api";
+import { customerPublicApi, publicNewsDetailParams, type NewsAttachment, type NewsContentBlock, type PublicNews } from "@/services/customer/api";
 
 const palette = {
   background: "#f8f9fa",
@@ -27,50 +21,140 @@ const palette = {
   line: "rgba(227, 190, 184, 0.3)",
   pale: "#f3f4f5",
   text: "#191c1d",
+  muted: "#6b7280",
   white: "#ffffff"
 };
 
-const detailImages = {
-  hero: require("@/assets/images/customer/news-detail/luxury-real-estate-hero.png"),
-  interior: require("@/assets/images/customer/news-detail/luxury-interior-design.png"),
-  pool: require("@/assets/images/customer/news-detail/luxury-pool-area.png"),
-  cityscape: require("@/assets/images/customer/news-detail/cityscape.png"),
-  consultation: require("@/assets/images/customer/news-detail/consultation.png"),
-  villa: require("@/assets/images/customer/news-detail/villa-detail.png")
-};
-
-const relatedArticles = [
-  {
-    category: "QUY HOẠCH",
-    excerpt: "Những thay đổi mới nhất về hạ tầng giao thông sẽ thúc đẩy giá trị bất động sản...",
-    image: detailImages.cityscape,
-    title: "Điều chỉnh quy hoạch hạ tầng phía Tây Thủ Đô"
-  },
-  {
-    category: "TƯ VẤN",
-    excerpt: "Làm sao để nhận diện một dự án thực sự tiềm năng giữa hàng nghìn lựa chọn...",
-    image: detailImages.consultation,
-    title: "Cẩm nang đầu tư căn hộ hạng sang cho người mới"
-  },
-  {
-    category: "KIẾN TRÚC",
-    excerpt: "Sử dụng vật liệu tự nhiên không chỉ là xu hướng mà còn là cam kết bảo vệ môi...",
-    image: detailImages.villa,
-    title: "Vật liệu bền vững: Tương lai của kiến trúc cao cấp"
-  }
-] as const;
-
-const leadParagraph =
-  "Thị trường bất động sản nghỉ dưỡng đang chứng kiến một cuộc chuyển mình mạnh mẽ trong năm 2024. Không còn đơn thuần là những căn biệt thự xa hoa, giới thượng lưu hiện nay đang tìm kiếm những giá trị bền vững và trải nghiệm cá nhân hóa sâu sắc trong không gian sống của họ.";
-const wellnessParagraph =
-  'Theo báo cáo mới nhất từ các tổ chức nghiên cứu thị trường hàng đầu, sự lên ngôi của phân khúc "Wellness Real Estate" (Bất động sản chăm sóc sức khỏe) đang dẫn đầu xu hướng. Các dự án tích hợp hệ thống lọc không khí tiêu chuẩn y tế, không gian thiền định riêng biệt và kiến trúc xanh đang thu hút sự quan tâm đặc biệt.';
-const quote =
-  '"Sự sang trọng ngày nay không đo lường bằng khối lượng vàng bạc, mà bằng sự tĩnh lặng và chất lượng không khí mà bạn hít thở mỗi ngày."';
-const infrastructureParagraph =
-  'Bên cạnh yếu tố thiết kế, hạ tầng giao thông vẫn là "đòn bẩy" quyết định giá trị của các dự án. Việc hoàn thiện các tuyến cao tốc huyết mạch và sân bay quốc tế mới đã rút ngắn khoảng cách giữa các trung tâm kinh tế và các vùng ven biển, tạo điều kiện thuận lợi cho xu hướng "Second Home" bùng nổ.';
-
 function paramText(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function stripRichText(value?: string | null) {
+  return value
+    ?.replace(/<\/(p|div|h[1-6]|li)>/gi, "\n")
+    .replace(/<br\s*\/?>(\n)?/gi, "\n")
+    .replace(/<li>/gi, "• ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
+}
+
+function toParagraphs(value?: string | null) {
+  const text = stripRichText(value);
+  if (!text) return [];
+
+  return text
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+}
+
+function categoryLabel(value?: string | null) {
+  switch (value) {
+    case "market":
+      return "Tin tức thị trường";
+    case "project":
+      return "Dự án";
+    case "investment":
+      return "Đầu tư";
+    case "legal":
+      return "Pháp lý";
+    case "other":
+      return "Khác";
+    default:
+      return value?.trim() || null;
+  }
+}
+
+function normalizeTags(value?: string[] | string | null) {
+  if (Array.isArray(value)) {
+    return value.map((item) => item.trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function isImageAttachment(attachment: NewsAttachment) {
+  const mime = attachment.mime_type?.toLowerCase();
+  if (mime) {
+    return mime.startsWith("image/");
+  }
+
+  const url = attachment.url?.toLowerCase() || "";
+  return /\.(png|jpe?g|gif|webp|bmp|avif)(\?|#|$)/.test(url);
+}
+
+function normalizeImageUrls(attachments?: NewsAttachment[] | null) {
+  if (!Array.isArray(attachments)) return [];
+
+  return attachments
+    .filter((attachment) => Boolean(attachment?.url) && isImageAttachment(attachment))
+    .map((attachment) => mediaUrl(attachment.url))
+    .filter((url): url is string => Boolean(url));
+}
+
+type NormalizedContentBlock =
+  | { type: "heading" | "paragraph"; text: string }
+  | { type: "image"; url: string; caption?: string | null }
+  | { type: "quote"; text: string; author?: string | null };
+
+function normalizeContentBlocks(value?: NewsContentBlock[] | null): NormalizedContentBlock[] {
+  if (!Array.isArray(value)) return [];
+
+  const blocks: NormalizedContentBlock[] = [];
+
+  value.forEach((block) => {
+    const type = String(block?.type || "paragraph").toLowerCase();
+
+    if (type === "image") {
+      const url = mediaUrl(block.url);
+      if (url) {
+        blocks.push({
+          type: "image",
+          url,
+          caption: block.caption?.trim() || null
+        });
+      }
+      return;
+    }
+
+    const text = block.text?.trim();
+    if (!text) return;
+
+    if (type === "heading") {
+      blocks.push({ type: "heading", text });
+      return;
+    }
+
+    if (type === "quote") {
+      blocks.push({ type: "quote", text, author: block.author?.trim() || null });
+      return;
+    }
+
+    if (type === "paragraph") {
+      blocks.push({ type: "paragraph", text });
+    }
+  });
+
+  return blocks;
+}
+
+function formatNewsDate(value?: string | null) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
 }
 
 export default function NewsDetailScreen() {
@@ -81,41 +165,89 @@ export default function NewsDetailScreen() {
     likes_count?: string;
     news_id?: string;
   }>();
+
   const newsId = paramText(params.news_id) ?? paramText(params.id);
   const initialLiked = paramText(params.is_liked) === "true" || paramText(params.liked) === "true";
   const initialLikesCount = Number(paramText(params.likes_count) ?? 0);
+
   const [liked, setLiked] = useState(initialLiked);
   const [likesCount, setLikesCount] = useState(Number.isFinite(initialLikesCount) ? initialLikesCount : 0);
   const [liking, setLiking] = useState(false);
+  const [loading, setLoading] = useState(Boolean(newsId));
+  const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [detail, setDetail] = useState<PublicNews | null>(null);
   const [related, setRelated] = useState<PublicNews[]>([]);
 
   useEffect(() => {
-    if (!newsId) return;
     let active = true;
 
-    customerPublicApi
-      .newsDetail(newsId)
-      .then((response) => {
+    async function loadNewsDetail() {
+      if (!newsId) {
+        setDetail(null);
+        setRelated([]);
+        setError("Bài viết không tồn tại hoặc đã bị xóa.");
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await customerPublicApi.newsDetail(newsId);
         if (!active) return;
-        setDetail(response.data.detail ?? null);
-        setRelated(response.data.related ?? []);
-        if (typeof response.data.detail?.likes_count === "number") {
-          setLikesCount(response.data.detail.likes_count);
+
+        const nextDetail = response.data.detail ?? null;
+        const nextRelated = Array.isArray(response.data.related) ? response.data.related.filter(Boolean) : [];
+
+        if (!nextDetail) {
+          setDetail(null);
+          setRelated([]);
+          setError("Bài viết không tồn tại hoặc đã bị xóa.");
+          return;
         }
-        const apiLiked = response.data.detail?.is_liked ?? response.data.detail?.liked;
+
+        setDetail(nextDetail);
+        setRelated(nextRelated as PublicNews[]);
+
+        if (typeof nextDetail.likes_count === "number") {
+          setLikesCount(nextDetail.likes_count);
+        }
+
+        const apiLiked = nextDetail.is_liked ?? nextDetail.liked;
         if (typeof apiLiked === "boolean") {
           setLiked(apiLiked);
         }
-      })
-      .catch((error) => {
+      } catch (error) {
+        if (!active) return;
+
+        let message = "Không thể tải nội dung bài viết. Vui lòng thử lại.";
+        if (error instanceof ApiRequestError) {
+          if (error.status === 404) {
+            message = "Bài viết không tồn tại hoặc đã bị xóa.";
+          } else if (error.status === 403) {
+            message = "Bạn không có quyền truy cập bài viết này.";
+          }
+        }
+
         appLogger.warn("customer.newsDetail", "Không thể tải chi tiết bài viết.", { error, newsId });
-      });
+        setDetail(null);
+        setRelated([]);
+        setError(message);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadNewsDetail();
 
     return () => {
       active = false;
     };
-  }, [newsId]);
+  }, [newsId, reloadToken]);
 
   async function toggleLike() {
     if (!newsId) {
@@ -147,120 +279,217 @@ export default function NewsDetailScreen() {
     }
   }
 
+  const imageUrls = normalizeImageUrls(detail?.attachments);
+  const heroImage = mediaUrl(detail?.thumbnail) || imageUrls[0] || null;
+  const extraImages = heroImage ? imageUrls.filter((url) => url !== heroImage) : imageUrls;
+  const contentBlocks = normalizeContentBlocks(detail?.content_blocks ?? detail?.contentBlocks);
+  const hasContentBlocks = contentBlocks.length > 0;
+  const paragraphs = toParagraphs(detail?.content);
+  const tags = normalizeTags(detail?.tags);
+  const quoteText = detail?.quote?.text?.trim();
+  const quoteAuthor = detail?.quote?.author?.trim();
+  const category = categoryLabel(detail?.category);
+  const publishedAt = formatNewsDate(detail?.published_at);
+
+  function renderErrorState() {
+    return (
+      <View style={styles.stateWrap}>
+        <View style={styles.stateIcon}>
+          <Ionicons name="alert-circle-outline" size={28} color={palette.darkRed} />
+        </View>
+        <Text style={styles.stateTitle}>Không thể tải nội dung bài viết</Text>
+        <Text style={styles.stateText}>{error || "Vui lòng thử lại."}</Text>
+        <View style={styles.stateActions}>
+          <Pressable accessibilityRole="button" onPress={() => setReloadToken((value) => value + 1)} style={styles.primaryAction}>
+            <Text style={styles.primaryActionText}>Thử lại</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.replace("/(app)/market-news")} style={styles.secondaryAction}>
+            <Text style={styles.secondaryActionText}>Về danh sách tin tức</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar backgroundColor={palette.background} style="dark" />
       <View style={styles.topBar}>
-        <Text style={styles.brandText}>LUXE REALTY</Text>
+        <View style={styles.brandRow}>
+          <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.iconButton}>
+            <Ionicons name="arrow-back" size={20} color={palette.brown} />
+          </Pressable>
+          <Text style={styles.brandText}>KHỞI NGUYÊN LAND</Text>
+        </View>
         <Pressable accessibilityRole="button" style={styles.accountButton}>
-          <Ionicons name="person-circle-outline" size={18} color="#5b403c" />
+          <Ionicons name="person-circle-outline" size={18} color={palette.brown} />
         </Pressable>
       </View>
 
-      <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <Image source={mediaSource(detail?.thumbnail, detailImages.hero)} style={styles.heroImage} />
-          <View style={styles.heroOverlay} />
-          <View style={styles.heroCopy}>
-            <View style={styles.categoryPill}>
-              <Text style={styles.categoryPillText}>{detail?.category || "THỊ TRƯỜNG"}</Text>
-            </View>
-            <Text style={styles.heroTitle}>{detail?.title || "Xu Hướng Bất\nĐộng Sản Nghỉ\nDưỡng Cao Cấp\nNăm 2024"}</Text>
-            <View style={styles.dateRow}>
-              <Ionicons name="calendar-clear-outline" size={14} color="rgba(255, 255, 255, 0.9)" />
-              <Text style={styles.heroDate}>{formatNewsDate(detail?.published_at) || "24 Tháng 5, 2024"}</Text>
-              <View style={styles.heroDot} />
-            </View>
-          </View>
+      {loading ? (
+        <View style={styles.stateWrap}>
+          <ActivityIndicator color={palette.darkRed} size="small" />
+          <Text style={[styles.stateText, styles.loadingText]}>Đang tải bài viết...</Text>
         </View>
-
-        <View style={styles.articleContent}>
-          <Text style={styles.leadText}>{detail?.summary || leadParagraph}</Text>
-          <Text style={styles.bodyText}>{stripText(detail?.content) || wellnessParagraph}</Text>
-
-          <View style={styles.quoteBox}>
-            <Text style={styles.quoteText}>{quote}</Text>
-            <Text style={styles.quoteAuthor}>- Giám đốc Thiết kế Luxe Realty</Text>
-          </View>
-
-          <Text style={styles.heading}>Kết nối hạ tầng và giá trị gia tăng</Text>
-          <Text style={styles.bodyText}>{infrastructureParagraph}</Text>
-
-          <View style={styles.imageStack}>
-            <Image source={detailImages.interior} style={styles.contentImage} />
-            <Image source={detailImages.pool} style={styles.contentImage} />
-          </View>
-
-          <Text style={styles.bodyText}>
-            Luxe Realty tự hào là đơn vị tiên phong trong việc cung cấp các giải pháp quản lý và phân phối các sản phẩm bất động sản cao cấp, đảm bảo mỗi giao dịch không chỉ là một sự đầu tư tài chính mà còn là sự nâng tầm phong cách sống cho khách hàng.
-          </Text>
-
-          <View style={styles.actions}>
-            <View style={styles.buttonRow}>
-              <Pressable accessibilityRole="button" style={styles.shareButton}>
-                <Ionicons name="share-social" size={15} color={palette.white} />
-                <Text style={styles.shareButtonText}>Chia sẻ</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                disabled={liking}
-                onPress={toggleLike}
-                style={({ pressed }) => [
-                  styles.favoriteButton,
-                  liked && styles.favoriteButtonActive,
-                  (pressed || liking) && styles.pressed
-                ]}
-              >
-                <Ionicons name={liked ? "heart" : "heart-outline"} size={20} color={liked ? palette.white : "#8f706b"} />
-                {likesCount > 0 ? (
-                  <Text style={[styles.favoriteCount, liked && styles.favoriteCountActive]}>{likesCount}</Text>
-                ) : null}
-              </Pressable>
-            </View>
-            <View style={styles.tagRow}>
-              <Text style={styles.tagLabel}>TAGS:</Text>
-              <Text style={styles.tag}>XU HƯỚNG</Text>
-              <Text style={styles.tag}>ĐẦU TƯ</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.relatedSection}>
-          <Text style={styles.relatedEyebrow}>KHÁM PHÁ THÊM</Text>
-          <Text style={styles.relatedTitle}>Bài viết liên quan</Text>
-          <View style={styles.relatedList}>
-            {(related.length > 0 ? related : relatedArticles).map((article, index) => {
-              const isApiNews = "id" in article;
-              return (
-              <Pressable accessibilityRole="button" key={isApiNews ? article.id : article.title} style={styles.relatedCard}>
-                <Image
-                  source={isApiNews ? mediaSource(article.thumbnail, relatedArticles[index % relatedArticles.length].image) : article.image}
-                  style={styles.relatedImage}
-                />
-                <View style={styles.relatedCopy}>
-                  <Text style={styles.relatedCategory}>{isApiNews ? article.category || "TIN TỨC" : article.category}</Text>
-                  <Text style={styles.relatedCardTitle}>{isApiNews ? article.title || "Tin tức đang cập nhật" : article.title}</Text>
-                  <Text numberOfLines={2} style={styles.relatedExcerpt}>{isApiNews ? article.summary || "" : article.excerpt}</Text>
+      ) : error ? (
+        renderErrorState()
+      ) : detail ? (
+        <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
+          <View style={styles.hero}>
+            {heroImage ? (
+              <Image source={{ uri: heroImage }} style={styles.heroImage} />
+            ) : (
+              <View style={styles.heroPlaceholder}>
+                <Ionicons name="image-outline" size={38} color="rgba(255, 255, 255, 0.75)" />
+                <Text style={styles.heroPlaceholderText}>Chưa có ảnh đại diện</Text>
+              </View>
+            )}
+            <View style={styles.heroOverlay} />
+            <View style={styles.heroCopy}>
+              {category ? (
+                <View style={styles.categoryPill}>
+                  <Text style={styles.categoryPillText}>{category.toUpperCase()}</Text>
                 </View>
-              </Pressable>
-              );
-            })}
+              ) : null}
+              <Text style={styles.heroTitle}>{detail.title || "Bài viết chưa có tiêu đề"}</Text>
+              {publishedAt ? (
+                <View style={styles.dateRow}>
+                  <Ionicons name="calendar-clear-outline" size={14} color="rgba(255, 255, 255, 0.9)" />
+                  <Text style={styles.heroDate}>{publishedAt}</Text>
+                </View>
+              ) : null}
+            </View>
           </View>
-        </View>
-      </ScrollView>
+
+          <View style={styles.articleContent}>
+            {detail.summary ? <Text style={styles.leadText}>{detail.summary}</Text> : null}
+
+            {hasContentBlocks ? (
+              <View style={styles.contentBlockStack}>
+                {contentBlocks.map((block, index) => {
+                  const key = `${block.type}-${index}`;
+
+                  if (block.type === "heading") {
+                    return <Text key={key} style={styles.blockHeading}>{block.text}</Text>;
+                  }
+
+                  if (block.type === "image") {
+                    return (
+                      <View key={key} style={styles.blockImageWrap}>
+                        <Image source={{ uri: block.url }} style={styles.blockImage} />
+                        {block.caption ? <Text style={styles.blockImageCaption}>{block.caption}</Text> : null}
+                      </View>
+                    );
+                  }
+
+                  if (block.type === "quote") {
+                    return (
+                      <View key={key} style={styles.quoteBox}>
+                        <Text style={styles.quoteText}>&quot;{block.text}&quot;</Text>
+                        {block.author ? <Text style={styles.quoteAuthor}>- {block.author}</Text> : null}
+                      </View>
+                    );
+                  }
+
+                  return <Text key={key} style={styles.bodyText}>{block.text}</Text>;
+                })}
+              </View>
+            ) : paragraphs.length > 0 ? (
+              <View style={styles.bodyStack}>
+                {paragraphs.map((paragraph, index) => (
+                  <Text key={`${index}-${paragraph.slice(0, 24)}`} style={styles.bodyText}>
+                    {paragraph}
+                  </Text>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.emptyBodyText}>Nội dung bài viết đang được cập nhật.</Text>
+            )}
+
+            {!hasContentBlocks && quoteText ? (
+              <View style={styles.quoteBox}>
+                <Text style={styles.quoteText}>&quot;{quoteText}&quot;</Text>
+                {quoteAuthor ? <Text style={styles.quoteAuthor}>- {quoteAuthor}</Text> : null}
+              </View>
+            ) : null}
+
+            {!hasContentBlocks && extraImages.length > 0 ? (
+              <View style={styles.mediaSection}>
+                <Text style={styles.sectionLabel}>Hình ảnh minh họa</Text>
+                <View style={styles.attachmentStack}>
+                  {extraImages.map((url, index) => (
+                    <Image key={`${url}-${index}`} source={{ uri: url }} style={styles.attachmentImage} />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.actions}>
+              <View style={styles.buttonRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={liking}
+                  onPress={toggleLike}
+                  style={({ pressed }) => [styles.favoriteButton, liked && styles.favoriteButtonActive, (pressed || liking) && styles.pressed]}
+                >
+                  <Ionicons name={liked ? "heart" : "heart-outline"} size={20} color={liked ? palette.white : "#8f706b"} />
+                  {likesCount > 0 ? <Text style={[styles.favoriteCount, liked && styles.favoriteCountActive]}>{likesCount}</Text> : null}
+                </Pressable>
+              </View>
+
+              {tags.length > 0 ? (
+                <View style={styles.tagRow}>
+                  <Text style={styles.tagLabel}>TAG:</Text>
+                  <View style={styles.tagWrap}>
+                    {tags.map((tag) => (
+                      <View key={tag} style={styles.tagPill}>
+                        <Text style={styles.tagPillText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {related.length > 0 ? (
+            <View style={styles.relatedSection}>
+              <Text style={styles.relatedEyebrow}>KHÁM PHÁ THÊM</Text>
+              <Text style={styles.relatedTitle}>Bài viết liên quan</Text>
+              <View style={styles.relatedList}>
+                {related.map((article) => {
+                  const articleImage = mediaUrl(article.thumbnail);
+                  const articleCategory = categoryLabel(article.category) || "Tin tức";
+
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={article.id}
+                      onPress={() => router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(article) })}
+                      style={styles.relatedCard}
+                    >
+                      {articleImage ? (
+                        <Image source={{ uri: articleImage }} style={styles.relatedImage} />
+                      ) : (
+                        <View style={styles.relatedPlaceholder}>
+                          <Ionicons name="image-outline" size={26} color="rgba(255, 255, 255, 0.7)" />
+                        </View>
+                      )}
+                      <View style={styles.relatedCopy}>
+                        <Text style={styles.relatedCategory}>{articleCategory}</Text>
+                        <Text style={styles.relatedCardTitle}>{article.title || "Bài viết liên quan"}</Text>
+                        {article.summary ? <Text numberOfLines={2} style={styles.relatedExcerpt}>{article.summary}</Text> : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+        </ScrollView>
+      ) : null}
     </SafeAreaView>
   );
-}
-
-function stripText(value?: string | null) {
-  return value?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function formatNewsDate(value?: string | null) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
 }
 
 const styles = StyleSheet.create({
@@ -274,7 +503,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     height: 64,
     justifyContent: "space-between",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -282,12 +511,26 @@ const styles = StyleSheet.create({
     elevation: 1,
     zIndex: 2
   },
+  brandRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    minWidth: 0
+  },
+  iconButton: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 40,
+    justifyContent: "center",
+    width: 40
+  },
   brandText: {
     color: palette.darkRed,
+    flexShrink: 1,
     fontFamily: appFonts.bold,
-    fontSize: 24,
-    letterSpacing: -0.48,
-    lineHeight: 28.8
+    fontSize: 18,
+    letterSpacing: -0.36,
+    lineHeight: 22
   },
   accountButton: {
     alignItems: "center",
@@ -298,7 +541,73 @@ const styles = StyleSheet.create({
   },
   scroll: {
     backgroundColor: palette.background,
-    paddingBottom: 0
+    paddingBottom: 40
+  },
+  stateWrap: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 14
+  },
+  stateIcon: {
+    alignItems: "center",
+    backgroundColor: "rgba(106, 1, 0, 0.08)",
+    borderRadius: 999,
+    height: 52,
+    justifyContent: "center",
+    width: 52
+  },
+  stateTitle: {
+    color: palette.text,
+    fontFamily: appFonts.bold,
+    fontSize: 22,
+    lineHeight: 30,
+    textAlign: "center"
+  },
+  stateText: {
+    color: palette.brown,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center"
+  },
+  loadingText: {
+    marginTop: -2
+  },
+  stateActions: {
+    gap: 10,
+    marginTop: 4,
+    width: "100%"
+  },
+  primaryAction: {
+    alignItems: "center",
+    backgroundColor: palette.darkRed,
+    borderRadius: 12,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: 18
+  },
+  primaryActionText: {
+    color: palette.white,
+    fontFamily: appFonts.semiBold,
+    fontSize: 15,
+    lineHeight: 22
+  },
+  secondaryAction: {
+    alignItems: "center",
+    borderColor: palette.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: 18
+  },
+  secondaryActionText: {
+    color: palette.brown,
+    fontFamily: appFonts.semiBold,
+    fontSize: 15,
+    lineHeight: 22
   },
   hero: {
     height: 442,
@@ -313,6 +622,19 @@ const styles = StyleSheet.create({
     resizeMode: "cover",
     top: 0,
     width: "113.4%"
+  },
+  heroPlaceholder: {
+    alignItems: "center",
+    backgroundColor: "#8a736d",
+    height: "100%",
+    justifyContent: "center",
+    gap: 8
+  },
+  heroPlaceholderText: {
+    color: "rgba(255, 255, 255, 0.88)",
+    fontFamily: appFonts.semiBold,
+    fontSize: 14,
+    lineHeight: 20
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -340,9 +662,9 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: palette.white,
     fontFamily: appFonts.bold,
-    fontSize: 39,
-    letterSpacing: -1.6,
-    lineHeight: 50
+    fontSize: 38,
+    letterSpacing: -1.4,
+    lineHeight: 48
   },
   dateRow: {
     alignItems: "center",
@@ -355,13 +677,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 25.6
   },
-  heroDot: {
-    backgroundColor: "rgba(255, 255, 255, 0.5)",
-    borderRadius: 999,
-    height: 4,
-    marginLeft: 12,
-    width: 4
-  },
   articleContent: {
     gap: 24,
     paddingHorizontal: 20,
@@ -373,10 +688,44 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 29.25
   },
+  bodyStack: {
+    gap: 16
+  },
+  contentBlockStack: {
+    gap: 18
+  },
+  blockHeading: {
+    color: palette.text,
+    fontFamily: appFonts.bold,
+    fontSize: 22,
+    lineHeight: 30
+  },
   bodyText: {
     color: palette.brown,
     fontFamily: appFonts.regular,
     fontSize: 16,
+    lineHeight: 26
+  },
+  blockImageWrap: {
+    gap: 8
+  },
+  blockImage: {
+    borderRadius: 12,
+    height: 256,
+    resizeMode: "cover",
+    width: "100%"
+  },
+  blockImageCaption: {
+    color: palette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 13,
+    lineHeight: 19
+  },
+  emptyBodyText: {
+    color: palette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    fontStyle: "italic",
     lineHeight: 26
   },
   quoteBox: {
@@ -407,17 +756,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     lineHeight: 16
   },
-  heading: {
-    color: palette.text,
-    fontFamily: appFonts.bold,
-    fontSize: 25,
-    letterSpacing: -0.96,
-    lineHeight: 38.4
-  },
-  imageStack: {
+  mediaSection: {
     gap: 16
   },
-  contentImage: {
+  sectionLabel: {
+    color: palette.goldDark,
+    fontFamily: appFonts.bold,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    lineHeight: 16
+  },
+  attachmentStack: {
+    gap: 16
+  },
+  attachmentImage: {
     borderRadius: 12,
     height: 256,
     resizeMode: "cover",
@@ -427,28 +779,11 @@ const styles = StyleSheet.create({
     borderTopColor: palette.line,
     borderTopWidth: 1,
     gap: 16,
-    paddingTop: 25
+    paddingTop: 24
   },
   buttonRow: {
     flexDirection: "row",
     gap: 12
-  },
-  shareButton: {
-    alignItems: "center",
-    backgroundColor: palette.darkRed,
-    borderRadius: 12,
-    flexDirection: "row",
-    gap: 4,
-    height: 44,
-    justifyContent: "center",
-    paddingHorizontal: 22
-  },
-  shareButtonText: {
-    color: palette.white,
-    fontFamily: appFonts.semiBold,
-    fontSize: 16,
-    letterSpacing: 0.32,
-    lineHeight: 20
   },
   favoriteButton: {
     alignItems: "center",
@@ -479,9 +814,12 @@ const styles = StyleSheet.create({
     opacity: 0.82
   },
   tagRow: {
-    alignItems: "center",
+    gap: 10
+  },
+  tagWrap: {
     flexDirection: "row",
-    gap: 16
+    flexWrap: "wrap",
+    gap: 8
   },
   tagLabel: {
     color: palette.brown,
@@ -490,11 +828,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     lineHeight: 16
   },
-  tag: {
+  tagPill: {
+    backgroundColor: "rgba(106, 1, 0, 0.08)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  tagPillText: {
     color: palette.darkRed,
     fontFamily: appFonts.bold,
     fontSize: 12,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
     lineHeight: 16
   },
   relatedSection: {
@@ -537,6 +881,12 @@ const styles = StyleSheet.create({
     height: 192,
     resizeMode: "cover",
     width: "100%"
+  },
+  relatedPlaceholder: {
+    alignItems: "center",
+    backgroundColor: "#9c847f",
+    height: 192,
+    justifyContent: "center"
   },
   relatedCopy: {
     gap: 4,

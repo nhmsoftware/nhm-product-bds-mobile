@@ -1,23 +1,36 @@
 import {
   Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
 import { router,
   useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
+  useMemo,
   useState } from "react";
-import { Image,
+import { ActivityIndicator,
+  Image,
+  Linking,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import WebView from "react-native-webview";
+
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
 import { appLogger } from "@/libs/logger";
 import { mediaSource } from "@/libs/media";
+import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
+import { normalizeAccessRole } from "@/services/auth/roles";
+import { useAuth } from "@/services/auth/store";
 import { customerPublicApi, type PublicProject } from "@/services/customer/api";
 
 const palette = {
@@ -48,8 +61,13 @@ const amenities = [
 
 export default function ProjectDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
+  const { width: windowWidth } = useWindowDimensions();
+  const { session } = useAuth();
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [project, setProject] = useState<PublicProject | null>(null);
+  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const [brochureLoading, setBrochureLoading] = useState(false);
+  const [consultLoading, setConsultLoading] = useState(false);
 
   useEffect(() => {
     if (!params.id) return;
@@ -70,6 +88,107 @@ export default function ProjectDetailScreen() {
   }, [params.id]);
 
   const projectAmenities = arrayFromUnknown(project?.amenities).slice(0, 4);
+  const heroSlides = useMemo(() => projectHeroImages(project), [project]);
+  const renderedHeroSlides = heroSlides.length > 0 ? heroSlides : [""];
+
+  useEffect(() => {
+    if (heroSlides.length > 0 && activeHeroIndex >= heroSlides.length) {
+      setActiveHeroIndex(0);
+    }
+  }, [activeHeroIndex, heroSlides.length]);
+
+  function handleHeroScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (heroSlides.length === 0) return;
+
+    const slideWidth = event.nativeEvent.layoutMeasurement.width;
+    if (slideWidth <= 0) return;
+
+    const nextIndex = Math.round(event.nativeEvent.contentOffset.x / slideWidth);
+    const nextActiveIndex = Math.min(heroSlides.length - 1, Math.max(0, nextIndex));
+    setActiveHeroIndex((currentIndex) => currentIndex === nextActiveIndex ? currentIndex : nextActiveIndex);
+  }
+
+  async function handleDownloadBrochure() {
+    const projectId = params.id;
+
+    if (!projectId) {
+      notifyError("Không tìm thấy dự án để tải brochure.");
+      return;
+    }
+
+    if (normalizeAccessRole(session?.user.role) !== "customer") {
+      notifyError("Vui lòng đăng nhập bằng tài khoản khách hàng để tải brochure.");
+      return;
+    }
+
+    setBrochureLoading(true);
+    try {
+      const response = await customerPublicApi.projectBrochure(projectId);
+      const brochureUrl = response.data?.url;
+
+      if (!brochureUrl) {
+        notifyError("Brochure đang được cập nhật.");
+        return;
+      }
+
+      try {
+        const fileName = await saveProjectBrochureToDevice(
+          brochureUrl,
+          response.data?.project_name || project?.name || "Brochure dự án"
+        );
+
+        notifySuccess({
+          description: fileName,
+          message: response.message || "Tải brochure thành công."
+        });
+      } catch (downloadError) {
+        appLogger.warn("customer.projectBrochure", "Không thể tải file brochure về thiết bị.", {
+          downloadError,
+          id: projectId,
+          url: brochureUrl
+        });
+        notifyError("Không thể tải brochure. Vui lòng thử lại.");
+      }
+    } catch (error) {
+      notifyError(error, "Không thể tải brochure. Vui lòng thử lại.");
+    } finally {
+      setBrochureLoading(false);
+    }
+  }
+
+  async function handleConsult() {
+    const projectId = params.id;
+
+    if (!projectId) {
+      notifyError("Không tìm thấy dự án để tư vấn.");
+      return;
+    }
+
+    setConsultLoading(true);
+    try {
+      const response = await customerPublicApi.projectHotline(projectId);
+      const hotline = response.data?.hotline?.trim();
+
+      if (!hotline) {
+        notifyError("Hotline tư vấn hiện chưa khả dụng.");
+        return;
+      }
+
+      const phoneUrl = `tel:${hotline.replace(/[^+\d#*,;]/g, "")}`;
+      const supported = await Linking.canOpenURL(phoneUrl);
+
+      if (!supported) {
+        notifyError("Thiết bị không hỗ trợ chức năng gọi điện.");
+        return;
+      }
+
+      await Linking.openURL(phoneUrl);
+    } catch (error) {
+      notifyError(error, "Không thể mở chức năng gọi điện. Vui lòng thử lại.");
+    } finally {
+      setConsultLoading(false);
+    }
+  }
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
@@ -91,9 +210,31 @@ export default function ProjectDetailScreen() {
 
       <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
-          <Image source={mediaSource(project?.banner ?? project?.image, projectDetailImages.hero)} style={styles.heroImage} />
-          <View style={styles.heroOverlay} />
-          <View style={styles.heroCopy}>
+          <ScrollView
+            alwaysBounceHorizontal={renderedHeroSlides.length > 1}
+            bounces={renderedHeroSlides.length > 1}
+            contentContainerStyle={styles.heroSliderContent}
+            decelerationRate="fast"
+            directionalLockEnabled
+            horizontal
+            nestedScrollEnabled
+            onMomentumScrollEnd={handleHeroScroll}
+            onScroll={handleHeroScroll}
+            overScrollMode="always"
+            pagingEnabled
+            scrollEventThrottle={16}
+            scrollEnabled={renderedHeroSlides.length > 1}
+            showsHorizontalScrollIndicator={false}
+            style={StyleSheet.absoluteFill}
+          >
+            {renderedHeroSlides.map((slide, index) => (
+              <View key={`${slide}-${index}`} style={[styles.heroSlide, { width: windowWidth }]}>
+                <Image source={mediaSource(slide, projectDetailImages.hero)} style={styles.heroImage} />
+              </View>
+            ))}
+          </ScrollView>
+          <View pointerEvents="none" style={styles.heroOverlay} />
+          <View pointerEvents="none" style={styles.heroCopy}>
             <View style={styles.statusPill}>
               <View style={styles.statusDot} />
             <Text style={styles.statusText}>{projectStatusLabel(project?.status)}</Text>
@@ -103,21 +244,41 @@ export default function ProjectDetailScreen() {
               {project?.location || "A new paradigm of luxury living\nnestled in the heart of the capital\ndistrict."}
             </Text>
           </View>
-          <View style={styles.dots}>
-            <View style={styles.dotActive} />
-            <View style={styles.dot} />
-            <View style={styles.dot} />
-          </View>
+          {heroSlides.length > 0 ? (
+            <View pointerEvents="none" style={styles.dots}>
+              {heroSlides.map((slide, index) => (
+                <View key={`dot-${slide}-${index}`} style={index === activeHeroIndex ? styles.dotActive : styles.dot} />
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.ctaBar}>
-          <Pressable accessibilityRole="button" style={styles.brochureButton}>
-            <Ionicons name="download-outline" size={16} color={palette.darkRed} />
-            <Text style={styles.brochureText}>Tải Brochure</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={brochureLoading}
+            onPress={handleDownloadBrochure}
+            style={[styles.brochureButton, brochureLoading && styles.actionButtonDisabled]}
+          >
+            {brochureLoading ? (
+              <ActivityIndicator color={palette.darkRed} size="small" />
+            ) : (
+              <Ionicons name="download-outline" size={16} color={palette.darkRed} />
+            )}
+            <Text style={styles.brochureText}>{brochureLoading ? "Đang tải" : "Tải Brochure"}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" style={styles.consultButton}>
-            <Ionicons name="call" size={15} color={palette.white} />
-            <Text style={styles.consultText}>Tư vấn</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={consultLoading}
+            onPress={handleConsult}
+            style={[styles.consultButton, consultLoading && styles.actionButtonDisabled]}
+          >
+            {consultLoading ? (
+              <ActivityIndicator color={palette.white} size="small" />
+            ) : (
+              <Ionicons name="call" size={15} color={palette.white} />
+            )}
+            <Text style={styles.consultText}>{consultLoading ? "Đang gọi" : "Tư vấn"}</Text>
           </Pressable>
         </View>
 
@@ -125,18 +286,45 @@ export default function ProjectDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Về dự án</Text>
             <View style={styles.descriptionCard}>
-              <Text style={styles.bodyText}>
-                {project?.description || "Trải nghiệm đỉnh cao của sự sang trọng tại The Grand Horizon Estates. Tọa lạc tại vị trí đắc địa nhất, dự án kết hợp hoàn mỹ giữa kiến trúc đương đại và không gian xanh yên bình. Với cam kết mang lại chất lượng sống vượt trội, mỗi căn hộ được thiết kế tỉ mỉ để tận dụng tối đa ánh sáng tự nhiên và tầm nhìn toàn cảnh thành phố."}
-              </Text>
-              <Text style={styles.bodyText}>
-                Chúng tôi không chỉ xây dựng nhà ở, chúng tôi kiến tạo một phong cách sống đẳng cấp cho những chủ nhân xứng tầm. Hãy là một trong những người đầu tiên sở hữu tấm vé bước vào thế giới đặc quyền này.
-              </Text>
+              {projectDescriptionParagraphs(project).map((paragraph) => (
+                <Text key={paragraph} style={styles.bodyText}>
+                  {paragraph}
+                </Text>
+              ))}
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quy hoạch</Text>
-            <Image source={mediaSource(firstFromUnknown(project?.planning_info), projectDetailImages.planningMap)} style={styles.planningMap} />
+            {projectPlanningUrl(project) ? (
+              <View style={styles.planningWebCard}>
+                <View style={styles.planningWebHeader}>
+                  <View>
+                    <Text style={styles.planningWebTitle}>Bản đồ quy hoạch trực tuyến</Text>
+                    <Text numberOfLines={1} style={styles.planningWebUrl}>{projectPlanningUrl(project)}</Text>
+                  </View>
+                  <Ionicons name="map-outline" size={22} color={palette.darkRed} />
+                </View>
+                <WebView
+                  source={{ uri: projectPlanningUrl(project) }}
+                  style={styles.planningWebView}
+                  containerStyle={styles.planningWebContainer}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  startInLoadingState
+                  onError={(event) => {
+                    appLogger.warn("customer.project.planningWebView", "Không thể mở bản đồ quy hoạch dự án.", {
+                      error: event.nativeEvent,
+                      id: project?.id,
+                      url: projectPlanningUrl(project)
+                    });
+                    notifyError("Không thể mở trang kiểm tra quy hoạch. Vui lòng thử lại.");
+                  }}
+                />
+              </View>
+            ) : (
+              <Image source={mediaSource(projectPlanningImage(project), projectDetailImages.planningMap)} style={styles.planningMap} />
+            )}
           </View>
 
           <View style={styles.section}>
@@ -157,8 +345,18 @@ export default function ProjectDetailScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Vị trí dự án</Text>
-            <View style={styles.locationCard}>
-              <Image source={projectDetailImages.locationMap} style={styles.locationMap} />
+            <Pressable
+              accessibilityRole="button"
+              disabled={!project?.google_maps_url}
+              onPress={() => {
+                if (project?.google_maps_url) Linking.openURL(project.google_maps_url).catch((error) => {
+                  appLogger.warn("customer.projectLocation", "Không thể mở bản đồ dự án.", { error, id: project?.id });
+                  notifyError("Không thể mở bản đồ dự án. Vui lòng thử lại.");
+                });
+              }}
+              style={styles.locationCard}
+            >
+              <Image source={mediaSource(project?.location_image, projectDetailImages.locationMap)} style={styles.locationMap} />
               <View style={styles.locationTint} />
               <View style={styles.mapPin}>
                 <Ionicons name="location" size={24} color={palette.white} />
@@ -172,7 +370,7 @@ export default function ProjectDetailScreen() {
                   <Text style={styles.locationText}>{project?.location || "Quận 2, Thành phố Hồ Chí\nMinh, Việt Nam"}</Text>
                 </View>
               </View>
-            </View>
+            </Pressable>
           </View>
         </View>
       </ScrollView>
@@ -190,11 +388,150 @@ function firstFromUnknown(value: unknown) {
   return arrayFromUnknown(value)[0];
 }
 
+function projectPlanningRecord(project: PublicProject | null) {
+  return project?.planning_info && typeof project.planning_info === "object" && !Array.isArray(project.planning_info)
+    ? project.planning_info as Record<string, unknown>
+    : {};
+}
+
+function projectPlanningUrl(project: PublicProject | null) {
+  const record = projectPlanningRecord(project);
+  const values = [
+    record["Link tra cứu quy hoạch"],
+    record.planning_check_url,
+    record.url,
+    record.link
+  ];
+
+  const candidate = values.find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()));
+  return typeof candidate === "string" ? candidate.trim() : "";
+}
+
+function projectPlanningImage(project: PublicProject | null) {
+  const record = projectPlanningRecord(project);
+  const candidate = record["Ảnh quy hoạch"] ?? record.map_image ?? record.image;
+
+  return typeof candidate === "string" ? candidate : firstFromUnknown(project?.planning_info);
+}
+
+function projectDescriptionParagraphs(project: PublicProject | null) {
+  const fallback = [
+    "Thông tin tổng quan dự án đang được cập nhật.",
+    "Đội ngũ tư vấn sẽ bổ sung thêm dữ liệu chi tiết khi chủ đầu tư công bố tài liệu mới."
+  ];
+
+  if (!project?.description) return fallback;
+
+  const paragraphs = project.description
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return paragraphs.length > 0 ? paragraphs : fallback;
+}
+
+function uniqueStrings(values: unknown[]) {
+  return Array.from(new Set(values.map((value) => typeof value === "string" ? value.trim() : "").filter(Boolean)));
+}
+
+function imageStringsFromUnknown(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+
+  return values
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const image = item as Record<string, unknown>;
+        const candidate = image.url ?? image.image ?? image.src ?? image.path ?? image.banner;
+        return typeof candidate === "string" ? candidate : "";
+      }
+
+      return "";
+    })
+    .filter(Boolean);
+}
+
+function projectHeroImages(project: PublicProject | null) {
+  if (!project) return [];
+
+  return uniqueStrings(imageStringsFromUnknown(project.banner)).slice(0, 8);
+}
+
 function projectStatusLabel(status?: string | number | null) {
   if (status === 1 || status === "1" || status === "available") return "OPENING";
   if (status === 2 || status === "2" || status === "reserved") return "RESERVING";
   if (status === 3 || status === "3" || status === "sold_out") return "SOLD OUT";
   return "OPENING SOON";
+}
+
+function projectDocumentExtension(source?: string | null) {
+  if (!source) return "";
+  const cleanSource = source.split("?")[0]?.split("#")[0] ?? source;
+  return cleanSource.split(".").pop()?.trim().toLowerCase() || "";
+}
+
+function safeProjectBrochureFileName(title: string, url?: string | null) {
+  const urlPath = url?.split("?")[0]?.split("#")[0] ?? "";
+  const urlName = urlPath.split("/").pop() || "";
+  let decodedUrlName = urlName;
+
+  try {
+    decodedUrlName = decodeURIComponent(urlName);
+  } catch {
+    decodedUrlName = urlName;
+  }
+
+  const rawName = decodedUrlName || `${title}.pdf`;
+  const cleaned = rawName
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+  const extension = projectDocumentExtension(cleaned || url) || "pdf";
+
+  if (!cleaned) return `Brochure dự án-${Date.now()}.${extension}`;
+  if (cleaned.includes(".")) return cleaned;
+  return `${cleaned}.${extension}`;
+}
+
+function uniqueProjectBrochureFileName(fileName: string) {
+  const dotIndex = fileName.lastIndexOf(".");
+  const suffix = `${Date.now()}-${Math.round(Math.random() * 10000)}`;
+
+  if (dotIndex <= 0) {
+    return `${fileName}-${suffix}`;
+  }
+
+  return `${fileName.slice(0, dotIndex)}-${suffix}${fileName.slice(dotIndex)}`;
+}
+
+function deleteProjectBrochureFile(file: FileSystem.File) {
+  const writableFile = file as unknown as { exists?: boolean; delete?: () => void };
+
+  try {
+    if (writableFile.exists && writableFile.delete) {
+      writableFile.delete();
+    }
+  } catch {
+    // Nếu file không tồn tại hoặc hệ điều hành không cho xóa, download sẽ báo lỗi chi tiết.
+  }
+}
+
+async function saveProjectBrochureToDevice(url: string, title: string) {
+  const fileName = uniqueProjectBrochureFileName(safeProjectBrochureFileName(title, url));
+  const target = new FileSystem.File(FileSystem.Paths.cache, fileName);
+
+  deleteProjectBrochureFile(target);
+
+  const file = await FileSystem.File.downloadFileAsync(url, target, { idempotent: true });
+
+  await Share.share({
+    message: fileName,
+    title: fileName,
+    url: file.uri
+  });
+
+  return fileName;
 }
 
 const styles = StyleSheet.create({
@@ -248,6 +585,14 @@ const styles = StyleSheet.create({
   hero: {
     height: 530,
     justifyContent: "flex-end",
+    overflow: "hidden",
+    position: "relative"
+  },
+  heroSliderContent: {
+    height: "100%"
+  },
+  heroSlide: {
+    height: "100%",
     overflow: "hidden",
     position: "relative"
   },
@@ -354,6 +699,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 165
   },
+  actionButtonDisabled: {
+    opacity: 0.68
+  },
   brochureText: {
     color: palette.darkRed,
     fontFamily: appFonts.semiBold,
@@ -416,6 +764,41 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.regular,
     fontSize: 16,
     lineHeight: 26
+  },
+  planningWebCard: {
+    borderColor: palette.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  planningWebHeader: {
+    alignItems: "center",
+    backgroundColor: palette.white,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14
+  },
+  planningWebTitle: {
+    color: palette.text,
+    fontFamily: appFonts.bold,
+    fontSize: 14,
+    lineHeight: 20
+  },
+  planningWebUrl: {
+    color: palette.brown,
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    maxWidth: 285
+  },
+  planningWebContainer: {
+    backgroundColor: palette.white,
+    height: 420
+  },
+  planningWebView: {
+    backgroundColor: palette.white,
+    flex: 1
   },
   planningMap: {
     borderRadius: 12,

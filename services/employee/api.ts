@@ -478,8 +478,8 @@ export const employeeApi = {
     return getData<JsonRecord>("/api/v1/auth/team/overview");
   },
 
-  teamMembers() {
-    return getData<JsonRecord>("/api/v1/auth/team/members");
+  teamMembers(params?: { search?: string; job_position?: string; per_page?: number }) {
+    return getData<JsonRecord>("/api/v1/auth/team/members", params);
   },
 
   departments() {

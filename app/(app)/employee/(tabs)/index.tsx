@@ -12,6 +12,7 @@ import { useI18n, type TranslationKey } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
 import { mediaUrl } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
+import { isExecutiveAdminRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import { employeeApi } from "@/services/employee/api";
 
@@ -287,6 +288,9 @@ export default function EmployeeHomeScreen() {
   const [learningTarget, setLearningTarget] = useState<EmployeeHomeRoute>("/employee/required-learning");
   const fullName = dashboardName || session?.user.fullName || t("employee.home.fallbackName");
   const currentAvatarUri = mediaUrl(session?.user.avatar) || avatarUri;
+  const roleKnown = session?.user.role !== undefined && session.user.role !== null;
+  const hidePersonalAchievementSections = isExecutiveAdminRole(session?.user.role);
+  const visibleKpiCopy = hidePersonalAchievementSections ? kpiCopy.slice(0, 1) : kpiCopy;
   const actionRows = dashboardModules.length > 0
     ? dashboardModulesToActions(dashboardModules, learningTarget)
     : actionCopy.map((copy, index) => ({
@@ -352,6 +356,12 @@ export default function EmployeeHomeScreen() {
   );
 
   useEffect(() => {
+    if (!roleKnown || hidePersonalAchievementSections) {
+      setPointTotal(fallbackPointTotal);
+      setPointRank(fallbackPointRank);
+      return;
+    }
+
     let mounted = true;
 
     employeeApi
@@ -374,7 +384,7 @@ export default function EmployeeHomeScreen() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [hidePersonalAchievementSections, roleKnown]);
 
   return (
     <Screen edges={["top", "left", "right"]} padded={false} safeBackgroundColor="#ffffff">
@@ -391,8 +401,8 @@ export default function EmployeeHomeScreen() {
         </View>
 
         <View style={styles.stats}>
-          {kpiCopy.map((copy, index) => {
-            const isPointCard = index === 1;
+          {visibleKpiCopy.map((copy) => {
+            const isPointCard = copy.labelKey === "employee.kpi.points.label";
             const primaryColor = isPointCard ? employeePalette.goldDark : employeePalette.red;
             const softColor = isPointCard ? employeePalette.goldSoft : employeePalette.redSoft;
             const hintColor = isPointCard ? employeePalette.goldDark : employeePalette.gold;
@@ -413,10 +423,10 @@ export default function EmployeeHomeScreen() {
                 <View style={styles.statCopy}>
                   <Text style={styles.statLabel}>{t(copy.labelKey)}</Text>
                   <Text style={[styles.statValue, { color: primaryColor }]}>
-                    {index === 0 ? newsCount : pointTotal}
+                    {isPointCard ? pointTotal : newsCount}
                   </Text>
                   <Text style={[styles.statHint, { color: hintColor }]}>
-                    {index === 1 && pointRank ? pointRank : t(copy.helperKey)}
+                    {isPointCard && pointRank ? pointRank : t(copy.helperKey)}
                   </Text>
                 </View>
                 <View style={[styles.statIcon, { backgroundColor: softColor }]}>

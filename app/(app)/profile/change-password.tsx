@@ -96,7 +96,7 @@ export default function ChangePasswordScreen() {
           
           <View style={styles.btnRow}>
             <Button onPress={() => router.back()} title="QUAY LẠI" variant="secondary" style={styles.flexOne} />
-            <Button loading={loading} onPress={submit} title="CẬP NHẬT MẬT KHẨU" variant="primary" style={styles.flexOne} />
+            <Button loading={loading} onPress={submit} title="CẬP NHẬT" variant="danger" style={[styles.flexOne, styles.brandButton]} />
           </View>
         </View>
       </Card>
@@ -118,5 +118,9 @@ const styles = StyleSheet.create({
   },
   flexOne: {
     flex: 1
+  },
+  brandButton: {
+    backgroundColor: "#6a0100",
+    borderColor: "#6a0100"
   }
 });

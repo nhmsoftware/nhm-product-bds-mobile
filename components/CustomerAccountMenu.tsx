@@ -2,8 +2,9 @@ import {
   Ionicons } from "@expo/vector-icons";
 import { router,
   type Href } from "expo-router";
-import type { ComponentProps } from "react";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Modal,
+  Image,
   StyleSheet,
   Text,
   View
@@ -11,8 +12,10 @@ import { Modal,
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { mediaUrl } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
 import { useAuth } from "@/services/auth/store";
+import { profileApi } from "@/services/profile/api";
 
 type MenuItem = {
   icon: ComponentProps<typeof Ionicons>["name"];
@@ -22,10 +25,10 @@ type MenuItem = {
 };
 
 const menuItems: MenuItem[] = [
-  { icon: "person-outline", label: "Thông tin cá nhân", route: "/(app)/(tabs)/profile" },
+  { icon: "person-outline", label: "Thông tin cá nhân", route: "/(app)/profile" },
   { icon: "create-outline", label: "Chỉnh sửa hồ sơ", route: "/(app)/profile/edit" },
   { icon: "heart-outline", label: "Dự án đã lưu / đã quan tâm", route: "/(app)/(tabs)/saved" },
-  { icon: "chatbubble-ellipses-outline", label: "Lịch sử yêu cầu tư vấn", route: "/(app)/(tabs)/inquiries" },
+  { icon: "chatbubble-ellipses-outline", label: "Lịch sử yêu cầu tư vấn", route: "/(app)/(tabs)/profile" },
   { icon: "settings-outline", label: "Cài đặt / đổi mật khẩu", route: "/(app)/profile/change-password" },
   { icon: "log-out-outline", label: "Đăng xuất", tone: "danger" }
 ];
@@ -36,7 +39,48 @@ type CustomerAccountMenuProps = {
 };
 
 export function CustomerAccountMenu({ onClose, visible }: CustomerAccountMenuProps) {
-  const { signOut } = useAuth();
+  const { session, signOut } = useAuth();
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [profileName, setProfileName] = useState(session?.user.fullName ?? "Khách hàng");
+  const [profileEmail, setProfileEmail] = useState(session?.user.email ?? "");
+  const [profilePhone, setProfilePhone] = useState(session?.user.phone ?? "");
+  const [profileAddress, setProfileAddress] = useState(session?.user.address ?? "");
+  const [profileAvatar, setProfileAvatar] = useState(session?.user.avatar ?? null);
+
+  const avatarUri = useMemo(() => mediaUrl(profileAvatar), [profileAvatar]);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    let active = true;
+    setLoadingProfile(true);
+
+    profileApi
+      .getProfile()
+      .then((response) => {
+        if (!active) return;
+        setProfileName(response.data.fullName || session?.user.fullName || "Khách hàng");
+        setProfileEmail(response.data.email || session?.user.email || "");
+        setProfilePhone(response.data.phone || session?.user.phone || "");
+        setProfileAddress(response.data.address || session?.user.address || "");
+        setProfileAvatar(response.data.avatar ?? session?.user.avatar ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setProfileName(session?.user.fullName ?? "Khách hàng");
+        setProfileEmail(session?.user.email ?? "");
+        setProfilePhone(session?.user.phone ?? "");
+        setProfileAddress(session?.user.address ?? "");
+        setProfileAvatar(session?.user.avatar ?? null);
+      })
+      .finally(() => {
+        if (active) setLoadingProfile(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session?.user.address, session?.user.avatar, session?.user.email, session?.user.fullName, session?.user.phone, visible]);
 
   async function handlePress(item: MenuItem) {
     onClose();
@@ -49,6 +93,8 @@ export function CustomerAccountMenu({ onClose, visible }: CustomerAccountMenuPro
     await signOut();
   }
 
+  const initial = profileName.trim().charAt(0).toUpperCase() || "K";
+
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalRoot}>
@@ -60,6 +106,21 @@ export function CustomerAccountMenu({ onClose, visible }: CustomerAccountMenuPro
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={22} color="#5b403c" />
             </Pressable>
+          </View>
+
+          <View style={styles.profileBlock}>
+            <View style={styles.avatarWrap}>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarText}>{initial}</Text>
+              )}
+            </View>
+            <View style={styles.profileCopy}>
+              <Text numberOfLines={1} style={styles.profileName}>{profileName}</Text>
+              <Text numberOfLines={1} style={styles.profileMeta}>{loadingProfile ? "Đang tải thông tin..." : profileEmail || "Chưa cập nhật email"}</Text>
+              <Text numberOfLines={1} style={styles.profileMeta}>{profilePhone || profileAddress || "Chưa cập nhật thông tin liên hệ"}</Text>
+            </View>
           </View>
 
           <View style={styles.menuList}>
@@ -137,6 +198,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 36
   },
+  avatarImage: {
+    height: "100%",
+    width: "100%"
+  },
+  avatarText: {
+    color: "#6a0100",
+    fontFamily: appFonts.bold,
+    fontSize: 18
+  },
+  avatarWrap: {
+    alignItems: "center",
+    backgroundColor: "#fbeaea",
+    borderRadius: 999,
+    height: 52,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 52
+  },
   menuList: {
     paddingBottom: 8
   },
@@ -168,5 +247,28 @@ const styles = StyleSheet.create({
   },
   menuLabelDanger: {
     color: "#950100"
+  },
+  profileBlock: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 12,
+    paddingVertical: 6
+  },
+  profileCopy: {
+    flex: 1,
+    gap: 2
+  },
+  profileMeta: {
+    color: "#6b7280",
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    lineHeight: 16
+  },
+  profileName: {
+    color: "#191c1d",
+    fontFamily: appFonts.bold,
+    fontSize: 16,
+    lineHeight: 22
   }
 });

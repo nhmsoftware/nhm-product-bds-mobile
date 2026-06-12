@@ -3,9 +3,11 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
+  useMemo,
   useRef,
   useState } from "react";
 import { Image,
+  type ImageSourcePropType,
   ScrollView,
   StyleSheet,
   Text,
@@ -50,7 +52,16 @@ const filterTypeMap: Record<string, string | undefined> = {
   "Shophouse": "Shophouse ven sông",
 };
 
-const projects = [
+type FallbackProject = {
+  badge: string;
+  image: ImageSourcePropType;
+  location: string;
+  price: string;
+  title: string;
+  tone: "gold" | "neutral";
+};
+
+const projects: FallbackProject[] = [
   {
     badge: "MỞ BÁN",
     image: projectImages.grandHeritage,
@@ -83,27 +94,38 @@ const projects = [
     title: "Coastal Bay",
     tone: "gold"
   }
-] as const;
+];
 
 export default function CustomerProjectsScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [apiProjects, setApiProjects] = useState<PublicProject[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<typeof filters[number]>("Tất cả");
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
   const params = useLocalSearchParams<{ focus?: string }>();
 
-  const fetchProjects = (filter: typeof filters[number], query: string) => {
-    setLoading(true);
-    let promise;
-    if (query.trim()) {
-      promise = customerPublicApi.searchProjects({ q: query.trim(), per_page: 20 });
-    } else {
-      promise = customerPublicApi.projects({ type: filterTypeMap[filter], per_page: 20 });
-    }
+  const visibleApiProjects = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const selectedType = filterTypeMap[selectedFilter];
 
-    promise
+    return apiProjects.filter((project) => {
+      const name = (project.name || "").toLowerCase();
+      const location = (project.location || "").toLowerCase();
+      const type = (project.type || "").toLowerCase();
+      const queryMatch = !query || name.includes(query) || location.includes(query) || type.includes(query);
+      const typeMatch = !selectedType || type.includes(selectedType.toLowerCase());
+
+      return queryMatch && typeMatch;
+    });
+  }, [apiProjects, searchQuery, selectedFilter]);
+
+  const visibleProjects = projectsLoaded
+    ? visibleApiProjects
+    : (apiProjects.length > 0 ? visibleApiProjects : projects);
+
+  useEffect(() => {
+    customerPublicApi.projects({ per_page: 50 })
       .then((response) => {
         setApiProjects(response.data.data ?? []);
       })
@@ -111,12 +133,9 @@ export default function CustomerProjectsScreen() {
         appLogger.warn("customer.projects", "Không thể tải danh sách dự án.", { error });
       })
       .finally(() => {
-        setLoading(false);
+        setProjectsLoaded(true);
       });
-  };
 
-  useEffect(() => {
-    fetchProjects("Tất cả", "");
     if (params.focus === "true") {
       setTimeout(() => {
         searchInputRef.current?.focus();
@@ -155,8 +174,6 @@ export default function CustomerProjectsScreen() {
               placeholder="Tìm kiếm dự án, vị trí..."
               placeholderTextColor={palette.muted}
               style={styles.searchInput}
-              returnKeyType="search"
-              onSubmitEditing={() => fetchProjects(selectedFilter, searchQuery)}
             />
             {searchQuery.length > 0 && (
               <Pressable
@@ -164,7 +181,6 @@ export default function CustomerProjectsScreen() {
                 accessibilityRole="button"
                 onPress={() => {
                   setSearchQuery("");
-                  fetchProjects(selectedFilter, "");
                 }}
                 style={styles.clearButton}
               >
@@ -182,7 +198,6 @@ export default function CustomerProjectsScreen() {
                   key={filter}
                   onPress={() => {
                     setSelectedFilter(filter);
-                    fetchProjects(filter, searchQuery);
                   }}
                   style={[styles.filterButton, isActive ? styles.filterActive : styles.filterInactive]}
                 >
@@ -196,7 +211,7 @@ export default function CustomerProjectsScreen() {
         </View>
 
         <View style={styles.projectList}>
-          {(apiProjects.length > 0 ? apiProjects : projects).map((project, index) => {
+          {visibleProjects.length > 0 ? visibleProjects.map((project, index) => {
             const isApiProject = "id" in project;
             return (
             <View key={isApiProject ? project.id : project.title} style={styles.projectCard}>
@@ -220,7 +235,7 @@ export default function CustomerProjectsScreen() {
                 <Text style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.title}</Text>
                 <View style={styles.locationRow}>
                   <Ionicons name="location-outline" size={16} color={palette.brown} />
-                  <Text style={styles.location}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
+                  <Text numberOfLines={2} style={styles.location}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
                 </View>
                 <View style={styles.projectFooter}>
                   <View>
@@ -242,7 +257,13 @@ export default function CustomerProjectsScreen() {
               </View>
             </View>
             );
-          })}
+          }) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="search-outline" size={28} color={palette.muted} />
+              <Text style={styles.emptyTitle}>Không tìm thấy dự án phù hợp</Text>
+              <Text style={styles.emptyText}>Đổi từ khóa hoặc bỏ lọc để xem lại danh sách.</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -384,6 +405,26 @@ const styles = StyleSheet.create({
     gap: 24,
     paddingTop: 48
   },
+  emptyState: {
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 20,
+    paddingTop: 12
+  },
+  emptyTitle: {
+    color: palette.text,
+    fontFamily: appFonts.semiBold,
+    fontSize: 16,
+    lineHeight: 20,
+    textAlign: "center"
+  },
+  emptyText: {
+    color: palette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center"
+  },
   projectCard: {
     backgroundColor: palette.white,
     borderColor: palette.line,
@@ -442,13 +483,14 @@ const styles = StyleSheet.create({
     lineHeight: 28.8
   },
   locationRow: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: 4
   },
   location: {
     color: palette.brown,
     flex: 1,
+    flexShrink: 1,
     fontFamily: appFonts.regular,
     fontSize: 16,
     lineHeight: 25.6
@@ -471,7 +513,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 24,
     letterSpacing: -0.48,
-    lineHeight: 28.8
+    lineHeight: 32
   },
   detailButton: {
     alignItems: "center",

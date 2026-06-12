@@ -25,7 +25,7 @@ export type PublicProject = {
   name?: string | null;
   location?: string | null;
   image?: string | null;
-  banner?: string | null;
+  banner?: string | string[] | null;
   price?: string | number | null;
   status?: string | number | null;
   type?: string | null;
@@ -36,6 +36,7 @@ export type PublicProject = {
   brochure?: string | null;
   contact_info?: unknown;
   google_maps_url?: string | null;
+  location_image?: string | null;
   planning_info?: unknown;
   branch?: string | null;
   total_lots?: number | null;
@@ -74,12 +75,37 @@ export type PublicNews = {
   slug?: string | null;
   summary?: string | null;
   content?: string | null;
+  content_blocks?: NewsContentBlock[] | null;
+  contentBlocks?: NewsContentBlock[] | null;
   thumbnail?: string | null;
   category?: string | null;
+  attachments?: NewsAttachment[] | null;
+  tags?: string[] | string | null;
+  quote?: NewsQuote | null;
   likes_count?: number | null;
   is_liked?: boolean | null;
   liked?: boolean | null;
   published_at?: string | null;
+};
+
+export type NewsContentBlock = {
+  type?: "heading" | "paragraph" | "image" | "quote" | string | null;
+  text?: string | null;
+  url?: string | null;
+  caption?: string | null;
+  author?: string | null;
+};
+
+export type NewsAttachment = {
+  name?: string | null;
+  url?: string | null;
+  mime_type?: string | null;
+  size?: number | null;
+};
+
+export type NewsQuote = {
+  text?: string | null;
+  author?: string | null;
 };
 
 export function publicNewsDetailParams(news: PublicNews) {
@@ -132,8 +158,20 @@ export type ConsultationSetting = {
   form_title?: string | null;
   office_name?: string | null;
   office_address?: string | null;
+  address?: string | null;
   working_hours?: string | null;
   email?: string | null;
+  is_callback_enabled?: boolean | null;
+  is_message_form_enabled?: boolean | null;
+};
+
+export type ProjectBrochureData = {
+  url?: string | null;
+  project_name?: string | null;
+};
+
+export type ProjectHotlineData = {
+  hotline?: string | null;
 };
 
 export const customerPublicApi = {
@@ -162,11 +200,11 @@ export const customerPublicApi = {
   },
 
   projectBrochure(id: string) {
-    return getData(`/api/v1/public/projects/${encodeURIComponent(id)}/brochure`);
+    return getData<ProjectBrochureData>(`/api/v1/public/projects/${encodeURIComponent(id)}/brochure`);
   },
 
   projectHotline(id: string) {
-    return getData(`/api/v1/public/projects/${encodeURIComponent(id)}/hotline`);
+    return getData<ProjectHotlineData>(`/api/v1/public/projects/${encodeURIComponent(id)}/hotline`);
   },
 
   plannings(params?: { search?: string; city?: string; page?: number; per_page?: number }) {
@@ -187,6 +225,17 @@ export const customerPublicApi = {
 
   consultationSetting() {
     return getData<ConsultationSetting>("/api/v1/public/consultation/setting");
+  },
+
+  requestCallback(input: {
+    full_name: string;
+    phone: string;
+    preferred_callback_time: string;
+    email?: string;
+    project_id?: string;
+    project_name?: string;
+  }) {
+    return postData("/api/v1/public/consultation/callback", input);
   },
 
   submitConsultation(input: {

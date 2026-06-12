@@ -1,4 +1,4 @@
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams, type Href } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -38,10 +38,6 @@ function numberValue(value: unknown) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function apiList(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
-}
-
 function normalizeQuizStatus(value: unknown) {
   const status = textValue(value)?.toLowerCase() ?? "";
 
@@ -53,19 +49,6 @@ function normalizeQuizStatus(value: unknown) {
   if (["none", "not_available", "unavailable", "no_quiz"].includes(status)) return "none";
 
   return status || "available";
-}
-
-function quizResultStatus(value: unknown) {
-  const result = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-  const details = apiList(result.details);
-  const status = normalizeQuizStatus(result.status);
-
-  if (status === "grading" || details.some((item) => item.is_correct === null || item.is_correct === undefined)) return "grading";
-  if (status === "passed" || status === "failed") return status;
-  if (result.is_passed !== undefined || result.isPassed !== undefined) return booleanValue(result.is_passed ?? result.isPassed) ? "passed" : "failed";
-  if (result.score !== undefined || details.length > 0) return "completed";
-
-  return status;
 }
 
 function lastLessonId(course: MandatoryLearningCourse) {
@@ -167,12 +150,31 @@ async function withCourseQuiz(course: MandatoryLearningCourse | null) {
 }
 
 export default function RequiredLearningRoute() {
-  const params = useLocalSearchParams<{ courseId?: string }>();
+  const params = useLocalSearchParams<{ courseId?: string; returnTo?: string }>();
   const rawCourseId = params.courseId;
   const selectedCourseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
+  const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
   const [course, setCourse] = useState<MandatoryLearningCourse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    if (
+      returnTo?.startsWith("/employee") &&
+      returnTo !== "/employee/required-learning" &&
+      returnTo !== "/employee/learning"
+    ) {
+      router.replace(returnTo as Href);
+      return;
+    }
+
+    router.replace("/employee");
+  }, [returnTo]);
 
   const loadCourse = useCallback((showLoading = false) => {
     let mounted = true;
@@ -268,5 +270,5 @@ export default function RequiredLearningRoute() {
     );
   }
 
-  return <RequiredLearningScreen course={course} />;
+  return <RequiredLearningScreen course={course} onBack={handleBack} />;
 }

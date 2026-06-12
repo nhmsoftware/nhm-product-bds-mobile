@@ -65,7 +65,7 @@ import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { ApiRequestError } from "@/libs/api";
-import { isDepartmentTransferApproverRole, isManagerAccessRole } from "@/services/auth/roles";
+import { isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
@@ -1485,12 +1485,19 @@ function LearningCourseCard({
   );
 }
 
-export function RequiredLearningScreen({ course }: { course?: MandatoryLearningCourse | null }) {
+export function RequiredLearningScreen({
+  course,
+  onBack
+}: {
+  course?: MandatoryLearningCourse | null;
+  onBack?: () => void;
+}) {
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const handleBack = onBack ?? back;
 
   if (!course) {
     return (
-      <EmployeePage headerTitle="Lộ trình Học" back={back} contentStyle={styles.requiredLearningContent}>
+      <EmployeePage headerTitle="Lộ trình Học" back={handleBack} contentStyle={styles.requiredLearningContent}>
         <Text style={styles.requiredIntro}>Chưa có dữ liệu lộ trình học.</Text>
       </EmployeePage>
     );
@@ -1523,7 +1530,7 @@ export function RequiredLearningScreen({ course }: { course?: MandatoryLearningC
   );
 
   return (
-    <EmployeePage headerTitle={course.isMandatory ? "Lộ trình Học bắt buộc" : "Lộ trình Học"} back={back} contentStyle={styles.requiredLearningContent}>
+    <EmployeePage headerTitle={course.isMandatory ? "Lộ trình Học bắt buộc" : "Lộ trình Học"} back={handleBack} contentStyle={styles.requiredLearningContent}>
       <View style={styles.requiredHero}>
         <Image source={heroImage} onError={() => setThumbnailFailed(true)} style={styles.requiredHeroImage} />
         <View style={styles.requiredHeroOverlay} />
@@ -2477,15 +2484,23 @@ function NewsPostActions({
 export function ProfileOverviewScreen() {
   const qrCopy = useCopy().qr;
   const { session, signOut } = useAuth();
+  const user = session?.user;
+  const hidePersonalAchievementSections = isExecutiveAdminRole(user?.role);
+  const skipPersonalAchievementApi = !user?.role || hidePersonalAchievementSections;
   const { data: profileData } = useEmployeeApiData(() => employeeApi.employeeProfile(), []);
-  const { data: rewardOverviewData } = useEmployeeApiData(() => employeeApi.rewardPointOverview(), []);
+  const { data: rewardOverviewData } = useEmployeeApiData(
+    () => skipPersonalAchievementApi ? Promise.resolve({ data: {} }) : employeeApi.rewardPointOverview(),
+    [skipPersonalAchievementApi]
+  );
   const { data: customerQrData } = useEmployeeApiData(() => employeeApi.customerReferralQr(), []);
   const { data: recruitmentQrData } = useEmployeeApiData(() => employeeApi.recruitmentReferralQr(), []);
-  const { data: learningCertificateData } = useEmployeeApiData(loadLearningCertificateData, []);
+  const { data: learningCertificateData } = useEmployeeApiData(
+    () => skipPersonalAchievementApi ? Promise.resolve({ data: { certificates: [], quizRows: [] } }) : loadLearningCertificateData(),
+    [skipPersonalAchievementApi]
+  );
   const [activeProfileQr, setActiveProfileQr] = useState<"recruitment" | "customer">("customer");
   const profile = isApiObject(profileData) ? profileData : {};
   const rewardOverview = isApiObject(rewardOverviewData) ? rewardOverviewData : {};
-  const user = session?.user;
   const isManager = isManagerAccessRole(user?.role);
   const canApproveDepartmentTransfers = isDepartmentTransferApproverRole(user?.role);
   const fullName = apiText(profile.full_name ?? profile.name ?? user?.fullName, "Chưa cập nhật tên");
@@ -2542,50 +2557,56 @@ export function ProfileOverviewScreen() {
         <Image source={profileImages.verifiedBadge} style={styles.profileVerifyBadgeImage} />
         <Text style={styles.profileHeroName}>{fullName}</Text>
         <Text style={styles.profileHeroRole}>{jobTitle}</Text>
-        <View style={styles.profileRankPill}>
-          <ProfileRankIcon />
-          <Text style={styles.profileRankPillText}>{profileRankText}</Text>
-        </View>
-      </View>
-
-      <Text style={styles.profileSectionTitle}>Xếp hạng</Text>
-      <Text style={styles.bodyText}>{profileRankSummary}</Text>
-      {showProfileRewardHistoryShortcut ? <ProfileRewardHistoryButton /> : null}
-
-      <View style={styles.profileSectionHeader}>
-        <Text style={styles.profileSectionTitle}>Chứng chỉ đã đạt</Text>
-        <Pressable
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.push({ pathname: "/employee/certificates", params: { from: "profile" } })}
-          style={({ pressed }) => [styles.profileSeeAllButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.profileSeeAll}>Xem tất cả</Text>
-        </Pressable>
-      </View>
-      {profileCertificates.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.profileCertList}>
-          {profileCertificates.map((certificate, index) => (
-            <ProfileCertificateCard
-              key={certificate.id}
-              compact={index > 0}
-              date={certificate.issuedAt}
-              title={certificate.title}
-            />
-          ))}
-        </ScrollView>
-      ) : (
-        <Text style={styles.bodyText}>Chưa có chứng chỉ hoàn thành khóa học.</Text>
-      )}
-
-      <Text style={styles.profileSectionTitle}>Điểm thi trắc nghiệm</Text>
-      <View style={styles.profileScoreList}>
-        {profileQuizRows.length > 0 ? (
-          profileQuizRows.map((row) => <ProfileScoreRow key={row.title} {...row} />)
-        ) : (
-          <Text style={styles.bodyText}>Chưa có điểm bài kiểm tra.</Text>
+        {hidePersonalAchievementSections ? null : (
+          <View style={styles.profileRankPill}>
+            <ProfileRankIcon />
+            <Text style={styles.profileRankPillText}>{profileRankText}</Text>
+          </View>
         )}
       </View>
+
+      {hidePersonalAchievementSections ? null : (
+        <>
+          <Text style={styles.profileSectionTitle}>Xếp hạng</Text>
+          <Text style={styles.bodyText}>{profileRankSummary}</Text>
+          {showProfileRewardHistoryShortcut ? <ProfileRewardHistoryButton /> : null}
+
+          <View style={styles.profileSectionHeader}>
+            <Text style={styles.profileSectionTitle}>Chứng chỉ đã đạt</Text>
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => router.push({ pathname: "/employee/certificates", params: { from: "profile" } })}
+              style={({ pressed }) => [styles.profileSeeAllButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.profileSeeAll}>Xem tất cả</Text>
+            </Pressable>
+          </View>
+          {profileCertificates.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.profileCertList}>
+              {profileCertificates.map((certificate, index) => (
+                <ProfileCertificateCard
+                  key={certificate.id}
+                  compact={index > 0}
+                  date={certificate.issuedAt}
+                  title={certificate.title}
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={styles.bodyText}>Chưa có chứng chỉ hoàn thành khóa học.</Text>
+          )}
+
+          <Text style={styles.profileSectionTitle}>Điểm thi trắc nghiệm</Text>
+          <View style={styles.profileScoreList}>
+            {profileQuizRows.length > 0 ? (
+              profileQuizRows.map((row) => <ProfileScoreRow key={row.title} {...row} />)
+            ) : (
+              <Text style={styles.bodyText}>Chưa có điểm bài kiểm tra.</Text>
+            )}
+          </View>
+        </>
+      )}
 
       {isManager ? <ProfileManagerActions canApproveDepartmentTransfers={canApproveDepartmentTransfers} /> : <ProfileEmployeeActions />}
 
@@ -3614,8 +3635,17 @@ function ShowingHistoryTimeline({
 export function PointHistoryScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
-  const { data: overviewData } = useEmployeeApiData(() => employeeApi.rewardPointOverview(), []);
-  const { data: historyData, failed: historyFailed } = useEmployeeApiData(() => employeeApi.rewardPointHistory(), []);
+  const { session } = useAuth();
+  const hidePersonalAchievementSections = isExecutiveAdminRole(session?.user.role);
+  const skipPersonalAchievementApi = !session?.user.role || hidePersonalAchievementSections;
+  const { data: overviewData } = useEmployeeApiData(
+    () => skipPersonalAchievementApi ? Promise.resolve({ data: {} }) : employeeApi.rewardPointOverview(),
+    [skipPersonalAchievementApi]
+  );
+  const { data: historyData, failed: historyFailed } = useEmployeeApiData(
+    () => skipPersonalAchievementApi ? Promise.resolve({ data: {} }) : employeeApi.rewardPointHistory(),
+    [skipPersonalAchievementApi]
+  );
   const overview = isApiObject(overviewData) ? overviewData : {};
   const history = apiList(historyData);
   const totalPoints = apiText(overview.total_points ?? overview.points ?? overview.balance, "0");
@@ -6200,28 +6230,104 @@ function DepartmentPickerModal({
   );
 }
 
+function PositionPickerModal({
+  onClose,
+  onSelect,
+  options,
+  value,
+  visible
+}: {
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  options: string[];
+  value: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.transferRejectOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.departmentPickerModal}>
+          <View style={styles.departmentPickerHeader}>
+            <View style={styles.flex}>
+              <Text style={styles.departmentPickerTitle}>Lọc theo vị trí công việc</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.personalDateCloseButton}>
+              <Ionicons name="close" size={20} color="#5b403c" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.departmentPickerList}>
+            {options.map((option) => {
+              const active = option === value;
+
+              return (
+                <Pressable
+                  key={option}
+                  accessibilityRole="button"
+                  onPress={() => onSelect(option)}
+                  style={({ pressed }) => [
+                    styles.departmentPickerOption,
+                    active && styles.departmentPickerOptionActive,
+                    pressed && styles.pressed
+                  ]}
+                >
+                  <Text style={[styles.departmentPickerOptionText, active && styles.departmentPickerOptionTextActive]}>
+                    {option}
+                  </Text>
+                  {active ? <Ionicons name="checkmark-circle" size={20} color="#950100" /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function DepartmentStaffScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
-  const { data, failed, loading } = useEmployeeApiData(() => employeeApi.teamMembers(), []);
+  const { data: overviewData } = useEmployeeApiData(() => employeeApi.teamOverview(), []);
+  const { data, failed, loading } = useEmployeeApiData(() => employeeApi.teamMembers({ per_page: 100 }), []);
   const [query, setQuery] = useState("");
+  const [selectedPosition, setSelectedPosition] = useState("Tất cả vị trí");
+  const [positionPickerVisible, setPositionPickerVisible] = useState(false);
+
+  const overview = overviewData || {
+    team_name: "Kinh Doanh Dự Án Cao Cấp",
+    description: "Chuyên trách phân phối các sản phẩm biệt thự nghỉ dưỡng và penthouse hạng sang. Đội ngũ nòng cốt gồm những chuyên gia tư vấn bất động sản hàng đầu khu vực.",
+    member_count: 24,
+    manager_name: "Trần Anh Quân"
+  };
+
   const members = apiList(data);
-  const staffRows = members.length > 0
-    ? members.map((member, index) => ({
-        id: apiText(member.id, `staff-${index}`),
-        name: apiText(member.full_name ?? member.name, "Nhân viên"),
-        role: apiText(member.job_position ?? member.position ?? member.kpi_label, "Chuyên viên tư vấn"),
-        phone: apiText(member.phone, ""),
-        zalo: apiText(member.zalo ?? member.phone, "")
-      }))
-    : [
-        { id: "pham-thanh-thuy", name: "Phạm Thanh Thủy", role: "Chuyên viên tư vấn cấp cao", phone: "", zalo: "" },
-        { id: "nguyen-minh-hoang", name: "Nguyễn Minh Hoàng", role: "Trưởng nhóm Kinh doanh", phone: "", zalo: "" }
-      ];
+  const staffRows = members.map((member, index) => ({
+    id: apiText(member.id, `staff-${index}`),
+    name: apiText(member.full_name ?? member.name, "Nhân viên"),
+    role: apiText(member.job_position ?? member.position ?? member.kpi_label, "Chuyên viên tư vấn"),
+    phone: apiText(member.phone, ""),
+    zalo: apiText(member.zalo ?? member.phone, "")
+  }));
+
+  const positions = useMemo(() => {
+    const unique = Array.from(new Set(staffRows.map((s) => s.role).filter(Boolean)));
+    return ["Tất cả vị trí", ...unique];
+  }, [staffRows]);
+
   const visibleRows = staffRows.filter((staff) => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return true;
-    return `${staff.name} ${staff.role}`.toLowerCase().includes(normalized);
+    if (normalized) {
+      const matchQuery = `${staff.name} ${staff.role}`.toLowerCase().includes(normalized);
+      if (!matchQuery) return false;
+    }
+
+    if (selectedPosition !== "Tất cả vị trí") {
+      if (staff.role !== selectedPosition) return false;
+    }
+
+    return true;
   });
 
   return (
@@ -6245,18 +6351,18 @@ export function DepartmentStaffScreen() {
             <Ionicons name="business-outline" size={18} color="#ffb4a8" />
             <Text style={styles.staffDepartmentLabel}>PHÒNG BAN HIỆN TẠI</Text>
           </View>
-          <Text style={styles.staffDepartmentTitle}>Kinh Doanh Dự Án{"\n"}Cao Cấp</Text>
+          <Text style={styles.staffDepartmentTitle}>{apiText(overview.team_name, "Kinh Doanh Dự Án Cao Cấp")}</Text>
           <Text style={styles.staffDepartmentDescription}>
-            Chuyên trách phân phối các sản phẩm biệt thự nghỉ dưỡng và penthouse hạng sang. Đội ngũ nòng cốt gồm những chuyên gia tư vấn bất động sản hàng đầu khu vực.
+            {apiText(overview.description, "Chuyên trách phân phối các sản phẩm biệt thự nghỉ dưỡng và penthouse hạng sang. Đội ngũ nòng cốt gồm những chuyên gia tư vấn bất động sản hàng đầu khu vực.")}
           </Text>
           <View style={styles.staffDepartmentMetaGroup}>
             <View style={styles.staffDepartmentMeta}>
               <Ionicons name="people-outline" size={13} color="#ffffff" />
-              <Text style={styles.staffDepartmentMetaText}>24 Nhân viên</Text>
+              <Text style={styles.staffDepartmentMetaText}>{apiText(overview.member_count, "24")} Nhân viên</Text>
             </View>
             <View style={styles.staffDepartmentMeta}>
               <Ionicons name="shield-checkmark-outline" size={13} color="#ffffff" />
-              <Text style={styles.staffDepartmentMetaText}>Trưởng phòng: Trần Anh Quân</Text>
+              <Text style={styles.staffDepartmentMetaText}>Trưởng phòng: {apiText(overview.manager_name, "Trần Anh Quân")}</Text>
             </View>
           </View>
         </View>
@@ -6276,24 +6382,51 @@ export function DepartmentStaffScreen() {
           </View>
 
           <Text style={styles.staffFilterLabel}>LỌC THEO VỊ TRÍ</Text>
-          <View style={styles.staffSelectFrame}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setPositionPickerVisible(true)}
+            style={({ pressed }) => [styles.staffSelectFrame, pressed && styles.pressed]}
+          >
             <Ionicons name="filter-outline" size={18} color="#8f706b" />
-            <Text style={styles.staffSelectText}>Tất cả vị trí</Text>
+            <Text style={styles.staffSelectText}>{selectedPosition}</Text>
             <Ionicons name="chevron-down" size={18} color="#6b7280" />
-          </View>
+          </Pressable>
         </View>
 
         {failed ? (
-          <Text style={styles.staffStateText}>Không thể tải dữ liệu nhân viên. Đang hiển thị dữ liệu mẫu để kiểm giao diện.</Text>
+          <Text style={styles.staffStateText}>Không thể tải dữ liệu. Vui lòng kiểm tra kết nối và thử lại.</Text>
         ) : null}
         {loading ? <Text style={styles.staffStateText}>Đang tải danh sách nhân viên...</Text> : null}
 
         <View style={styles.staffList}>
-          {visibleRows.map((staff) => (
-            <StaffMemberCard key={staff.id} staff={staff} />
-          ))}
+          {!loading && !failed && visibleRows.length === 0 ? (
+            <View style={styles.staffEmptyState}>
+              <Ionicons name="people-outline" size={48} color="#d4a09a" />
+              <Text style={styles.staffEmptyTitle}>Không có nhân viên nào</Text>
+              <Text style={styles.staffEmptyDescription}>
+                {query || selectedPosition !== "Tất cả vị trí"
+                  ? "Không tìm thấy nhân viên phù hợp với bộ lọc hiện tại."
+                  : "Hiện tại chưa có nhân viên trong phạm vi quản lý của bạn."}
+              </Text>
+            </View>
+          ) : (
+            visibleRows.map((staff) => (
+              <StaffMemberCard key={staff.id} staff={staff} />
+            ))
+          )}
         </View>
       </ScrollView>
+
+      <PositionPickerModal
+        options={positions}
+        value={selectedPosition}
+        visible={positionPickerVisible}
+        onClose={() => setPositionPickerVisible(false)}
+        onSelect={(value) => {
+          setSelectedPosition(value);
+          setPositionPickerVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -11083,6 +11216,25 @@ const styles = StyleSheet.create({
   },
   staffList: {
     gap: 26
+  },
+  staffEmptyState: {
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 48
+  },
+  staffEmptyTitle: {
+    color: "#191c1d",
+    fontFamily: appFonts.semiBold,
+    fontSize: 16,
+    textAlign: "center"
+  },
+  staffEmptyDescription: {
+    color: "#8f706b",
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center"
   },
   staffCard: {
     backgroundColor: "#ffffff",

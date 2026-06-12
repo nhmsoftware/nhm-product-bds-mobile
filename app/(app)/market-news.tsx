@@ -64,32 +64,58 @@ export default function MarketNewsScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [featuredNewsParams, setFeaturedNewsParams] = useState<Record<string, string>>({});
   const [newsItems, setNewsItems] = useState<PublicNews[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  useEffect(() => {
-    let active = true;
+  function loadNews(page: number, append = false) {
+    if (page === 1) {
+      setLoadingMore(false);
+    } else {
+      setLoadingMore(true);
+    }
 
     customerPublicApi
-      .news({ page: 1, per_page: 1 })
+      .news({ page, per_page: 10 })
       .then((response) => {
-        if (!active || !isApiRecord(response.data)) return;
+        if (!isApiRecord(response.data)) return;
 
-        const featured = Array.isArray(response.data.featured) ? response.data.featured.filter(isApiRecord) as PublicNews[] : [];
-        const list = Array.isArray(response.data.list) ? response.data.list.filter(isApiRecord) as PublicNews[] : [];
-        const mergedNews = [...featured, ...list];
-        setNewsItems(mergedNews);
-        const news = mergedNews[0];
-        if (news?.id) {
-          setFeaturedNewsParams(publicNewsDetailParams(news));
+        const featured = page === 1 && Array.isArray(response.data.featured)
+          ? (response.data.featured.filter(isApiRecord) as PublicNews[])
+          : [];
+        const list = Array.isArray(response.data.list) ? (response.data.list.filter(isApiRecord) as PublicNews[]) : [];
+        const newItems = page === 1 ? [...featured, ...list] : list;
+
+        setNewsItems((prev) => (append ? [...prev, ...newItems] : newItems));
+        setCurrentPage(page);
+
+        const pagination = isApiRecord(response.data.pagination) ? response.data.pagination : {};
+        setLastPage(Number(pagination.last_page ?? 1));
+
+        if (page === 1) {
+          const firstNews = newItems[0];
+          if (firstNews?.id) {
+            setFeaturedNewsParams(publicNewsDetailParams(firstNews));
+          }
         }
       })
       .catch((error) => {
-        appLogger.warn("customer.news", "Không thể tải ID tin tức để thực hiện like.", { error });
+        appLogger.warn("customer.news", "Không thể tải tin tức.", { error });
+      })
+      .finally(() => {
+        setLoadingMore(false);
       });
+  }
 
-    return () => {
-      active = false;
-    };
+  useEffect(() => {
+    loadNews(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function handleLoadMore() {
+    if (loadingMore || currentPage >= lastPage) return;
+    loadNews(currentPage + 1, true);
+  }
 
   const featuredArticle = newsItems[0];
   const displaySideArticles = newsItems.length > 1 ? newsItems.slice(1, 3) : sideArticles;
@@ -178,7 +204,7 @@ export default function MarketNewsScreen() {
               style={styles.featuredCopy}
             >
               <View style={styles.metaRow}>
-                <Text style={styles.categoryText}>{featuredArticle?.category || "THỊ TRƯỜNG"}</Text>
+                <Text style={styles.categoryText}>{newsCategoryLabel(featuredArticle?.category).toUpperCase()}</Text>
                 <View style={styles.metaDot} />
                 <Text style={styles.featuredDate}>{formatNewsDate(featuredArticle?.published_at) || "24 Tháng 5, 2024"}</Text>
               </View>
@@ -220,11 +246,18 @@ export default function MarketNewsScreen() {
           </View>
         </View>
 
-        <View style={styles.loadMoreWrap}>
-          <Pressable accessibilityRole="button" style={styles.loadMoreButton}>
-            <Text style={styles.loadMoreText}>Xem thêm tin tức</Text>
-          </Pressable>
-        </View>
+        {currentPage < lastPage ? (
+          <View style={styles.loadMoreWrap}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={loadingMore}
+              onPress={handleLoadMore}
+              style={({ pressed }) => [styles.loadMoreButton, (pressed || loadingMore) && styles.loadMoreButtonPressed]}
+            >
+              <Text style={styles.loadMoreText}>{loadingMore ? "Đang tải..." : "Xem thêm tin tức"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -235,6 +268,23 @@ function formatNewsDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return undefined;
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function newsCategoryLabel(value?: string | null) {
+  switch (value) {
+    case "market":
+      return "Tin tức thị trường";
+    case "project":
+      return "Dự án";
+    case "investment":
+      return "Đầu tư";
+    case "legal":
+      return "Pháp lý";
+    case "other":
+      return "Khác";
+    default:
+      return value?.trim() || "Tin tức thị trường";
+  }
 }
 
 const styles = StyleSheet.create({
@@ -469,6 +519,9 @@ const styles = StyleSheet.create({
     height: 64,
     justifyContent: "center",
     paddingHorizontal: 50
+  },
+  loadMoreButtonPressed: {
+    opacity: 0.6
   },
   loadMoreText: {
     color: palette.darkRed,

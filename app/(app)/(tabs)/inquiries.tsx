@@ -8,6 +8,7 @@ import { Image,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
@@ -102,10 +103,19 @@ const planningSections = [
   }
 ] as const;
 
+type StaticPlanningItem = typeof planningSections[number]["items"][number];
+type PlanningListItem = PublicPlanning | StaticPlanningItem;
+type PlanningSection = {
+  city: string;
+  items: PlanningListItem[];
+};
+
 export default function PlanningListScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [apiPlannings, setApiPlannings] = useState<PublicPlanning[]>([]);
   const [apiCities, setApiCities] = useState<string[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState<string>("Tất cả khu vực");
+  const [searchKeyword, setSearchKeyword] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -129,7 +139,13 @@ export default function PlanningListScreen() {
   }, []);
 
   const displayFilters = apiCities.length > 0 ? ["Tất cả khu vực", ...apiCities] : [...filters];
-  const displaySections = apiPlannings.length > 0 ? groupPlannings(apiPlannings) : planningSections;
+  const sourceSections: PlanningSection[] = apiPlannings.length > 0
+    ? groupPlannings(apiPlannings)
+    : planningSections.map((section) => ({ city: section.city, items: [...section.items] }));
+  const cityFilteredSections = selectedFilter === "Tất cả khu vực"
+    ? sourceSections
+    : sourceSections.filter((section) => planningCityMatchesFilter(section.city, selectedFilter));
+  const displaySections = filterPlanningSections(cityFilteredSections, searchKeyword);
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
@@ -152,19 +168,40 @@ export default function PlanningListScreen() {
             Tra cứu thông tin quy hoạch phân khu, quy hoạch chung và các định hướng phát triển đô thị mới nhất tại các tỉnh thành trọng điểm.
           </Text>
           <View style={styles.searchBox}>
-            <Text style={styles.searchPlaceholder}>Tìm kiếm khu vực...</Text>
+            <TextInput
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+              onChangeText={setSearchKeyword}
+              placeholder="Tìm kiếm khu vực..."
+              placeholderTextColor={palette.muted}
+              returnKeyType="search"
+              style={styles.searchInput}
+              value={searchKeyword}
+            />
             <Ionicons name="search-outline" size={20} color={palette.brown} />
           </View>
           <ScrollView horizontal contentContainerStyle={styles.filterList} showsHorizontalScrollIndicator={false}>
-            {displayFilters.map((filter, index) => (
-              <Pressable key={filter} style={[styles.filterButton, index === 0 ? styles.filterActive : styles.filterInactive]}>
-                <Text style={[styles.filterText, index === 0 ? styles.filterTextActive : styles.filterTextInactive]}>
+            {displayFilters.map((filter) => {
+              const isActive = selectedFilter === filter;
+
+              return (
+              <Pressable
+                key={filter}
+                onPress={() => setSelectedFilter(filter)}
+                style={[styles.filterButton, isActive ? styles.filterActive : styles.filterInactive]}
+              >
+                <Text style={[styles.filterText, isActive ? styles.filterTextActive : styles.filterTextInactive]}>
                   {filter}
                 </Text>
               </Pressable>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
+
+        {displaySections.length === 0 ? (
+          <Text style={styles.emptyText}>Không tìm thấy quy hoạch phù hợp.</Text>
+        ) : null}
 
         {displaySections.map((section) => (
           <View key={section.city} style={styles.section}>
@@ -220,7 +257,7 @@ export default function PlanningListScreen() {
   );
 }
 
-function groupPlannings(items: PublicPlanning[]) {
+function groupPlannings(items: PublicPlanning[]): PlanningSection[] {
   const groups = new Map<string, PublicPlanning[]>();
   items.forEach((item) => {
     const city = item.city || "Khác";
@@ -230,10 +267,58 @@ function groupPlannings(items: PublicPlanning[]) {
   return Array.from(groups.entries()).map(([city, groupItems]) => ({ city, items: groupItems }));
 }
 
+function filterPlanningSections(sections: PlanningSection[], keyword: string) {
+  const normalizedKeyword = normalizePlanningSearchText(keyword);
+  if (!normalizedKeyword) return sections;
+
+  return sections
+    .map((section) => {
+      if (normalizePlanningSearchText(section.city).includes(normalizedKeyword)) return section;
+
+      return {
+        ...section,
+        items: section.items.filter((item) => planningItemMatchesSearch(item, normalizedKeyword))
+      };
+    })
+    .filter((section) => section.items.length > 0);
+}
+
+function planningItemMatchesSearch(item: PlanningListItem, normalizedKeyword: string) {
+  return normalizePlanningSearchText([
+    item.title,
+    item.description,
+    "city" in item ? item.city : "",
+    "district" in item ? item.district : "",
+    "sub_area" in item ? item.sub_area : ""
+  ].filter(Boolean).join(" ")).includes(normalizedKeyword);
+}
+
 function planningStatusLabel(status?: string | number | null) {
   if (status === 2 || status === "2" || status === "approved") return "ĐÃ PHÊ DUYỆT";
   if (status === 1 || status === "1" || status === "draft") return "ĐANG ĐIỀU CHỈNH";
   return typeof status === "string" && status ? status.toUpperCase() : "ĐANG CẬP NHẬT";
+}
+
+function planningCityMatchesFilter(city: string, filter: string) {
+  return normalizePlanningCity(city) === normalizePlanningCity(filter)
+    || normalizePlanningCity(city).includes(normalizePlanningCity(filter))
+    || normalizePlanningCity(filter).includes(normalizePlanningCity(city));
+}
+
+function normalizePlanningCity(value: string) {
+  return normalizePlanningSearchText(value)
+    .replace(/^tp\s+/, "")
+    .replace(/\bthanh pho\b\s*/, "")
+    .trim();
+}
+
+function normalizePlanningSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 const styles = StyleSheet.create({
@@ -314,12 +399,20 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16
   },
-  searchPlaceholder: {
+  searchInput: {
     color: palette.muted,
     flex: 1,
     fontFamily: appFonts.regular,
     fontSize: 16,
-    lineHeight: 24
+    lineHeight: 24,
+    paddingVertical: 0
+  },
+  emptyText: {
+    color: palette.brown,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center"
   },
   filterList: {
     gap: 12,

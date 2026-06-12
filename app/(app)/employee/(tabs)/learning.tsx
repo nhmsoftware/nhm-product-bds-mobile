@@ -50,12 +50,10 @@ export default function EmployeeLearningRoute() {
     if (authLoading || loading || allowed || openedRequiredLearning.current) return;
 
     openedRequiredLearning.current = true;
-    router.replace("/employee");
-    const timer = setTimeout(() => {
-      router.push("/employee/required-learning");
-    }, 0);
-
-    return () => clearTimeout(timer);
+    router.replace({
+      pathname: "/employee/required-learning",
+      params: { returnTo: "/employee" }
+    });
   }, [allowed, authLoading, loading]);
 
   if (authLoading || loading) {

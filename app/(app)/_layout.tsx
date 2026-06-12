@@ -20,7 +20,9 @@ export default function AppLayout() {
       <Stack.Screen name="planning-detail" />
       <Stack.Screen name="legal-knowledge" />
       <Stack.Screen name="listings/[id]" />
+      <Stack.Screen name="profile/index" />
       <Stack.Screen name="profile/edit" />
+      <Stack.Screen name="profile/change-password" />
       <Stack.Screen name="forbidden" />
     </Stack>
   );

@@ -9,19 +9,11 @@ import { RoleGuard } from "@/components/RoleGuard";
 import { Screen } from "@/components/Screen";
 import { Pressable } from "@/components/SafePressable";
 import { TextField } from "@/components/TextField";
-import { useI18n, type TranslationKey } from "@/libs/i18n";
+import { useI18n } from "@/libs/i18n";
 import { useAppTheme } from "@/libs/layout-mode";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { profileApi } from "@/services/profile/api";
 import type { CustomerProfile } from "@/services/profile/types";
-
-type Demand = CustomerProfile["demand"];
-
-const demandOptions: { value: Demand; labelKey: TranslationKey }[] = [
-  { value: "buy", labelKey: "demand.buy" },
-  { value: "rent", labelKey: "demand.rent" },
-  { value: "invest", labelKey: "demand.invest" }
-];
 
 export default function EditProfileScreen() {
   return (
@@ -37,9 +29,8 @@ function EditProfileContent() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
-  const [preferredCity, setPreferredCity] = useState("");
-  const [budgetLabel, setBudgetLabel] = useState("");
-  const [demand, setDemand] = useState<Demand>("buy");
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -51,9 +42,8 @@ function EditProfileContent() {
         setProfile(data);
         setFullName(data.fullName);
         setPhone(data.phone);
-        setPreferredCity(data.preferredCity);
-        setBudgetLabel(data.budgetLabel);
-        setDemand(data.demand);
+        setEmail(data.email);
+        setAddress(data.address);
       })
       .catch((error) => notifyError(error, t("profile.edit.error.load")))
       .finally(() => setLoading(false));
@@ -65,9 +55,8 @@ function EditProfileContent() {
       const response = await profileApi.updateProfile({
         fullName,
         phone,
-        preferredCity,
-        budgetLabel,
-        demand
+        email,
+        address
       });
       notifySuccess({ message: response.message });
       router.back();
@@ -107,44 +96,18 @@ function EditProfileContent() {
           keyboardType="phone-pad"
         />
         <TextField
-          label={t("profile.city")}
-          value={preferredCity}
-          onChangeText={setPreferredCity}
+          label={t("profile.email")}
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
         />
-        <TextField label={t("profile.budget")} value={budgetLabel} onChangeText={setBudgetLabel} />
-
-        <View style={styles.segment}>
-          {demandOptions.map((option) => {
-            const active = option.value === demand;
-            return (
-              <Pressable
-                key={option.value}
-                onPress={() => setDemand(option.value)}
-                style={[
-                  styles.segmentItem,
-                  {
-                    borderColor: active ? theme.colors.primary : theme.colors.border,
-                    backgroundColor: active ? theme.colors.primary : theme.colors.surface
-                  }
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    { color: active ? theme.colors.ink : theme.colors.muted }
-                  ]}
-                >
-                  {t(option.labelKey)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <TextField label="Địa chỉ" value={address} onChangeText={setAddress} />
 
         <Button
           title={t("common.saveChanges")}
           loading={submitting}
-          disabled={!fullName || !phone}
+          disabled={!fullName || !phone || !email}
           onPress={handleSubmit}
         />
       </Card>
@@ -172,20 +135,5 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 14
-  },
-  segment: {
-    flexDirection: "row",
-    gap: 8
-  },
-  segmentItem: {
-    borderWidth: 1,
-    flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 10
-  },
-  segmentText: {
-    fontSize: 13,
-    fontWeight: "800",
-    textAlign: "center"
   }
 });

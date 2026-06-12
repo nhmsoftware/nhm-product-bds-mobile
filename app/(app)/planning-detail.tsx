@@ -1,12 +1,15 @@
 import {
   Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
 import { router,
   useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
   useState } from "react";
-import { Image,
+import { ActivityIndicator,
+  Image,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View
@@ -16,7 +19,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
 import { appLogger } from "@/libs/logger";
+import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
+import { normalizeAccessRole } from "@/services/auth/roles";
+import { useAuth } from "@/services/auth/store";
 import { customerPublicApi, type PublicPlanning } from "@/services/customer/api";
 
 const palette = {
@@ -48,8 +54,10 @@ const legends = [
 
 export default function PlanningDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
+  const { session } = useAuth();
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [planning, setPlanning] = useState<PublicPlanning | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   useEffect(() => {
     if (!params.id) return;
@@ -77,6 +85,52 @@ export default function PlanningDetailScreen() {
         { label: "KHOẢNG LÙI", value: planning.setback || "N/A" }
       ]
     : stats;
+  const zoneTitle = planning?.sub_area || "KHU TRUNG TÂM TÀI CHÍNH";
+  const zoneDescription = planningZoneDescription(planning);
+  const displayLegends = planningLandLegends(planning?.land_type_notes);
+
+  async function handleShare() {
+    await Share.share({
+      message: planning?.title || "Khu đô thị Thủ Thiêm",
+      title: planning?.title || "Chi tiết quy hoạch"
+    });
+  }
+
+  async function handleDownloadPdf() {
+    if (!params.id) {
+      notifyError("Không tìm thấy quy hoạch để tải hồ sơ.");
+      return;
+    }
+
+    if (normalizeAccessRole(session?.user.role) !== "customer") {
+      notifyError("Vui lòng đăng nhập bằng tài khoản khách hàng để tải hồ sơ quy hoạch.");
+      return;
+    }
+
+    const pdfUrl = planning?.pdf_url?.trim();
+    if (!pdfUrl || !/^https?:\/\//i.test(pdfUrl)) {
+      notifyError("Hồ sơ quy hoạch PDF đang được cập nhật.");
+      return;
+    }
+
+    setPdfLoading(true);
+    try {
+      const fileName = await savePlanningPdfToDevice(pdfUrl, planning?.title || "Hồ sơ quy hoạch");
+      notifySuccess({
+        description: fileName,
+        message: "Tải hồ sơ quy hoạch thành công."
+      });
+    } catch (error) {
+      appLogger.warn("customer.planningPdf", "Không thể tải file quy hoạch về thiết bị.", {
+        error,
+        id: params.id,
+        url: pdfUrl
+      });
+      notifyError("Không thể tải hồ sơ quy hoạch. Vui lòng thử lại.");
+    } finally {
+      setPdfLoading(false);
+    }
+  }
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
@@ -95,22 +149,20 @@ export default function PlanningDetailScreen() {
       <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
         <View style={styles.titleRow}>
           <View style={styles.titleCopy}>
-            <Text style={styles.eyebrow}>{planning?.city || "VỊ TRÍ ĐANG CHỌN"}</Text>
+            <Text style={styles.eyebrow}>VỊ TRÍ ĐANG CHỌN</Text>
             <Text style={styles.title}>{planning?.title || "Khu đô thị Thủ Thiêm"}</Text>
           </View>
-          <Pressable accessibilityRole="button" style={styles.shareButton}>
-            <Ionicons name="share-social-outline" size={28} color={palette.brown} />
+          <Pressable accessibilityRole="button" onPress={handleShare} style={styles.shareButton}>
+            <Ionicons name="share-social-outline" size={20} color={palette.brown} />
           </Pressable>
         </View>
 
         <View style={styles.zoneCard}>
           <View style={styles.zoneHeader}>
             <View style={styles.zoneColor} />
-            <Text style={styles.zoneTitle}>KHU TRUNG TÂM TÀI CHÍNH</Text>
+            <Text style={styles.zoneTitle}>{zoneTitle.toUpperCase()}</Text>
           </View>
-          <Text style={styles.zoneDescription}>
-            {planning?.description || "Ký hiệu: C1-Z1. Quy hoạch chi tiết 1/2000 phục vụ phát triển kinh tế vùng."}
-          </Text>
+          <Text style={styles.zoneDescription}>{zoneDescription}</Text>
           <View style={styles.statsGrid}>
             {displayStats.map((stat) => (
               <View key={stat.label} style={styles.statCard}>
@@ -124,7 +176,7 @@ export default function PlanningDetailScreen() {
         <View style={styles.legendSection}>
           <Text style={styles.legendTitle}>CHÚ GIẢI LOẠI ĐẤT</Text>
           <View style={styles.legendList}>
-            {(planning?.land_type_notes ? [{ color: "#6a0100", label: planning.land_type_notes }] : legends).map((item) => (
+            {displayLegends.map((item) => (
               <View key={item.label} style={styles.legendRow}>
                 <View style={[styles.legendSwatch, { backgroundColor: item.color }]} />
                 <Text style={styles.legendText}>{item.label}</Text>
@@ -133,9 +185,18 @@ export default function PlanningDetailScreen() {
           </View>
         </View>
 
-        <Pressable accessibilityRole="button" style={styles.downloadButton}>
-          <Ionicons name="document-text-outline" size={24} color={palette.white} />
-          <Text style={styles.downloadText}>TẢI HỒ SƠ QUY HOẠCH (PDF)</Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={pdfLoading}
+          onPress={handleDownloadPdf}
+          style={[styles.downloadButton, pdfLoading && styles.downloadButtonDisabled]}
+        >
+          {pdfLoading ? (
+            <ActivityIndicator color={palette.white} size="small" />
+          ) : (
+            <Ionicons name="download-outline" size={20} color={palette.white} />
+          )}
+          <Text style={styles.downloadText}>{pdfLoading ? "Đang tải" : "TẢI HỒ SƠ QUY HOẠCH (PDF)"}</Text>
         </Pressable>
 
         <View style={styles.updatedWrap}>
@@ -151,6 +212,77 @@ function formatUpdatedDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return undefined;
   return date.toLocaleDateString("vi-VN");
+}
+
+function planningZoneDescription(planning: PublicPlanning | null) {
+  if (!planning) return "Ký hiệu: C1-Z1. Quy hoạch chi tiết 1/2000 phục vụ phát triển kinh tế vùng.";
+
+  const parts = [planning.symbol ? `Ký hiệu: ${planning.symbol}.` : "", planning.description || ""].filter(Boolean);
+  return parts.join(" ") || "Thông tin quy hoạch đang được cập nhật.";
+}
+
+function planningLandLegends(notes?: string | null) {
+  if (!notes?.trim()) return legends;
+
+  const labels = notes
+    .split(/[\n;,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (labels.length === 0) return legends;
+
+  return labels.map((label, index) => ({
+    color: legends[index % legends.length].color,
+    label
+  }));
+}
+
+function safePlanningPdfFileName(title: string, url: string) {
+  const extensionMatch = url.match(/\.([a-z0-9]{2,5})(?:[?#].*)?$/i);
+  const extension = extensionMatch?.[1] ? `.${extensionMatch[1].toLowerCase()}` : ".pdf";
+  const baseName = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "ho-so-quy-hoach";
+
+  return `${baseName}${extension}`;
+}
+
+function uniquePlanningPdfFileName(fileName: string) {
+  const suffix = Date.now();
+  const dotIndex = fileName.lastIndexOf(".");
+
+  if (dotIndex <= 0) return `${fileName}-${suffix}`;
+  return `${fileName.slice(0, dotIndex)}-${suffix}${fileName.slice(dotIndex)}`;
+}
+
+function deletePlanningPdfFile(file: FileSystem.File) {
+  const writableFile = file as unknown as { exists?: boolean; delete?: () => void };
+
+  try {
+    if (writableFile.exists && writableFile.delete) writableFile.delete();
+  } catch {
+    // Nếu file không tồn tại hoặc hệ điều hành không cho xóa, download sẽ báo lỗi chi tiết.
+  }
+}
+
+async function savePlanningPdfToDevice(url: string, title: string) {
+  const fileName = uniquePlanningPdfFileName(safePlanningPdfFileName(title, url));
+  const target = new FileSystem.File(FileSystem.Paths.cache, fileName);
+
+  deletePlanningPdfFile(target);
+
+  const file = await FileSystem.File.downloadFileAsync(url, target, { idempotent: true });
+
+  await Share.share({
+    message: fileName,
+    title: fileName,
+    url: file.uri
+  });
+
+  return fileName;
 }
 
 const styles = StyleSheet.create({
@@ -222,27 +354,27 @@ const styles = StyleSheet.create({
   title: {
     color: palette.darkRed,
     fontFamily: appFonts.semiBold,
-    fontSize: 30,
+    fontSize: 24,
     letterSpacing: -0.48,
-    lineHeight: 38,
-    marginTop: 8
+    lineHeight: 28.8,
+    marginTop: 4
   },
   shareButton: {
     alignItems: "center",
     backgroundColor: palette.pale,
     borderRadius: 999,
-    height: 72,
+    height: 40,
     justifyContent: "center",
-    width: 72
+    width: 40
   },
   zoneCard: {
     backgroundColor: palette.background,
     borderColor: "rgba(227, 190, 184, 0.2)",
     borderRadius: 12,
     borderWidth: 1,
-    gap: 16,
+    gap: 8,
     marginTop: 24,
-    padding: 17,
+    padding: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -252,52 +384,51 @@ const styles = StyleSheet.create({
   zoneHeader: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12
+    gap: 8
   },
   zoneColor: {
     backgroundColor: palette.darkRed,
     borderRadius: 2,
-    height: 32,
-    width: 32
+    height: 16,
+    width: 16
   },
   zoneTitle: {
     color: palette.text,
     flex: 1,
     fontFamily: appFonts.bold,
-    fontSize: 18,
+    fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 24
+    lineHeight: 16
   },
   zoneDescription: {
     color: palette.brown,
     fontFamily: appFonts.regular,
-    fontSize: 18,
-    lineHeight: 30
+    fontSize: 16,
+    lineHeight: 24
   },
   statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 8,
     paddingTop: 8
   },
   statCard: {
     backgroundColor: palette.pale,
     borderRadius: 8,
-    minHeight: 88,
-    padding: 16,
-    width: "48.7%"
+    padding: 8,
+    width: "100%"
   },
   statLabel: {
     color: palette.brown,
     fontFamily: appFonts.bold,
-    fontSize: 12,
-    lineHeight: 18
+    fontSize: 10,
+    letterSpacing: 0.5,
+    lineHeight: 15,
+    textTransform: "uppercase"
   },
   statValue: {
     color: palette.darkRed,
     fontFamily: appFonts.regular,
-    fontSize: 30,
-    lineHeight: 38
+    fontSize: 16,
+    lineHeight: 24
   },
   legendSection: {
     gap: 16,
@@ -306,9 +437,9 @@ const styles = StyleSheet.create({
   legendTitle: {
     color: palette.brown,
     fontFamily: appFonts.bold,
-    fontSize: 18,
+    fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 24
+    lineHeight: 16
   },
   legendList: {
     gap: 8
@@ -320,15 +451,15 @@ const styles = StyleSheet.create({
   },
   legendSwatch: {
     borderRadius: 2,
-    height: 48,
-    width: 48
+    height: 24,
+    width: 24
   },
   legendText: {
     color: palette.text,
     flex: 1,
     fontFamily: appFonts.regular,
-    fontSize: 24,
-    lineHeight: 34
+    fontSize: 16,
+    lineHeight: 24
   },
   downloadButton: {
     alignItems: "center",
@@ -338,20 +469,24 @@ const styles = StyleSheet.create({
     gap: 8,
     justifyContent: "center",
     marginTop: 32,
-    minHeight: 64,
+    minHeight: 56,
     paddingHorizontal: 20,
+    paddingVertical: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 4
   },
+  downloadButtonDisabled: {
+    opacity: 0.7
+  },
   downloadText: {
     color: palette.white,
     flexShrink: 1,
     fontFamily: appFonts.regular,
-    fontSize: 20,
-    lineHeight: 28,
+    fontSize: 16,
+    lineHeight: 24,
     textAlign: "center"
   },
   updatedWrap: {

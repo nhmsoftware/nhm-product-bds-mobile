@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect,
   useState } from "react";
 import { Image,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -40,6 +41,11 @@ const contactImages = {
 
 export default function ContactScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
+  const [callbackModalVisible, setCallbackModalVisible] = useState(false);
+  const [callbackSubmitting, setCallbackSubmitting] = useState(false);
+  const [callbackFullName, setCallbackFullName] = useState("");
+  const [callbackPhone, setCallbackPhone] = useState("");
+  const [callbackPreferredTime, setCallbackPreferredTime] = useState("");
   const [projectPickerVisible, setProjectPickerVisible] = useState(false);
   const [setting, setSetting] = useState<ConsultationSetting | null>(null);
   const [projects, setProjects] = useState<PublicProject[]>([]);
@@ -115,6 +121,81 @@ export default function ContactScreen() {
     }
   }
 
+  async function handleCallHotline() {
+    const hotline = (setting?.hotline || "1800 6868").trim();
+    const phoneNumber = hotline.replace(/[^+\d#*,;]/g, "");
+
+    if (!phoneNumber) {
+      notifyError(new Error("Hotline tư vấn hiện chưa khả dụng."));
+      return;
+    }
+
+    const phoneUrl = `tel:${phoneNumber}`;
+    appLogger.info("customer.contact.call", "Mở trình gọi điện từ nút GỌI NGAY.", { phoneUrl });
+
+    try {
+      await Linking.openURL(phoneUrl);
+    } catch (error) {
+      notifyError(error, "Không thể mở chức năng gọi điện. Vui lòng thử lại.");
+    }
+  }
+
+  function openCallbackModal() {
+    if (!callbackFullName.trim() && fullName.trim()) {
+      setCallbackFullName(fullName.trim());
+    }
+    if (!callbackPhone.trim() && phone.trim()) {
+      setCallbackPhone(phone.trim());
+    }
+    setCallbackModalVisible(true);
+  }
+
+  async function handleSubmitCallback() {
+    const normalizedPhone = callbackPhone.replace(/\s/g, "");
+    const preferredTime = callbackPreferredTime.trim();
+
+    if (!callbackFullName.trim()) {
+      notifyError(new Error("Vui lòng nhập họ tên."));
+      return;
+    }
+    if (!normalizedPhone) {
+      notifyError(new Error("Vui lòng nhập số điện thoại."));
+      return;
+    }
+    if (!preferredTime) {
+      notifyError(new Error("Vui lòng nhập thời gian mong muốn."));
+      return;
+    }
+
+    setCallbackSubmitting(true);
+    try {
+      const response = await customerPublicApi.requestCallback({
+        full_name: callbackFullName.trim(),
+        phone: normalizedPhone,
+        preferred_callback_time: preferredTime,
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(selectedProject?.id ? { project_id: selectedProject.id } : {}),
+        ...(selectedProject?.name ? { project_name: selectedProject.name } : {})
+      });
+
+      notifySuccess({ message: response.message || "Đặt lịch hẹn thành công." });
+      setCallbackFullName("");
+      setCallbackPhone("");
+      setCallbackPreferredTime("");
+      setCallbackModalVisible(false);
+    } catch (error) {
+      notifyError(error, "Không thể đặt lịch hẹn. Vui lòng thử lại.");
+    } finally {
+      setCallbackSubmitting(false);
+    }
+  }
+
+  const officeTitle = setting?.office_name || "Văn phòng đại diện";
+  const officeAddress =
+    setting?.address ||
+    setting?.office_address ||
+    "Tầng 12, Tòa nhà Landmark 81, 720A Điện Biên Phủ, Phường 22, Quận Bình Thạnh, TP. Hồ Chí Minh";
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar backgroundColor={palette.background} style="dark" />
@@ -139,6 +220,73 @@ export default function ContactScreen() {
         selectedProjectId={selectedProject?.id}
         visible={projectPickerVisible}
       />
+      <Modal animationType="fade" onRequestClose={() => setCallbackModalVisible(false)} transparent visible={callbackModalVisible}>
+        <Pressable onPress={() => setCallbackModalVisible(false)} style={styles.projectModalBackdrop}>
+          <Pressable onPress={(event) => event.stopPropagation()} style={styles.callbackModal}>
+            <View style={styles.projectModalHeader}>
+              <Text style={styles.projectModalTitle}>Đặt lịch hẹn gọi lại</Text>
+              <Pressable accessibilityRole="button" onPress={() => setCallbackModalVisible(false)} style={styles.projectModalClose}>
+                <Ionicons color={palette.text} name="close" size={20} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.callbackModalBody} showsVerticalScrollIndicator={false}>
+              <Text style={styles.callbackIntro}>Nhập thời gian bạn muốn đội tư vấn liên hệ lại.</Text>
+              <View style={styles.field}>
+                <Text style={styles.label}>HỌ VÀ TÊN</Text>
+                <View style={styles.inputBox}>
+                  <TextInput
+                    autoCapitalize="words"
+                    onChangeText={setCallbackFullName}
+                    placeholder="Nhập họ và tên"
+                    placeholderTextColor={palette.muted}
+                    returnKeyType="next"
+                    style={styles.inputText}
+                    value={callbackFullName}
+                  />
+                </View>
+              </View>
+              <View style={styles.field}>
+                <Text style={styles.label}>SỐ ĐIỆN THOẠI</Text>
+                <View style={styles.inputBox}>
+                  <TextInput
+                    keyboardType="phone-pad"
+                    onChangeText={setCallbackPhone}
+                    placeholder="Nhập số điện thoại"
+                    placeholderTextColor={palette.muted}
+                    style={styles.inputText}
+                    value={callbackPhone}
+                  />
+                </View>
+              </View>
+              <View style={styles.field}>
+                <Text style={styles.label}>THỜI GIAN MONG MUỐN</Text>
+                <View style={styles.inputBox}>
+                  <TextInput
+                    onChangeText={setCallbackPreferredTime}
+                    placeholder="Ví dụ: Thứ 7 tuần này, 09:00"
+                    placeholderTextColor={palette.muted}
+                    style={styles.inputText}
+                    value={callbackPreferredTime}
+                  />
+                </View>
+              </View>
+              <View style={styles.callbackModalActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={callbackSubmitting}
+                  onPress={handleSubmitCallback}
+                  style={[styles.submitButton, styles.callbackSubmitButton, callbackSubmitting && styles.buttonDisabled]}
+                >
+                  <Text style={styles.submitText}>{callbackSubmitting ? "ĐANG GỬI..." : "XÁC NHẬN ĐẶT LỊCH"}</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => setCallbackModalVisible(false)} style={styles.callbackCancelButton}>
+                  <Text style={styles.callbackCancelText}>Để sau</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
@@ -155,7 +303,7 @@ export default function ContactScreen() {
             </View>
             <Text style={styles.hotlineTitle}>Hotline 24/7</Text>
             <Text style={styles.optionText}>Hỗ trợ tư vấn trực tiếp ngay lập tức</Text>
-            <Pressable accessibilityRole="button" style={styles.primaryButton}>
+            <Pressable accessibilityRole="button" hitSlop={10} onPress={handleCallHotline} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>GỌI NGAY: {setting?.hotline || "1800 6868"}</Text>
             </Pressable>
           </View>
@@ -166,7 +314,12 @@ export default function ContactScreen() {
             </View>
             <Text style={styles.callbackTitle}>{setting?.callback_title || "Yêu Cầu Gọi Lại"}</Text>
             <Text style={styles.optionText}>{setting?.callback_description || "Để lại thông tin, chúng tôi sẽ gọi lại"}</Text>
-            <Pressable accessibilityRole="button" style={styles.secondaryButton}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={setting?.is_callback_enabled === false}
+              onPress={openCallbackModal}
+              style={[styles.secondaryButton, setting?.is_callback_enabled === false && styles.buttonDisabled]}
+            >
               <Text style={styles.secondaryButtonText}>ĐẶT LỊCH HẸN</Text>
             </Pressable>
           </View>
@@ -260,10 +413,10 @@ export default function ContactScreen() {
               </View>
             </View>
             <View style={styles.officeBody}>
-              <Text style={styles.officeTitle}>{setting?.office_name || "Văn phòng Hà Nội"}</Text>
+              <Text style={styles.officeTitle}>{officeTitle}</Text>
               <View style={styles.officeRow}>
                 <Ionicons name="location-outline" size={22} color={palette.brown} />
-                <Text style={styles.officeText}>{setting?.office_address || "Vinhomes Westpoint, Phạm Hùng\nTừ Liêm, Thành phố Hà Nội"}</Text>
+                <Text style={styles.officeText}>{officeAddress}</Text>
               </View>
               <View style={styles.officeRow}>
                 <Ionicons name="time-outline" size={22} color={palette.brown} />
@@ -464,31 +617,42 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   primaryButton: {
+    alignItems: "center",
     backgroundColor: palette.darkRed,
     borderRadius: 12,
+    justifyContent: "center",
+    minHeight: 56,
     paddingHorizontal: 24,
-    paddingVertical: 16
+    paddingVertical: 14
   },
   primaryButtonText: {
     color: palette.white,
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 20
+    lineHeight: 24,
+    textAlign: "center"
   },
   secondaryButton: {
+    alignItems: "center",
     borderColor: "#313131",
     borderRadius: 12,
     borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 56,
     paddingHorizontal: 25,
-    paddingVertical: 17
+    paddingVertical: 14
   },
   secondaryButtonText: {
     color: "#313131",
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 20
+    lineHeight: 24,
+    textAlign: "center"
+  },
+  buttonDisabled: {
+    opacity: 0.6
   },
   formCard: {
     backgroundColor: palette.white,
@@ -599,7 +763,8 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 20
+    lineHeight: 24,
+    textAlign: "center"
   },
   projectModalBackdrop: {
     alignItems: "center",
@@ -612,6 +777,13 @@ const styles = StyleSheet.create({
     backgroundColor: palette.white,
     borderRadius: 12,
     maxHeight: "70%",
+    overflow: "hidden",
+    width: "100%"
+  },
+  callbackModal: {
+    backgroundColor: palette.white,
+    borderRadius: 12,
+    maxHeight: "82%",
     overflow: "hidden",
     width: "100%"
   },
@@ -639,6 +811,34 @@ const styles = StyleSheet.create({
   },
   projectModalList: {
     padding: 12
+  },
+  callbackModalBody: {
+    gap: 16,
+    padding: 16
+  },
+  callbackIntro: {
+    color: palette.brown,
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    lineHeight: 22
+  },
+  callbackModalActions: {
+    gap: 10,
+    marginTop: 4
+  },
+  callbackSubmitButton: {
+    marginTop: 0
+  },
+  callbackCancelButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44
+  },
+  callbackCancelText: {
+    color: palette.muted,
+    fontFamily: appFonts.semiBold,
+    fontSize: 15,
+    lineHeight: 22
   },
   projectModalState: {
     color: palette.muted,
