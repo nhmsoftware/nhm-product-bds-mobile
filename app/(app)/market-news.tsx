@@ -8,6 +8,7 @@ import { Image,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
@@ -37,7 +38,16 @@ const marketImages = {
   interest: require("@/assets/images/customer/market-news/interest-tower.png")
 };
 
-const filters = ["Tất cả", "Dự án", "Thị trường", "Phong cách sống"] as const;
+type NewsCategory = { id: string; name: string };
+
+const DEFAULT_CATEGORIES: NewsCategory[] = [
+  { id: "all", name: "Tất cả" },
+  { id: "market", name: "Tin thị trường" },
+  { id: "project", name: "Dự án" },
+  { id: "investment", name: "Đầu tư" },
+  { id: "legal", name: "Pháp lý" },
+  { id: "other", name: "Khác" },
+];
 
 const sideArticles = [
   {
@@ -63,62 +73,76 @@ function isApiRecord(value: unknown): value is ApiRecord {
 export default function MarketNewsScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [featuredNewsParams, setFeaturedNewsParams] = useState<Record<string, string>>({});
-  const [newsItems, setNewsItems] = useState<PublicNews[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [lastPage, setLastPage] = useState(1);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [allNewsItems, setAllNewsItems] = useState<PublicNews[]>([]);
+  const [categories, setCategories] = useState<NewsCategory[]>(DEFAULT_CATEGORIES);
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(3);
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  function loadNews(page: number, append = false) {
-    if (page === 1) {
-      setLoadingMore(false);
-    } else {
-      setLoadingMore(true);
-    }
+  useEffect(() => {
+    let active = true;
 
+    // Tải toàn bộ tin tức 1 lần, lọc local như màn Quy hoạch
     customerPublicApi
-      .news({ page, per_page: 10 })
+      .news({ page: 1, per_page: 50 })
       .then((response) => {
-        if (!isApiRecord(response.data)) return;
+        if (!active || !isApiRecord(response.data)) return;
 
-        const featured = page === 1 && Array.isArray(response.data.featured)
+        const featured = Array.isArray(response.data.featured)
           ? (response.data.featured.filter(isApiRecord) as PublicNews[])
           : [];
         const list = Array.isArray(response.data.list) ? (response.data.list.filter(isApiRecord) as PublicNews[]) : [];
-        const newItems = page === 1 ? [...featured, ...list] : list;
 
-        setNewsItems((prev) => (append ? [...prev, ...newItems] : newItems));
-        setCurrentPage(page);
+        // Deduplicate: ưu tiên featured, bổ sung từ list nếu id chưa xuất hiện
+        const featuredIds = new Set(featured.map((n) => n.id));
+        const extra = list.filter((n) => !featuredIds.has(n.id));
+        const merged = [...featured, ...extra];
 
-        const pagination = isApiRecord(response.data.pagination) ? response.data.pagination : {};
-        setLastPage(Number(pagination.last_page ?? 1));
+        setAllNewsItems(merged);
+        setIsLoaded(true);
 
-        if (page === 1) {
-          const firstNews = newItems[0];
-          if (firstNews?.id) {
-            setFeaturedNewsParams(publicNewsDetailParams(firstNews));
-          }
+        if (merged[0]?.id) {
+          setFeaturedNewsParams(publicNewsDetailParams(merged[0]));
+        }
+
+        // Cập nhật categories từ API
+        if (Array.isArray(response.data.categories)) {
+          const apiCats = (response.data.categories as unknown[]).filter(
+            (c): c is NewsCategory => isApiRecord(c as unknown) && typeof (c as Record<string, unknown>).id === "string"
+          );
+          if (apiCats.length > 0) setCategories(apiCats);
         }
       })
       .catch((error) => {
         appLogger.warn("customer.news", "Không thể tải tin tức.", { error });
-      })
-      .finally(() => {
-        setLoadingMore(false);
+        setIsLoaded(true);
       });
-  }
 
-  useEffect(() => {
-    loadNews(1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { active = false; };
   }, []);
 
+  // Lọc local tức thì (không cần API call, không cần debounce)
+  const normalizedSearch = normalizeNewsText(searchQuery);
+  const filteredItems = allNewsItems.filter((article) => {
+    const categoryMatch = activeFilter === "all" || article.category === activeFilter;
+    const searchMatch = !normalizedSearch
+      || normalizeNewsText(`${article.title ?? ""} ${article.summary ?? ""}`).includes(normalizedSearch);
+    return categoryMatch && searchMatch;
+  });
+
+  // Reset visibleCount khi filter/search thay đổi
+  useEffect(() => {
+    setVisibleCount(3);
+  }, [activeFilter, searchQuery]);
+
   function handleLoadMore() {
-    if (loadingMore || currentPage >= lastPage) return;
-    loadNews(currentPage + 1, true);
+    setVisibleCount((prev) => prev + 3);
   }
 
-  const featuredArticle = newsItems[0];
-  const displaySideArticles = newsItems.length > 1 ? newsItems.slice(1, 3) : sideArticles;
+  const hasMoreToShow = visibleCount < filteredItems.length;
+  const featuredArticle = filteredItems[0];
+  const displaySideArticles = isLoaded ? filteredItems.slice(1, visibleCount) : sideArticles;
 
   function openFeaturedNews() {
     if (featuredNewsParams.id) {
@@ -160,8 +184,16 @@ export default function MarketNewsScreen() {
           <Text style={styles.pageTitle}>Tin Tức Thị Trường</Text>
 
           <View style={styles.searchBox}>
-            <Ionicons name="search-outline" size={22} color={palette.brown} />
-            <Text style={styles.searchText}>Tìm kiếm tin tức...</Text>
+            <TextInput
+              autoCapitalize="none"
+              onChangeText={setSearchQuery}
+              placeholder="Tìm kiếm tin tức..."
+              placeholderTextColor={palette.muted}
+              returnKeyType="search"
+              style={styles.searchInput}
+              value={searchQuery}
+            />
+            <Ionicons name="search-outline" size={20} color={palette.brown} />
           </View>
 
           <ScrollView
@@ -169,98 +201,118 @@ export default function MarketNewsScreen() {
             contentContainerStyle={styles.filterList}
             showsHorizontalScrollIndicator={false}
           >
-            {filters.map((filter, index) => (
-              <Pressable
-                accessibilityRole="button"
-                key={filter}
-                style={[styles.filterButton, index === 0 ? styles.filterButtonActive : styles.filterButtonInactive]}
-              >
-                <Text style={[styles.filterText, index === 0 ? styles.filterTextActive : styles.filterTextInactive]}>
-                  {filter}
-                </Text>
-              </Pressable>
-            ))}
+            {categories.map((cat) => {
+              const isActive = cat.id === activeFilter;
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={cat.id}
+                  onPress={() => setActiveFilter(cat.id)}
+                  style={[styles.filterButton, isActive ? styles.filterButtonActive : styles.filterButtonInactive]}
+                >
+                  <Text style={[styles.filterText, isActive ? styles.filterTextActive : styles.filterTextInactive]}>
+                    {cat.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
         </View>
 
-        <View style={styles.newsGrid}>
-          <View style={styles.featuredArticle}>
-            <Pressable
-              accessibilityLabel="Mở chi tiết tin tức bất động sản hạng sang"
-              accessibilityRole="button"
-              onPress={openFeaturedNews}
-              style={styles.featuredImageWrap}
-            >
-              <Image source={mediaSource(featuredArticle?.thumbnail, marketImages.hot)} style={styles.articleImage} />
-              <View style={styles.hotBadge}>
-                <Text style={styles.badgeText}>HOT</Text>
+        {isLoaded && filteredItems.length === 0 ? (
+          <Text style={styles.emptyText}>Không tìm thấy bài viết phù hợp.</Text>
+        ) : (
+          <View style={styles.newsGrid}>
+            {(featuredArticle || !isLoaded) ? (
+              <View style={styles.featuredArticle}>
+                <Pressable
+                  accessibilityLabel="Mở chi tiết tin tức bất động sản hạng sang"
+                  accessibilityRole="button"
+                  onPress={openFeaturedNews}
+                  style={styles.featuredImageWrap}
+                >
+                  <Image source={mediaSource(featuredArticle?.thumbnail, marketImages.hot)} style={styles.articleImage} />
+                  <View style={styles.hotBadge}>
+                    <Text style={styles.badgeText}>HOT</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  accessibilityLabel="Mở chi tiết tin tức bất động sản hạng sang"
+                  accessibilityRole="button"
+                  onPress={openFeaturedNews}
+                  style={styles.featuredCopy}
+                >
+                  <View style={styles.metaRow}>
+                    <Text style={styles.categoryText}>{newsCategoryLabel(featuredArticle?.category).toUpperCase()}</Text>
+                    <View style={styles.metaDot} />
+                    <Text style={styles.featuredDate}>{formatNewsDate(featuredArticle?.published_at) || "24 Tháng 5, 2024"}</Text>
+                  </View>
+                  <Text style={styles.featuredTitle}>{featuredArticle?.title || "Bất động sản hạng sang: Xu hướng đầu tư bền vững năm 2024"}</Text>
+                  <Text ellipsizeMode="tail" numberOfLines={2} style={styles.featuredExcerpt}>{featuredArticle?.summary || "Phân khúc bất động sản cao cấp đang chứng kiến sự chuyển dịch mạnh mẽ..."}</Text>
+                </Pressable>
               </View>
-            </Pressable>
+            ) : null}
 
-            <Pressable
-              accessibilityLabel="Mở chi tiết tin tức bất động sản hạng sang"
-              accessibilityRole="button"
-              onPress={openFeaturedNews}
-              style={styles.featuredCopy}
-            >
-              <View style={styles.metaRow}>
-                <Text style={styles.categoryText}>{newsCategoryLabel(featuredArticle?.category).toUpperCase()}</Text>
-                <View style={styles.metaDot} />
-                <Text style={styles.featuredDate}>{formatNewsDate(featuredArticle?.published_at) || "24 Tháng 5, 2024"}</Text>
+            {displaySideArticles.length > 0 ? (
+              <View style={styles.sideFeed}>
+                {displaySideArticles.map((article, index) => {
+                  const isApiNews = "id" in article;
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={isApiNews ? article.id : article.title}
+                      onPress={() =>
+                        isApiNews
+                          ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(article) })
+                          : undefined
+                      }
+                      style={styles.article}
+                    >
+                      <View style={styles.articleImageWrap}>
+                        <Image
+                          source={isApiNews ? mediaSource(article.thumbnail, sideArticles[index % sideArticles.length].image) : article.image}
+                          style={styles.articleImage}
+                        />
+                        {(!isApiNews && article.badge) ? (
+                          <View style={styles.newBadge}>
+                            <Text style={styles.badgeText}>{article.badge}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={styles.articleDate}>{isApiNews ? formatNewsDate(article.published_at) || "Đang cập nhật" : article.date}</Text>
+                      <Text style={styles.articleTitle}>{isApiNews ? article.title || "Tin tức đang cập nhật" : article.title}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-              <Text style={styles.featuredTitle}>{featuredArticle?.title || "Bất động sản hạng sang: Xu hướng đầu tư bền vững năm 2024"}</Text>
-              <Text style={styles.featuredExcerpt}>{featuredArticle?.summary || "Phân khúc bất động sản cao cấp đang chứng kiến sự chuyển dịch mạnh mẽ..."}</Text>
-            </Pressable>
+            ) : null}
           </View>
+        )}
 
-          <View style={styles.sideFeed}>
-            {displaySideArticles.map((article, index) => {
-              const isApiNews = "id" in article;
-              return (
-              <Pressable
-                accessibilityRole="button"
-                key={isApiNews ? article.id : article.title}
-                onPress={() =>
-                  isApiNews
-                    ? router.push({ pathname: "/(app)/news-detail", params: publicNewsDetailParams(article) })
-                    : undefined
-                }
-                style={styles.article}
-              >
-                <View style={styles.articleImageWrap}>
-                  <Image
-                    source={isApiNews ? mediaSource(article.thumbnail, sideArticles[index % sideArticles.length].image) : article.image}
-                    style={styles.articleImage}
-                  />
-                  {(!isApiNews && article.badge) ? (
-                    <View style={styles.newBadge}>
-                      <Text style={styles.badgeText}>{article.badge}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text style={styles.articleDate}>{isApiNews ? formatNewsDate(article.published_at) || "Đang cập nhật" : article.date}</Text>
-                <Text style={styles.articleTitle}>{isApiNews ? article.title || "Tin tức đang cập nhật" : article.title}</Text>
-              </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {currentPage < lastPage ? (
+        {hasMoreToShow ? (
           <View style={styles.loadMoreWrap}>
             <Pressable
               accessibilityRole="button"
-              disabled={loadingMore}
               onPress={handleLoadMore}
-              style={({ pressed }) => [styles.loadMoreButton, (pressed || loadingMore) && styles.loadMoreButtonPressed]}
+              style={({ pressed }) => [styles.loadMoreButton, pressed && styles.loadMoreButtonPressed]}
             >
-              <Text style={styles.loadMoreText}>{loadingMore ? "Đang tải..." : "Xem thêm tin tức"}</Text>
+              <Text style={styles.loadMoreText}>Xem thêm tin tức</Text>
             </Pressable>
           </View>
         ) : null}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function normalizeNewsText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function formatNewsDate(value?: string | null) {
@@ -349,17 +401,22 @@ const styles = StyleSheet.create({
   searchBox: {
     alignItems: "center",
     backgroundColor: palette.pale,
-    borderRadius: 12,
+    borderBottomColor: "#e3beb8",
+    borderBottomWidth: 2,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
     flexDirection: "row",
-    gap: 14,
-    height: 64,
+    gap: 12,
+    minHeight: 52,
     paddingHorizontal: 16
   },
-  searchText: {
-    color: palette.muted,
+  searchInput: {
+    color: palette.text,
+    flex: 1,
     fontFamily: appFonts.regular,
     fontSize: 16,
-    lineHeight: 24
+    lineHeight: 24,
+    paddingVertical: 0
   },
   filterList: {
     gap: 12,
@@ -528,5 +585,13 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.regular,
     fontSize: 16,
     lineHeight: 24
+  },
+  emptyText: {
+    color: palette.brown,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+    marginTop: 48
   }
 });
