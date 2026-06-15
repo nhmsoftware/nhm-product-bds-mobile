@@ -15,7 +15,8 @@ import { ActivityIndicator,
   View
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView,
+  useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
 import { appLogger } from "@/libs/logger";
@@ -54,6 +55,7 @@ const legends = [
 
 export default function PlanningDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
+  const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [planning, setPlanning] = useState<PublicPlanning | null>(null);
@@ -88,6 +90,7 @@ export default function PlanningDetailScreen() {
   const zoneTitle = planning?.sub_area || "KHU TRUNG TÂM TÀI CHÍNH";
   const zoneDescription = planningZoneDescription(planning);
   const displayLegends = planningLandLegends(planning?.land_type_notes);
+  const bottomInset = Math.max(insets.bottom, 12);
 
   async function handleShare() {
     await Share.share({
@@ -146,7 +149,12 @@ export default function PlanningDetailScreen() {
       </View>
       <CustomerAccountMenu onClose={() => setAccountMenuVisible(false)} visible={accountMenuVisible} />
 
-      <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        bounces
+        contentContainerStyle={[styles.scroll, { paddingBottom: 104 + bottomInset }]}
+        overScrollMode="always"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.titleRow}>
           <View style={styles.titleCopy}>
             <Text style={styles.eyebrow}>VỊ TRÍ ĐANG CHỌN</Text>
@@ -194,7 +202,7 @@ export default function PlanningDetailScreen() {
           {pdfLoading ? (
             <ActivityIndicator color={palette.white} size="small" />
           ) : (
-            <Ionicons name="download-outline" size={20} color={palette.white} />
+            <Ionicons name="document-text-outline" size={22} color={palette.white} />
           )}
           <Text style={styles.downloadText}>{pdfLoading ? "Đang tải" : "TẢI HỒ SƠ QUY HOẠCH (PDF)"}</Text>
         </Pressable>
@@ -203,9 +211,36 @@ export default function PlanningDetailScreen() {
           <Text style={styles.updatedText}>Cập nhật lần cuối: {formatUpdatedDate(planning?.updated_at) || "15/10/2023"}</Text>
         </View>
       </ScrollView>
+      <View style={[styles.bottomNav, { paddingBottom: bottomInset }]}> 
+        {bottomNavItems.map((item) => {
+          const isActive = item.label === "Quy hoạch";
+
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={item.label}
+              onPress={() => router.push(item.href)}
+              style={styles.bottomNavItem}
+            >
+              <Ionicons name={item.icon} size={24} color={isActive ? palette.darkRed : "#9ca3af"} />
+              <Text style={[styles.bottomNavText, isActive ? styles.bottomNavTextActive : styles.bottomNavTextInactive]}>
+                {item.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </SafeAreaView>
   );
 }
+
+const bottomNavItems = [
+  { href: "/(app)/(tabs)" as const, icon: "home-outline" as const, label: "HOME" },
+  { href: "/(app)/(tabs)/search" as const, icon: "newspaper-outline" as const, label: "Tin tức" },
+  { href: "/(app)/(tabs)/saved" as const, icon: "business-outline" as const, label: "Dự án" },
+  { href: "/(app)/(tabs)/inquiries" as const, icon: "map-outline" as const, label: "Quy hoạch" },
+  { href: "/(app)/(tabs)/profile" as const, icon: "call-outline" as const, label: "Liên hệ" }
+];
 
 function formatUpdatedDate(value?: string | null) {
   if (!value) return undefined;
@@ -331,7 +366,6 @@ const styles = StyleSheet.create({
   },
   scroll: {
     backgroundColor: palette.white,
-    paddingBottom: 80,
     paddingHorizontal: 24,
     paddingTop: 24
   },
@@ -407,14 +441,17 @@ const styles = StyleSheet.create({
     lineHeight: 24
   },
   statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     paddingTop: 8
   },
   statCard: {
     backgroundColor: palette.pale,
     borderRadius: 8,
+    minHeight: 84,
     padding: 8,
-    width: "100%"
+    width: "48.7%"
   },
   statLabel: {
     color: palette.brown,
@@ -504,5 +541,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     opacity: 0.7
+  },
+  bottomNav: {
+    alignItems: "flex-start",
+    backgroundColor: palette.white,
+    borderTopColor: "#f3f4f6",
+    borderTopWidth: 1,
+    bottom: 0,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    left: 0,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    position: "absolute",
+    right: 0
+  },
+  bottomNavItem: {
+    alignItems: "center",
+    gap: 4,
+    minHeight: 48,
+    width: 64
+  },
+  bottomNavText: {
+    fontFamily: appFonts.regular,
+    fontSize: 10,
+    lineHeight: 15
+  },
+  bottomNavTextActive: {
+    color: palette.darkRed
+  },
+  bottomNavTextInactive: {
+    color: "#9ca3af"
   }
 });

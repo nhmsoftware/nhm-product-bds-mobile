@@ -13,7 +13,7 @@ import { Platform,
 import { Pressable } from "@/components/SafePressable";
 
 import { Screen } from "@/components/Screen";
-import { EmployeeAvatarButton, EmployeeNotificationButton } from "@/components/EmployeeUI";
+import { EMPLOYEE_HEADER_HEIGHT, EmployeeAvatarButton, EmployeeNotificationButton } from "@/components/EmployeeUI";
 import { employeePalette } from "@/libs/employee-theme";
 import { useI18n } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
@@ -608,11 +608,9 @@ const styles = StyleSheet.create({
   topBar: {
     alignItems: "center",
     backgroundColor: "#ffffff",
-    borderBottomColor: "#f1f5f9",
-    borderBottomWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    height: 57,
+    height: EMPLOYEE_HEADER_HEIGHT,
     paddingHorizontal: 20
   },
   body: {

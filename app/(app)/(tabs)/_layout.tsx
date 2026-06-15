@@ -53,7 +53,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="saved"
           options={{
-            title: "Dự án",
+            title: "Khu đất",
             tabBarIcon: ({ color }) => (
               <Ionicons color={color} name="business-outline" size={24} />
             )

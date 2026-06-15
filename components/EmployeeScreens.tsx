@@ -31,6 +31,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   type GestureResponderEvent,
   type ImageSourcePropType,
   type LayoutChangeEvent,
@@ -99,6 +100,10 @@ const inventoryImages = {
   zoneA: require("@/assets/images/inventory/zone-a-map.png"),
   zoneB: require("@/assets/images/inventory/zone-b-map.png")
 };
+
+const inventoryLotGridColumns = 7;
+const inventoryLotGridHorizontalPadding = 18;
+const inventoryLotCellSize = 40;
 
 const profileImages = {
   headshot: require("@/assets/images/profile/employee-headshot.png"),
@@ -7947,11 +7952,57 @@ type InventoryAreaCardItem = {
   total: string;
 };
 
-const inventoryAreaFilterOptions: Array<{ label: string; value: InventoryAreaFilterValue }> = [
+const inventoryAreaFilterOptions: { label: string; value: InventoryAreaFilterValue }[] = [
   { label: "Tất cả khu đất", value: "all" },
   { label: "Còn hàng", value: "available" },
   { label: "Hết hàng", value: "soldOut" },
   { label: "Khu nổi bật", value: "featured" }
+];
+
+type InventoryInfoTabKey = "location" | "legal" | "floor_plan" | "documents";
+
+type InventoryInfoTab = {
+  actionLabel?: string;
+  actionUrl?: string;
+  content: string;
+  imageUrl?: string;
+  key: InventoryInfoTabKey;
+  label: string;
+  title: string;
+};
+
+const defaultInventoryInfoTabs: InventoryInfoTab[] = [
+  {
+    content: "Vị trí khu đất đang được cập nhật. Nhân sự có thể dùng chỉ đường khi dự án có Google Maps.",
+    key: "location",
+    label: "Vị trí",
+    title: "Vị trí khu đất"
+  },
+  {
+    content: "Thông tin pháp lý đang được chuẩn hóa theo từng dự án và từng phân khu.",
+    key: "legal",
+    label: "Pháp lý",
+    title: "Thông tin pháp lý"
+  },
+  {
+    content: "Mặt bằng bảng hàng hiển thị trạng thái từng lô để đội kinh doanh theo dõi và tư vấn nhanh.",
+    key: "floor_plan",
+    label: "Mặt bằng",
+    title: "Sơ đồ mặt bằng"
+  },
+  {
+    content: "Tài liệu bán hàng, hồ sơ quy hoạch và hình ảnh dự án sẽ được cập nhật trong mục này.",
+    key: "documents",
+    label: "Tài liệu",
+    title: "Tài liệu bán hàng"
+  }
+];
+
+const inventoryInfoTabs: { icon: ComponentProps<typeof Ionicons>["name"]; key: InventoryInfoTabKey; label: string }[] = [
+  { icon: "location-outline", key: "location", label: "Vị trí" },
+  { icon: "shield-checkmark-outline", key: "legal", label: "Pháp lý" },
+  { icon: "map-outline", key: "floor_plan", label: "Mặt bằng" },
+  { icon: "folder-open-outline", key: "documents", label: "Tài liệu" }
 ];
 
 function inventoryAreaLotCount(value: unknown) {
@@ -7989,6 +8040,40 @@ function inventoryAreaMatchesFilter(area: ApiObject, filter: InventoryAreaFilter
   if (filter === "featured") return apiBoolean(area.is_featured ?? area.isFeatured ?? area.is_hot ?? area.hot, false);
   if (filter === "available") return inventoryAreaHasStock(area);
   return !inventoryAreaHasStock(area);
+}
+
+function inventoryInfoTabsFromRecord(value: unknown): InventoryInfoTab[] {
+  const rows = apiList(value);
+  if (rows.length === 0) return defaultInventoryInfoTabs;
+
+  const tabs = rows
+    .map((row): InventoryInfoTab | null => {
+      const key = apiText(row.key, "") as InventoryInfoTabKey;
+      if (!["location", "legal", "floor_plan", "documents"].includes(key)) return null;
+
+      return {
+        actionLabel: apiText(row.action_label ?? row.actionLabel, ""),
+        actionUrl: apiText(row.action_url ?? row.actionUrl, ""),
+        content: apiText(row.content, defaultInventoryInfoTabs.find((tab) => tab.key === key)?.content ?? "Đang cập nhật."),
+        imageUrl: apiText(row.image_url ?? row.imageUrl, ""),
+        key,
+        label: apiText(row.label, defaultInventoryInfoTabs.find((tab) => tab.key === key)?.label ?? "Thông tin"),
+        title: apiText(row.title, defaultInventoryInfoTabs.find((tab) => tab.key === key)?.title ?? "Thông tin")
+      };
+    })
+    .filter((tab): tab is InventoryInfoTab => Boolean(tab));
+
+  return tabs.length > 0 ? tabs : defaultInventoryInfoTabs;
+}
+
+function inventoryIntroArticleFromRecord(value: unknown, areaName: string) {
+  const article = isApiObject(value) ? value : {};
+
+  return {
+    body: apiText(article.body, "Dữ liệu bảng hàng được cập nhật để đội kinh doanh theo dõi trạng thái lô, kiểm tra quy hoạch và chuẩn bị thông tin tư vấn khách hàng."),
+    summary: apiText(article.summary, `${areaName} được trình bày theo bốn nhóm thông tin: vị trí, pháp lý, mặt bằng và tài liệu.`),
+    title: apiText(article.title, `Giới thiệu ${areaName}`)
+  };
 }
 
 function inventoryAreaCardFromRecord(area: ApiObject, index: number): InventoryAreaCardItem {
@@ -8260,6 +8345,7 @@ export function InventoryMapScreen() {
   const mapZoomMin = 1;
   const mapZoomMax = 2.5;
   const mapZoomStep = 0.25;
+  const { width: viewportWidth } = useWindowDimensions();
   const params = useLocalSearchParams<{ areaId?: string; lotId?: string }>();
   const rawAreaId = params.areaId;
   const rawLotId = params.lotId;
@@ -8272,6 +8358,8 @@ export function InventoryMapScreen() {
   const [commentsPagination, setCommentsPagination] = useState<ApiObject>({});
   const [commentsLoadingPage, setCommentsLoadingPage] = useState<number | null>(null);
   const [inventoryRefreshKey, setInventoryRefreshKey] = useState(0);
+  const [selectedInfoTab, setSelectedInfoTab] = useState<InventoryInfoTabKey>("location");
+  const [lotGridWidth, setLotGridWidth] = useState(viewportWidth);
   const [mapZoom, setMapZoom] = useState(mapZoomMin);
   const inventoryFocusedAreaIdRef = useRef<string | undefined>(undefined);
   const { data, failed, loading } = useEmployeeApiData(
@@ -8328,10 +8416,30 @@ export function InventoryMapScreen() {
   const commentsLastPage = apiNumber(commentsPagination.last_page, 1);
   const commentsTotal = Math.max(apiNumber(commentsPagination.total, areaComments.length), areaComments.length);
   const activeLotArea = apiText(activeLot.area_name ?? activeLot.area ?? activeLot.location ?? inventoryMapData.area_name, "Khu 25 thửa phú cát");
-  const activeLotPrice = formatVietnamRealEstatePrice(activeLot.price ?? activeLot.total_price ?? activeLot.sale_price, "4,5 Tỷ VND");
   const activeLotStatus = inventoryLotStatus(activeLot, lotItems.find((lot) => lot.id === activeLotId)?.status);
+  const backendInfoTabs = useMemo(() => inventoryInfoTabsFromRecord(inventoryMapData.info_tabs ?? inventoryMapData.infoTabs), [inventoryMapData.infoTabs, inventoryMapData.info_tabs]);
+  const activeInfoTab = backendInfoTabs.find((tab) => tab.key === selectedInfoTab) ?? backendInfoTabs[0] ?? defaultInventoryInfoTabs[0];
+  const introArticle = useMemo(
+    () => inventoryIntroArticleFromRecord(inventoryMapData.intro_article ?? inventoryMapData.introArticle, activeLotArea),
+    [activeLotArea, inventoryMapData.introArticle, inventoryMapData.intro_article]
+  );
   const directionUrl = directionUrlFromRecord(activeLot) || directionUrlFromRecord(inventoryMapData);
   const mapZoomStyle = useMemo(() => ({ transform: [{ scale: mapZoom }] }), [mapZoom]);
+  const lotGridColumnGap = useMemo(() => {
+    const contentWidth = lotGridWidth - inventoryLotGridHorizontalPadding * 2;
+    const gapSlots = inventoryLotGridColumns - 1;
+
+    if (contentWidth <= 0 || gapSlots <= 0) {
+      return 0;
+    }
+
+    return Math.max(0, (contentWidth - inventoryLotGridColumns * inventoryLotCellSize) / gapSlots);
+  }, [lotGridWidth]);
+
+  const handleLotGridLayout = useCallback((event: LayoutChangeEvent) => {
+    const width = Math.round(event.nativeEvent.layout.width);
+    setLotGridWidth((current) => current === width ? current : width);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -8370,6 +8478,11 @@ export function InventoryMapScreen() {
   useEffect(() => {
     setMapZoom(mapZoomMin);
   }, [areaId, salesBoardEmbed, salesBoardImageUri]);
+
+  useEffect(() => {
+    if (backendInfoTabs.some((tab) => tab.key === selectedInfoTab)) return;
+    setSelectedInfoTab(backendInfoTabs[0]?.key ?? "location");
+  }, [backendInfoTabs, selectedInfoTab]);
 
   function changeMapZoom(direction: 1 | -1) {
     setMapZoom((current) => {
@@ -8445,6 +8558,13 @@ export function InventoryMapScreen() {
 
   return (
     <SafeAreaView style={styles.inventoryMapSafe}>
+      <View style={styles.inventoryMapHeader}>
+        <Pressable accessibilityRole="button" onPress={() => back()} style={styles.inventoryMapBackButton}>
+          <Ionicons name="arrow-back" size={24} color={employeePalette.text} />
+        </Pressable>
+        <EmployeeNotificationButton color={employeePalette.text} returnTo="/employee/inventory-map" />
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.inventoryMapScroll}
         refreshControl={
@@ -8458,13 +8578,6 @@ export function InventoryMapScreen() {
         showsVerticalScrollIndicator={false}
         style={styles.inventoryMapRoot}
       >
-        <View style={styles.inventoryMapHeader}>
-          <Pressable accessibilityRole="button" onPress={() => back()} style={styles.inventoryMapBackButton}>
-            <Ionicons name="arrow-back" size={24} color={employeePalette.text} />
-          </Pressable>
-          <EmployeeNotificationButton color={employeePalette.text} returnTo="/employee/inventory-map" />
-        </View>
-
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.inventoryMapLegendWrap}>
           <View style={styles.inventoryMapLegend}>
             <LegendItem color="#eec05b" label="Còn hàng" />
@@ -8507,8 +8620,8 @@ export function InventoryMapScreen() {
           </View>
         </View>
 
-        <View style={styles.inventoryLotGrid}>
-          {loading && areaId ? <Text style={styles.bodyText}>Đang tải lô đất...</Text> : null}
+        <View onLayout={handleLotGridLayout} style={[styles.inventoryLotGrid, { columnGap: lotGridColumnGap }]}>
+          {loading && areaId && lotItems.length === 0 ? <Text style={styles.bodyText}>Đang tải lô đất...</Text> : null}
           {failed ? <Text style={styles.bodyText}>Không thể tải danh sách lô đất.</Text> : null}
           {!loading && areaId && lotItems.length === 0 ? <Text style={styles.bodyText}>Khu vực này chưa có lô đất.</Text> : null}
           {lotItems.map((lot, index) => (
@@ -8545,20 +8658,52 @@ export function InventoryMapScreen() {
           </View>
           <Text style={styles.inventorySheetTitle}>{activeLotArea}</Text>
 
-          <View style={styles.inventorySheetStats}>
-            <InfoTile
-              label="DIỆN TÍCH"
-              value={formatSquareMeters(activeLot.area_size ?? activeLot.areaSize ?? activeLot.square_meters)}
-            />
-            <InfoTile label="HƯỚNG" value={apiText(activeLot.direction, "Đông Nam")} />
+          <View style={styles.inventoryInfoTabs}>
+            {inventoryInfoTabs.map((tab) => {
+              const active = selectedInfoTab === tab.key;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={tab.key}
+                  onPress={() => setSelectedInfoTab(tab.key)}
+                  style={[styles.inventoryInfoTab, active && styles.inventoryInfoTabActive]}
+                >
+                  <Ionicons name={tab.icon} size={18} color={active ? "#ffffff" : employeePalette.text} />
+                  <Text style={[styles.inventoryInfoTabText, active && styles.inventoryInfoTabTextActive]}>{tab.label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
-          <View style={styles.inventoryPriceRow}>
-            <View>
-              <Text style={styles.inventoryPriceLabel}>GIÁ BÁN</Text>
-              <Text style={styles.inventoryPriceValue}>{activeLotPrice}</Text>
-            </View>
-            <Text style={styles.inventoryPricePerMeter}>{formatUnitPricePerSquareMeter(activeLot.unit_price ?? activeLot.unitPrice)}</Text>
+          <View style={styles.inventoryInfoArticle}>
+            <Text style={styles.inventoryInfoArticleEyebrow}>{activeInfoTab.label.toUpperCase()}</Text>
+            <Text style={styles.inventoryInfoArticleTitle}>{activeInfoTab.title}</Text>
+            <Text style={styles.inventoryInfoArticleBody}>{activeInfoTab.content}</Text>
+            {activeInfoTab.actionLabel && activeInfoTab.actionUrl ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => Linking.openURL(activeInfoTab.actionUrl || "").catch((error) => {
+                  appLogger.warn("employee.inventory-map.info-tab", "Không thể mở liên kết thông tin bảng hàng.", {
+                    error,
+                    tab: activeInfoTab.key,
+                    url: activeInfoTab.actionUrl
+                  });
+                  notifyError("Không thể mở liên kết. Vui lòng thử lại.");
+                })}
+                style={styles.inventoryInfoArticleAction}
+              >
+                <Text style={styles.inventoryInfoArticleActionText}>{activeInfoTab.actionLabel}</Text>
+                <Ionicons name="open-outline" size={16} color={employeePalette.red} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={styles.inventoryInfoArticle}>
+            <Text style={styles.inventoryInfoArticleEyebrow}>GIỚI THIỆU</Text>
+            <Text style={styles.inventoryInfoArticleTitle}>{introArticle.title}</Text>
+            <Text style={styles.inventoryInfoArticleBody}>{introArticle.summary}</Text>
+            <Text style={styles.inventoryInfoArticleBody}>{introArticle.body}</Text>
           </View>
 
           <Pressable
@@ -8577,7 +8722,7 @@ export function InventoryMapScreen() {
             onPress={() =>
               router.push({
                 pathname: "/employee/planning-check",
-                params: { url: "https://quyhoach24h.vn?ref=C5WA63ND" }
+                params: { url: apiText(inventoryMapData.planning_check_url ?? inventoryMapData.planningCheckUrl, "https://quyhoach24h.vn?ref=C5WA63ND") }
               })
             }
             style={styles.inventoryPlanningButton}
@@ -8662,15 +8807,6 @@ function MapControl({
     >
       <Ionicons name={icon} size={highlight ? 22 : 24} color={highlight ? employeePalette.red : "#111111"} />
     </Pressable>
-  );
-}
-
-function InfoTile({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.inventoryInfoTile}>
-      <Text style={styles.inventoryInfoLabel}>{label}</Text>
-      <Text style={styles.inventoryInfoValue}>{value}</Text>
-    </View>
   );
 }
 
@@ -8884,9 +9020,14 @@ export function LotDetailScreen() {
   const lotAreaSize = formatSquareMeters(lot.area_size ?? lot.areaSize ?? lot.square_meters, "36.9 m²");
   const lotFrontage = apiText(lot.frontage, "Chưa có");
   const lotLegal = apiText(lot.legal, "Chưa có");
+  const lotIsLockedByOther = apiBoolean(lot.is_locked_by_other ?? lot.isLockedByOther);
+  const lotIsDepositedByOther = apiBoolean(lot.is_deposit_by_other ?? lot.isDepositByOther);
+  const lotCanLock = apiBoolean(lot.can_lock ?? lot.canLock, false);
+  const lotCanDeposit = apiBoolean(lot.can_deposit ?? lot.canDeposit, !lotIsLockedByOther && !lotIsDepositedByOther);
   const lotIsLocked = apiBoolean(lot.is_locked) || lotStatus === "held";
   const lotDetailStatusText = lotIsLocked ? "ĐÃ LOCK" : inventoryLotStatusLabel(lotStatus, lot.is_locked);
   const lotLockButtonText = lockSubmitting ? "ĐANG GỬI" : lotIsLocked ? "ĐÃ LOCK" : "LOCK";
+  const lotDepositButtonText = depositSubmitting ? "ĐANG GỬI" : lotIsDepositedByOther ? "ĐÃ CỌC" : "CỌC";
   const lotImages = lotImageUris(lot);
   const lotImageSlides: ImageSourcePropType[] = lotImages.length > 0
     ? lotImages.map((uri) => ({ uri }))
@@ -9074,7 +9215,7 @@ export function LotDetailScreen() {
       <View style={styles.lotDetailBottomActions}>
         <Pressable
           accessibilityRole="button"
-          disabled={lockSubmitting || lotIsLocked}
+          disabled={lockSubmitting || lotIsLocked || !lotCanLock}
           onPress={requestLock}
           style={[
             styles.lotDetailActionButton,
@@ -9088,12 +9229,17 @@ export function LotDetailScreen() {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          disabled={depositSubmitting}
+          disabled={depositSubmitting || !lotCanDeposit}
           onPress={requestDeposit}
-          style={[styles.lotDetailActionButton, styles.lotDetailDepositButton, depositSubmitting && styles.pressed]}
+          style={[
+            styles.lotDetailActionButton,
+            styles.lotDetailDepositButton,
+            !lotCanDeposit && styles.lotDetailDepositButtonDisabled,
+            depositSubmitting && styles.pressed
+          ]}
         >
           <Ionicons name="send" size={20} color="#ffffff" />
-          <Text style={styles.lotDetailDepositText}>{depositSubmitting ? "ĐANG GỬI" : "CỌC"}</Text>
+          <Text style={styles.lotDetailDepositText}>{lotDepositButtonText}</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -15071,18 +15217,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 13,
     paddingBottom: 55,
-    paddingHorizontal: 25,
-    paddingTop: 25
+    paddingHorizontal: inventoryLotGridHorizontalPadding,
+    paddingTop: 25,
+    rowGap: 13
   },
   inventoryLotCell: {
     alignItems: "center",
     backgroundColor: "#eec05b",
     borderRadius: 10,
-    height: 40,
+    height: inventoryLotCellSize,
     justifyContent: "center",
-    width: 40
+    width: inventoryLotCellSize
   },
   inventoryLotSelected: {
     borderWidth: 0
@@ -15147,62 +15293,89 @@ const styles = StyleSheet.create({
     lineHeight: 38.4,
     marginTop: 10
   },
-  inventorySheetStats: {
+  inventoryInfoTabs: {
     flexDirection: "row",
-    gap: 16,
-    paddingBottom: 8,
-    paddingTop: 16
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 22
   },
-  inventoryInfoTile: {
-    backgroundColor: employeePalette.bg,
+  inventoryInfoTab: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
     borderColor: employeePalette.border,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    flex: 1,
-    gap: 3,
-    padding: 13
+    flexDirection: "row",
+    gap: 6,
+    height: 42,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    width: "48%"
   },
-  inventoryInfoLabel: {
-    color: "#8f706b",
-    fontFamily: appFonts.bold,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    lineHeight: 14
+  inventoryInfoTabActive: {
+    backgroundColor: employeePalette.red,
+    borderColor: employeePalette.red
   },
-  inventoryInfoValue: {
+  inventoryInfoTabText: {
     color: employeePalette.text,
     fontFamily: appFonts.semiBold,
-    fontSize: 18,
-    lineHeight: 30.6
+    fontSize: 13,
+    lineHeight: 18
   },
-  inventoryPriceRow: {
-    alignItems: "flex-end",
-    borderTopColor: employeePalette.border,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 17
+  inventoryInfoTabTextActive: {
+    color: "#ffffff"
   },
-  inventoryPriceLabel: {
-    color: "#8f706b",
-    fontFamily: appFonts.bold,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    lineHeight: 14
+  inventoryInfoArticle: {
+    backgroundColor: "#f8f9fa",
+    borderColor: employeePalette.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+    marginTop: 18,
+    padding: 16
   },
-  inventoryPriceValue: {
+  inventoryInfoArticleEyebrow: {
     color: employeePalette.red,
-    fontFamily: appFonts.semiBold,
-    fontSize: 24,
-    letterSpacing: -0.48,
-    lineHeight: 28.8,
-    marginTop: 4
+    fontFamily: appFonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    lineHeight: 16
   },
-  inventoryPricePerMeter: {
+  inventoryInfoArticleTitle: {
+    color: employeePalette.text,
+    fontFamily: appFonts.bold,
+    fontSize: 18,
+    lineHeight: 25
+  },
+  inventoryInfoArticleBody: {
     color: employeePalette.muted,
     fontFamily: appFonts.regular,
-    fontSize: 16,
-    lineHeight: 25.6
+    fontSize: 14,
+    lineHeight: 22
+  },
+  inventoryInfoArticleDivider: {
+    backgroundColor: employeePalette.border,
+    height: 1,
+    marginVertical: 6,
+    width: "100%"
+  },
+  inventoryInfoArticleAction: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderColor: "#f0d3cf",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  inventoryInfoArticleActionText: {
+    color: employeePalette.red,
+    fontFamily: appFonts.semiBold,
+    fontSize: 13,
+    lineHeight: 18
   },
   inventoryRouteButton: {
     alignItems: "center",
@@ -15551,7 +15724,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.bold,
     fontSize: 12,
     letterSpacing: 1.2,
-    lineHeight: 14
+    lineHeight: 18
   },
   lotDetailPriceCard: {
     backgroundColor: "#ffffff",
@@ -15724,15 +15897,19 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3
   },
+  lotDetailDepositButtonDisabled: {
+    backgroundColor: "#d4a3a0"
+  },
   lotDetailLockText: {
     color: "#1e8e3e",
     fontFamily: appFonts.semiBold,
     fontSize: 16,
     letterSpacing: 0.32,
-    lineHeight: 18
+    lineHeight: 24
   },
   lotDetailLockTextLocked: {
-    letterSpacing: 0
+    letterSpacing: 0,
+    lineHeight: 24
   },
   lotDetailDepositText: {
     color: "#ffffff",
@@ -15754,7 +15931,7 @@ const styles = StyleSheet.create({
     height: EMPLOYEE_HEADER_HEIGHT,
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    shadowColor: "#000",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
