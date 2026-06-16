@@ -77,7 +77,7 @@ export default function ContactScreen() {
         if (active) setProjects(response.data.data ?? response.data.list ?? []);
       })
       .catch((error) => {
-        appLogger.warn("customer.consultationProjects", "Không thể tải danh sách dự án tư vấn.", { error });
+        appLogger.warn("customer.consultationProjects", "Không thể tải danh sách khu đất tư vấn.", { error });
       })
       .finally(() => {
         if (active) setProjectsLoading(false);
@@ -399,7 +399,7 @@ export default function ContactScreen() {
               <Text style={styles.label}>DỰ ÁN QUAN TÂM</Text>
               <Pressable accessibilityRole="button" onPress={() => setProjectPickerVisible(true)} style={styles.selectBox}>
                 <Text style={[styles.selectText, !selectedProject?.name && styles.placeholderText]}>
-                  {selectedProject?.name || "Chọn dự án quan tâm"}
+                  {selectedProject?.name || "Chọn khu đất quan tâm"}
                 </Text>
                 <Ionicons name="chevron-down" size={20} color={palette.muted} />
               </Pressable>
@@ -473,15 +473,15 @@ function ConsultationProjectPicker({
       <Pressable onPress={onClose} style={styles.projectModalBackdrop}>
         <Pressable onPress={(event) => event.stopPropagation()} style={styles.projectModal}>
           <View style={styles.projectModalHeader}>
-            <Text style={styles.projectModalTitle}>Chọn dự án quan tâm</Text>
+            <Text style={styles.projectModalTitle}>Chọn khu đất quan tâm</Text>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.projectModalClose}>
               <Ionicons color={palette.text} name="close" size={20} />
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.projectModalList} showsVerticalScrollIndicator={false}>
-            {loading ? <Text style={styles.projectModalState}>Đang tải danh sách dự án...</Text> : null}
+            {loading ? <Text style={styles.projectModalState}>Đang tải danh sách khu đất...</Text> : null}
             {!loading && options.length === 0 ? (
-              <Text style={styles.projectModalState}>Hiện chưa có dự án để chọn.</Text>
+              <Text style={styles.projectModalState}>Hiện chưa có khu đất để chọn.</Text>
             ) : null}
             {!loading
               ? options.map((project) => {
@@ -496,7 +496,7 @@ function ConsultationProjectPicker({
                     >
                       <View style={styles.projectModalOptionBody}>
                         <Text style={[styles.projectModalOptionText, active && styles.projectModalOptionTextActive]}>
-                          {project.name || "Dự án chưa đặt tên"}
+                          {project.name || "Khu đất chưa đặt tên"}
                         </Text>
                         {project.location ? <Text style={styles.projectModalOptionMeta}>{project.location}</Text> : null}
                       </View>

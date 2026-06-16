@@ -66,9 +66,31 @@ const videos = [
   }
 ] as const;
 
+
+function openLegalVideo(video: LegalVideo | typeof videos[number]) {
+  if ("id" in video) {
+    router.push({
+      pathname: "/(app)/legal-video-detail",
+      params: { id: video.slug || video.id }
+    });
+    return;
+  }
+
+  router.push({
+    pathname: "/(app)/legal-video-detail",
+    params: {
+      category: video.category,
+      description: video.description,
+      duration: video.duration,
+      title: video.title
+    }
+  });
+}
+
 export default function LegalKnowledgeScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [apiVideos, setApiVideos] = useState<LegalVideo[]>([]);
+  const [loadingVideos, setLoadingVideos] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +102,10 @@ export default function LegalKnowledgeScreen() {
       })
       .catch((error) => {
         appLogger.warn("customer.legalVideos", "Không thể tải video pháp lý.", { error });
+        if (active) setApiVideos([]);
+      })
+      .finally(() => {
+        if (active) setLoadingVideos(false);
       });
 
     return () => {
@@ -116,33 +142,38 @@ export default function LegalKnowledgeScreen() {
         </View>
 
         <View style={styles.videoList}>
-          {(apiVideos.length > 0 ? apiVideos : videos).map((video) => {
-            const isApiVideo = "id" in video;
-            return (
-            <Pressable accessibilityRole="button" key={isApiVideo ? video.id : video.title} style={styles.videoCard}>
+          {loadingVideos ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyTitle}>Đang tải video tư vấn...</Text>
+            </View>
+          ) : apiVideos.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Ionicons name="videocam-outline" size={28} color={palette.goldDark} />
+              <Text style={styles.emptyTitle}>Chưa có video tư vấn</Text>
+              <Text style={styles.emptyText}>Nội dung pháp lý sẽ được cập nhật khi có dữ liệu từ hệ thống.</Text>
+            </View>
+          ) : apiVideos.map((video) => (
+            <Pressable accessibilityRole="button" key={video.id} onPress={() => openLegalVideo(video)} style={({ pressed }) => [styles.videoCard, pressed && styles.pressed]}>
               <View style={styles.thumbnailWrap}>
-                <Image source={isApiVideo ? mediaSource(video.thumbnail, legalImages.thumbnail) : legalImages.thumbnail} style={styles.thumbnail} />
+                <Image source={mediaSource(video.thumbnail_url ?? video.thumbnail, legalImages.thumbnail)} style={styles.thumbnail} />
                 <View style={styles.thumbnailOverlay} />
                 <View style={styles.playButton}>
                   <Ionicons name="play" size={28} color={palette.darkRed} />
                 </View>
                 <View style={styles.durationBadge}>
-                  <Text style={styles.durationText}>{formatDuration(video.duration)}</Text>
+                  <Text style={styles.durationText}>{formatDuration(video.duration ?? video.duration_seconds)}</Text>
                 </View>
               </View>
               <View style={styles.videoBody}>
                 <View style={styles.metaRow}>
                   <Text style={styles.category}>{formatCategory(video.category)}</Text>
-                  <Text style={styles.time}>{isApiVideo ? formatDate(video.published_at ?? video.created_at) : video.time}</Text>
+                  <Text style={styles.time}>{formatDate(video.published_at ?? video.created_at)}</Text>
                 </View>
                 <Text style={styles.videoTitle}>{video.title}</Text>
-                <Text style={styles.videoDescription}>
-                  {isApiVideo ? video.short_description || video.description || "Đang cập nhật nội dung video." : video.description}
-                </Text>
+                <Text style={styles.videoDescription}>{video.short_description || video.description || "Đang cập nhật nội dung video."}</Text>
               </View>
             </Pressable>
-            );
-          })}
+          ))}
         </View>
 
         <View style={styles.helpBox}>
@@ -274,7 +305,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24
   },
-  videoList: {
+  emptyBox: { alignItems: "center", backgroundColor: palette.white, borderColor: "rgba(225,227,228,0.8)", borderRadius: 12, borderWidth: 1, gap: 8, padding: 24 },
+  emptyTitle: { color: palette.darkRed, fontFamily: appFonts.bold, fontSize: 16, lineHeight: 22, textAlign: "center" },
+  emptyText: { color: palette.brown, fontFamily: appFonts.regular, fontSize: 14, lineHeight: 20, textAlign: "center" },  videoList: {
     gap: 16
   },
   videoCard: {
@@ -398,5 +431,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     opacity: 0.8
-  }
+  },
+  pressed: { opacity: 0.78 }
 });

@@ -237,7 +237,7 @@ export default function PlanningDetailScreen() {
 const bottomNavItems = [
   { href: "/(app)/(tabs)" as const, icon: "home-outline" as const, label: "HOME" },
   { href: "/(app)/(tabs)/search" as const, icon: "newspaper-outline" as const, label: "Tin tức" },
-  { href: "/(app)/(tabs)/saved" as const, icon: "business-outline" as const, label: "Dự án" },
+  { href: "/(app)/(tabs)/saved" as const, icon: "business-outline" as const, label: "Khu đất" },
   { href: "/(app)/(tabs)/inquiries" as const, icon: "map-outline" as const, label: "Quy hoạch" },
   { href: "/(app)/(tabs)/profile" as const, icon: "call-outline" as const, label: "Liên hệ" }
 ];

@@ -144,7 +144,7 @@ export default function CustomerHomeScreen() {
         setSearchResults(response.data.data ?? []);
       })
       .catch((error) => {
-        appLogger.warn("customer.home.search", "Không thể tìm kiếm dự án.", { error });
+        appLogger.warn("customer.home.search", "Không thể tìm kiếm khu đất.", { error });
       });
   };
   const heroSlides = featuredNewsSlides.length > 0 ? featuredNewsSlides : fallbackHeroSlides;
@@ -236,7 +236,7 @@ export default function CustomerHomeScreen() {
                   setSearchQuery(text);
                   handleSearch(text);
                 }}
-                placeholder="Tìm kiếm dự án..."
+                placeholder="Tìm kiếm khu đất..."
                 placeholderTextColor={palette.lightMuted}
                 style={styles.searchInput}
                 returnKeyType="search"
@@ -354,7 +354,7 @@ export default function CustomerHomeScreen() {
             ) : (
               <View style={styles.noResults}>
                 <Ionicons name="search-outline" size={48} color={palette.lightMuted} />
-                <Text style={styles.noResultsText}>Không tìm thấy dự án nào phù hợp</Text>
+                <Text style={styles.noResultsText}>Không tìm thấy khu đất nào phù hợp</Text>
               </View>
             )}
           </View>
@@ -376,7 +376,7 @@ export default function CustomerHomeScreen() {
               ))}
             </View>
 
-            <HomeSectionHeader title="DỰ ÁN NỔI BẬT" link="Xem tất cả" onPress={() => router.push("/(app)/(tabs)/saved")} />
+            <HomeSectionHeader title="KHU ĐẤT NỔI BẬT" link="Xem tất cả" onPress={() => router.push("/(app)/(tabs)/saved")} />
             <ScrollView
               alwaysBounceVertical={false}
               alwaysBounceHorizontal
@@ -409,7 +409,7 @@ export default function CustomerHomeScreen() {
                       }
                       style={styles.projectImage}
                     />
-                    <Text numberOfLines={2} style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.name}</Text>
+                    <Text numberOfLines={2} style={styles.projectTitle}>{isApiProject ? project.name || "Khu đất đang cập nhật" : project.name}</Text>
                     <Text numberOfLines={2} style={styles.projectLocation}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
                     <Text style={styles.projectPrice}>{isApiProject ? formatProjectPrice(project.price) : project.price}</Text>
                   </Pressable>

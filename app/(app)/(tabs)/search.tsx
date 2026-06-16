@@ -71,7 +71,7 @@ export default function CustomerNewsScreen() {
 
   useEffect(() => {
     let active = true;
-    appLogger.info("customer.search", "Bắt đầu tải dữ liệu tin tức/dự án cho màn hình Tin tức...");
+    appLogger.info("customer.search", "Bắt đầu tải dữ liệu tin tức/khu đất cho màn hình Tin tức...");
 
     Promise.all([
       customerPublicApi.news({ page: 1, per_page: 3 }),
@@ -79,7 +79,7 @@ export default function CustomerNewsScreen() {
     ])
       .then(([newsResponse, projectResponse]) => {
         if (!active) return;
-        appLogger.info("customer.search", "Tải thành công dữ liệu tin tức/dự án.", {
+        appLogger.info("customer.search", "Tải thành công dữ liệu tin tức/khu đất.", {
           newsCount: (newsResponse.data.featured?.length ?? 0) + (newsResponse.data.list?.length ?? 0),
           projectsCount: projectResponse.data.data?.length ?? 0
         });
@@ -87,7 +87,7 @@ export default function CustomerNewsScreen() {
         setApiProjects(projectResponse.data.data ?? []);
       })
       .catch((error) => {
-        appLogger.warn("customer.search", "Lỗi tải dữ liệu tin tức/dự án hoặc xử lý response.", { error });
+        appLogger.warn("customer.search", "Lỗi tải dữ liệu tin tức/khu đất hoặc xử lý response.", { error });
       });
 
     return () => {
@@ -206,7 +206,7 @@ export default function CustomerNewsScreen() {
             <View style={styles.projectsHeader}>
               <View style={styles.projectsLabel}>
                 <Ionicons name="business-outline" size={15} color={palette.goldDark} />
-                <Text style={styles.projectsLabelText}>DỰ ÁN TIÊU BIỂU</Text>
+                <Text style={styles.projectsLabelText}>KHU ĐẤT TIÊU BIỂU</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -252,7 +252,7 @@ export default function CustomerNewsScreen() {
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.title}</Text>
+                  <Text style={styles.projectTitle}>{isApiProject ? project.name || "Khu đất đang cập nhật" : project.title}</Text>
                   <Text style={styles.projectLocation}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
                 </Pressable>
                 );
@@ -277,7 +277,7 @@ function newsCategoryLabel(value?: string | null) {
     case "market":
       return "Tin tức thị trường";
     case "project":
-      return "Dự án";
+      return "Khu đất";
     case "investment":
       return "Đầu tư";
     case "legal":

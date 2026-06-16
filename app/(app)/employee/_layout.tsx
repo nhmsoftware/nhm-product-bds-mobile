@@ -22,6 +22,7 @@ export default function EmployeeLayout() {
         <Stack.Screen name="showing-client" />
         <Stack.Screen name="point-history" />
         <Stack.Screen name="personal-info" />
+        <Stack.Screen name="application" />
         <Stack.Screen name="referral-qr" />
         <Stack.Screen name="leave-requests" />
         <Stack.Screen name="transfer-requests" />

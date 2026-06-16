@@ -79,7 +79,7 @@ export default function ProjectDetailScreen() {
         if (active) setProject(response.data);
       })
       .catch((error) => {
-        appLogger.warn("customer.projectDetail", "Không thể tải chi tiết dự án.", { error, id: params.id });
+        appLogger.warn("customer.projectDetail", "Không thể tải chi tiết khu đất.", { error, id: params.id });
       });
 
     return () => {
@@ -112,7 +112,7 @@ export default function ProjectDetailScreen() {
     const projectId = params.id;
 
     if (!projectId) {
-      notifyError("Không tìm thấy dự án để tải brochure.");
+      notifyError("Không tìm thấy khu đất để tải brochure.");
       return;
     }
 
@@ -134,7 +134,7 @@ export default function ProjectDetailScreen() {
       try {
         const fileName = await saveProjectBrochureToDevice(
           brochureUrl,
-          response.data?.project_name || project?.name || "Brochure dự án"
+          response.data?.project_name || project?.name || "Brochure khu đất"
         );
 
         notifySuccess({
@@ -160,7 +160,7 @@ export default function ProjectDetailScreen() {
     const projectId = params.id;
 
     if (!projectId) {
-      notifyError("Không tìm thấy dự án để tư vấn.");
+      notifyError("Không tìm thấy khu đất để tư vấn.");
       return;
     }
 
@@ -284,7 +284,7 @@ export default function ProjectDetailScreen() {
 
         <View style={styles.content}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Về dự án</Text>
+            <Text style={styles.sectionTitle}>Về khu đất</Text>
             <View style={styles.descriptionCard}>
               {projectDescriptionParagraphs(project).map((paragraph) => (
                 <Text key={paragraph} style={styles.bodyText}>
@@ -298,13 +298,6 @@ export default function ProjectDetailScreen() {
             <Text style={styles.sectionTitle}>Quy hoạch</Text>
             {projectPlanningUrl(project) ? (
               <View style={styles.planningWebCard}>
-                <View style={styles.planningWebHeader}>
-                  <View>
-                    <Text style={styles.planningWebTitle}>Bản đồ quy hoạch trực tuyến</Text>
-                    <Text numberOfLines={1} style={styles.planningWebUrl}>{projectPlanningUrl(project)}</Text>
-                  </View>
-                  <Ionicons name="map-outline" size={22} color={palette.darkRed} />
-                </View>
                 <WebView
                   source={{ uri: projectPlanningUrl(project) }}
                   style={styles.planningWebView}
@@ -313,7 +306,7 @@ export default function ProjectDetailScreen() {
                   domStorageEnabled
                   startInLoadingState
                   onError={(event) => {
-                    appLogger.warn("customer.project.planningWebView", "Không thể mở bản đồ quy hoạch dự án.", {
+                    appLogger.warn("customer.project.planningWebView", "Không thể mở bản đồ quy hoạch khu đất.", {
                       error: event.nativeEvent,
                       id: project?.id,
                       url: projectPlanningUrl(project)
@@ -344,14 +337,14 @@ export default function ProjectDetailScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Vị trí dự án</Text>
+            <Text style={styles.sectionTitle}>Vị trí khu đất</Text>
             <Pressable
               accessibilityRole="button"
               disabled={!project?.google_maps_url}
               onPress={() => {
                 if (project?.google_maps_url) Linking.openURL(project.google_maps_url).catch((error) => {
-                  appLogger.warn("customer.projectLocation", "Không thể mở bản đồ dự án.", { error, id: project?.id });
-                  notifyError("Không thể mở bản đồ dự án. Vui lòng thử lại.");
+                  appLogger.warn("customer.projectLocation", "Không thể mở bản đồ khu đất.", { error, id: project?.id });
+                  notifyError("Không thể mở bản đồ khu đất. Vui lòng thử lại.");
                 });
               }}
               style={styles.locationCard}
@@ -416,7 +409,7 @@ function projectPlanningImage(project: PublicProject | null) {
 
 function projectDescriptionParagraphs(project: PublicProject | null) {
   const fallback = [
-    "Thông tin tổng quan dự án đang được cập nhật.",
+    "Thông tin tổng quan khu đất đang được cập nhật.",
     "Đội ngũ tư vấn sẽ bổ sung thêm dữ liệu chi tiết khi chủ đầu tư công bố tài liệu mới."
   ];
 
@@ -489,7 +482,7 @@ function safeProjectBrochureFileName(title: string, url?: string | null) {
     .slice(0, 120);
   const extension = projectDocumentExtension(cleaned || url) || "pdf";
 
-  if (!cleaned) return `Brochure dự án-${Date.now()}.${extension}`;
+  if (!cleaned) return `Brochure khu đất-${Date.now()}.${extension}`;
   if (cleaned.includes(".")) return cleaned;
   return `${cleaned}.${extension}`;
 }
@@ -767,7 +760,7 @@ const styles = StyleSheet.create({
   },
   planningWebCard: {
     borderColor: palette.line,
-    borderRadius: 12,
+    borderRadius: 22,
     borderWidth: 1,
     overflow: "hidden"
   },
@@ -794,7 +787,9 @@ const styles = StyleSheet.create({
   },
   planningWebContainer: {
     backgroundColor: palette.white,
-    height: 420
+    borderRadius: 22,
+    height: 420,
+    overflow: "hidden"
   },
   planningWebView: {
     backgroundColor: palette.white,

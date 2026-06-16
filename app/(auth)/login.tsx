@@ -35,6 +35,10 @@ const apiDemoCredentials: Partial<Record<DemoLoginRole, { username: string; pass
     username: "employee@test.com",
     password: "password123"
   },
+  candidate: {
+    username: "candidate@test.com",
+    password: "password123"
+  },
   employee2: {
     username: "employee2@test.com",
     password: "password123"

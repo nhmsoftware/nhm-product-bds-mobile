@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const { t } = useI18n();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const signingOutRef = useRef<Promise<void> | null>(null);
 
   const clearLocalSession = useCallback(
     async ({ message }: { message?: string } = {}) => {
@@ -134,15 +136,29 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [signIn]);
 
   const signOut = useCallback(async () => {
-    if (!isDemoSession(session)) {
-      try {
-        await authApi.logout();
-      } catch {
-        // Local logout still clears stale tokens if the backend already revoked them.
-      }
+    if (signingOutRef.current) {
+      return signingOutRef.current;
     }
 
-    await clearLocalSession();
+    const nextSignOut = (async () => {
+      if (!isDemoSession(session)) {
+        try {
+          await authApi.logout();
+        } catch {
+          // Local logout still clears stale tokens if the backend already revoked them.
+        }
+      }
+
+      await clearLocalSession();
+    })();
+
+    signingOutRef.current = nextSignOut;
+
+    try {
+      await nextSignOut;
+    } finally {
+      signingOutRef.current = null;
+    }
   }, [clearLocalSession, session]);
 
   const refreshMe = useCallback(async () => {

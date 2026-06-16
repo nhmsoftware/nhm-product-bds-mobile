@@ -164,7 +164,7 @@ function mapProject(project: BackendProject): PropertyListing {
   return {
     id: String(project.id),
     code: String(project.id).slice(0, 8).toUpperCase(),
-    title: project.name || "Dự án đang cập nhật",
+    title: project.name || "Khu đất đang cập nhật",
     type: project.type === "land" ? "land" : "apartment",
     listingType: "sale",
     status: project.status === "sold_out" ? "sold" : project.status === "reserved" ? "reserved" : "available",
@@ -177,12 +177,12 @@ function mapProject(project: BackendProject): PropertyListing {
     district,
     city,
     legalStatus: typeof project.legal_info === "string" ? project.legal_info : "Đang cập nhật",
-    description: project.description || "Thông tin dự án đang được cập nhật.",
+    description: project.description || "Thông tin khu đất đang được cập nhật.",
     highlights: [],
     amenities: Array.isArray(project.amenities) ? project.amenities : [],
     agent: {
       id: "project-consultant",
-      name: "Tư vấn dự án",
+      name: "Tư vấn khu đất",
       phone: "Đang cập nhật",
       agency: "Khởi Nguyên Land"
     },

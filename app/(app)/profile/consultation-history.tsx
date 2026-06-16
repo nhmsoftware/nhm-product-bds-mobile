@@ -175,7 +175,7 @@ function ConsultationHistoryContent() {
 
                     {item.projectName ? (
                       <View style={styles.infoItem}>
-                        <Text style={styles.infoLabel}>Dự án quan tâm</Text>
+                        <Text style={styles.infoLabel}>Khu đất quan tâm</Text>
                         <Text style={styles.infoValue}>{item.projectName}</Text>
                       </View>
                     ) : null}

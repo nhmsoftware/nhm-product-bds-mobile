@@ -66,7 +66,7 @@ import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { ApiRequestError } from "@/libs/api";
-import { isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole } from "@/services/auth/roles";
+import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
@@ -1068,11 +1068,11 @@ const vi = {
     customerInfo: "Thông tin khách hàng",
     customer: "Nhập tên khách hàng",
     phone: "09xx xxx xxx",
-    project: "Chọn dự án...",
+    project: "Chọn khu đất...",
     projects: ["Vinhomes Grand Park", "Masteri Centre Point", "The Beverly"],
     photoTitle: "Hình ảnh thực tế",
     photoCta: "Chụp ảnh thực tế",
-    photoHelper: "Yêu cầu ảnh chụp cùng khách tại dự án",
+    photoHelper: "Yêu cầu ảnh chụp cùng khách tại khu đất",
     recent: "Hoạt động gần đây",
     seeAll: "Xem tất cả"
   },
@@ -1083,7 +1083,7 @@ const vi = {
     unit: "A10, Tòa S2.01",
     customer: "Nguyễn Văn A",
     tripInfo: "Thông tin lượt dẫn",
-    proof: "Chụp ảnh tại dự án",
+    proof: "Chụp ảnh tại khu đất",
     helper: "Hình ảnh cần hiển thị rõ vị trí hoặc khách hàng",
     action: "Bắt đầu Dẫn khách",
     history: "Lịch sử dẫn khách"
@@ -1099,7 +1099,7 @@ const vi = {
   personalInfo: {
     title: "Thông tin cá nhân",
     subtitle: "Thông tin hồ sơ nhân viên và cấu hình liên hệ.",
-    department: "Kinh doanh dự án",
+    department: "Kinh doanh khu đất",
     code: "KNL-2024-001",
     role: "Chuyên viên tư vấn cấp cao",
     save: "Cập nhật hồ sơ"
@@ -2020,7 +2020,7 @@ export function NewsFeedScreen() {
       >
         <View style={styles.newsFeedPageHeader}>
           <Text style={styles.newsFeedTitle}>Bảng Tin Nội Bộ</Text>
-          <Text style={styles.newsFeedSubtitle}>Cập nhật tin tức và dự án mới nhất.</Text>
+          <Text style={styles.newsFeedSubtitle}>Cập nhật tin tức và khu đất mới nhất.</Text>
         </View>
 
         {canCreateNews ? (
@@ -2042,7 +2042,7 @@ export function NewsFeedScreen() {
                 onPress={() => setCreateExpanded(true)}
                 style={styles.newsCreatePromptButton}
               >
-                <Text style={styles.newsCreatePlaceholder}>Chia sẻ thông tin dự án mới{"\n"}hoặc thành tích...</Text>
+                <Text style={styles.newsCreatePlaceholder}>Chia sẻ thông tin khu đất mới{"\n"}hoặc thành tích...</Text>
               </Pressable>
             </View>
             {createExpanded ? (
@@ -2509,7 +2509,8 @@ export function ProfileOverviewScreen() {
   const isManager = isManagerAccessRole(user?.role);
   const canApproveDepartmentTransfers = isDepartmentTransferApproverRole(user?.role);
   const fullName = apiText(profile.full_name ?? profile.name ?? user?.fullName, "Chưa cập nhật tên");
-  const jobTitle = apiText(profile.job_position ?? profile.position ?? user?.jobPosition, "Chưa cập nhật chức danh");
+  const jobTitle = apiText(profile.job_position ?? profile.position ?? user?.jobPosition, "Chưa có chức danh");
+  const approvedEmployeeProfile = hasApprovedEmployeeProfile(user);
   const profileRankValue = rewardOverview.rank ?? rewardOverview.rank_label ?? rewardOverview.tier ?? profile.rank ?? profile.rank_label ?? profile.tier;
   const profileRankName = rewardRankName(profileRankValue);
   const profileRankText = normalizeRewardRank(profileRankValue);
@@ -2615,29 +2616,37 @@ export function ProfileOverviewScreen() {
 
       {isManager ? <ProfileManagerActions canApproveDepartmentTransfers={canApproveDepartmentTransfers} /> : <ProfileEmployeeActions />}
 
-      <View style={styles.profileQrSection}>
-        <Text style={[styles.profileSectionTitle, styles.profileQrTitle]}>{qrCopy.title}</Text>
-        <View style={styles.profileQrSegment}>
-          <ReferralQrSegmentButton
-            active={activeProfileQr === "recruitment"}
-            label={qrCopy.employee}
-            size="narrow"
-            onPress={() => setActiveProfileQr("recruitment")}
-          />
-          <ReferralQrSegmentButton
-            active={activeProfileQr === "customer"}
-            label={qrCopy.customer}
-            size="wide"
-            onPress={() => setActiveProfileQr("customer")}
+      {approvedEmployeeProfile ? (
+        <View style={styles.profileQrSection}>
+          <Text style={[styles.profileSectionTitle, styles.profileQrTitle]}>{qrCopy.title}</Text>
+          <View style={styles.profileQrSegment}>
+            <ReferralQrSegmentButton
+              active={activeProfileQr === "recruitment"}
+              label={qrCopy.employee}
+              size="narrow"
+              onPress={() => setActiveProfileQr("recruitment")}
+            />
+            <ReferralQrSegmentButton
+              active={activeProfileQr === "customer"}
+              label={qrCopy.customer}
+              size="wide"
+              onPress={() => setActiveProfileQr("customer")}
+            />
+          </View>
+          <ReferralQrPanel
+            copy={qrCopy}
+            mode={activeProfileQr}
+            onShare={shareProfileQr}
+            qrValue={activeProfileQrValue}
           />
         </View>
-        <ReferralQrPanel
-          copy={qrCopy}
-          mode={activeProfileQr}
-          onShare={shareProfileQr}
-          qrValue={activeProfileQrValue}
-        />
-      </View>
+      ) : (
+        <View style={styles.profileQrSection}>
+          <Text style={[styles.profileSectionTitle, styles.profileQrTitle]}>Hồ sơ ứng tuyển</Text>
+          <Text style={styles.bodyText}>{employeeApplicationStatusText(user)}</Text>
+          <EmployeeButton title="Mở form ứng tuyển" tone="red" icon="document-text-outline" onPress={() => router.push("/(app)/employee/application" as Href)} />
+        </View>
+      )}
       <EmployeeButton title="Đăng xuất" tone="light" icon="log-out-outline" onPress={signOut} style={styles.logoutButton} />
     </EmployeePage>
   );
@@ -2840,7 +2849,7 @@ export function MeetClientScreen() {
         const project = isApiObject(item.project) ? item.project : {};
 
         return {
-          id: apiText(item.project_id ?? project.id ?? item.project_uuid, ""),
+          id: apiText(item.id ?? item.area_id ?? item.project_id ?? project.id ?? item.project_uuid, ""),
           name: apiText(item.name ?? item.title ?? item.project_name, c.projects[index % c.projects.length] ?? "Khu đất")
         };
       })
@@ -2902,7 +2911,7 @@ export function MeetClientScreen() {
       return;
     }
     if (!selectedProjectId) {
-      notifyError(new Error("Vui lòng chọn dự án quan tâm."));
+      notifyError(new Error("Vui lòng chọn khu đất quan tâm."));
       return;
     }
     if (!photo) {
@@ -3103,7 +3112,7 @@ function MeetClientProjectPicker({
       <Pressable style={styles.meetProjectModalBackdrop} onPress={onClose}>
         <Pressable style={styles.meetProjectModal} onPress={(event) => event.stopPropagation()}>
           <View style={styles.meetProjectModalHeader}>
-            <Text style={styles.meetProjectModalTitle}>Chọn dự án quan tâm</Text>
+            <Text style={styles.meetProjectModalTitle}>Chọn khu đất quan tâm</Text>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.meetProjectModalClose}>
               <Ionicons color={employeePalette.text} name="close" size={20} />
             </Pressable>
@@ -3275,7 +3284,7 @@ export function ShowingClientScreen() {
         const project = isApiObject(item.project) ? item.project : {};
 
         return {
-          id: apiText(item.project_id ?? project.id ?? item.project_uuid, ""),
+          id: apiText(item.id ?? item.area_id ?? item.project_id ?? project.id ?? item.project_uuid, ""),
           name: apiDisplayText(item.name ?? item.title ?? item.project_name ?? project.name ?? project.title, "Khu đất")
         };
       })
@@ -3325,7 +3334,7 @@ export function ShowingClientScreen() {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        throw new Error("Vui lòng cấp quyền camera để chụp ảnh tại dự án.");
+        throw new Error("Vui lòng cấp quyền camera để chụp ảnh tại khu đất.");
       }
 
       const result = await ImagePicker.launchCameraAsync({
@@ -3389,7 +3398,7 @@ export function ShowingClientScreen() {
     const normalizedCustomerName = customerName.trim();
 
     if (!selectedProjectId) {
-      notifyError(new Error("Vui lòng chọn dự án."));
+      notifyError(new Error("Vui lòng chọn khu đất."));
       return;
     }
     if (!normalizedUnitCode) {
@@ -3401,7 +3410,7 @@ export function ShowingClientScreen() {
       return;
     }
     if (!photo) {
-      notifyError(new Error("Vui lòng chụp ảnh tại dự án."));
+      notifyError(new Error("Vui lòng chụp ảnh tại khu đất."));
       return;
     }
 
@@ -3471,7 +3480,7 @@ export function ShowingClientScreen() {
             dropdown
             label="DỰ ÁN"
             muted={!selectedProject}
-            value={selectedProject?.name ?? "Chọn dự án..."}
+            value={selectedProject?.name ?? "Chọn khu đất..."}
           />
         </Pressable>
         <ShowingField
@@ -3929,6 +3938,22 @@ const emptyPersonalProfileForm: PersonalProfileForm = {
   phone: ""
 };
 
+
+function hasApprovedEmployeeProfile(user?: AuthUser | null) {
+  if (!user || !isBaseEmployeeRole(user.role)) {
+    return true;
+  }
+
+  return Boolean(user.isActive && user.jobPosition?.trim());
+}
+
+function employeeApplicationStatusText(user?: AuthUser | null) {
+  if (!user?.isActive) {
+    return "Hồ sơ ứng tuyển đang chờ quản trị viên duyệt.";
+  }
+
+  return "Chưa có chức danh nhân sự. Vui lòng gửi hồ sơ ứng tuyển để quản trị viên xét duyệt.";
+}
 function profileValue(value: unknown, fallback = "") {
   const text = apiText(value, fallback).trim();
   return text === "Chưa cập nhật." ? "" : text;
@@ -4210,7 +4235,7 @@ function mapSiteTourHistory(item: ApiObject, index: number): SiteTourHistoryItem
       item.landArea,
       item.location
     ],
-    "Dự án"
+    "Khu đất"
   );
   const unitCode = firstApiDisplayText(
     [item.unit_code, item.unitCode, item.lot_code, item.lotCode, item.apartment_code, item.apartmentCode],
@@ -4255,7 +4280,7 @@ function mapMeetClientRecent(item: ApiObject, index: number): MeetClientRecentIt
     item.landArea,
     item.location,
     item.address
-  ], "Dự án");
+  ], "Khu đất");
   const time = formatApiDateTime(
     item.check_in_at ?? item.checkInAt ?? item.meeting_at ?? item.created_at ?? item.time
   );
@@ -4283,7 +4308,7 @@ export function PersonalInfoScreen() {
   const [uploading, setUploading] = useState(false);
   const user = session?.user;
   const fullName = form.name || user?.fullName || "Nhân viên";
-  const jobTitle = (form.employee_title || user?.jobPosition || "Nhân viên").toUpperCase();
+  const jobTitle = (form.employee_title || user?.jobPosition || "Chưa có chức danh").toUpperCase();
   const avatarUri = mediaUrl(form.avatar || user?.avatar);
   const personalInitial = avatarInitial(fullName);
 
@@ -5588,7 +5613,7 @@ const fallbackDepartmentOptions: DepartmentOption[] = [
   { label: "Phòng Kinh doanh", value: "Phòng Kinh doanh" },
   { label: "Phòng Marketing", value: "Phòng Marketing" },
   { label: "Phòng Chăm sóc khách hàng", value: "Phòng Chăm sóc khách hàng" },
-  { label: "Phòng Vận hành dự án", value: "Phòng Vận hành dự án" },
+  { label: "Phòng Vận hành khu đất", value: "Phòng Vận hành khu đất" },
   { label: "Phòng Tài chính", value: "Phòng Tài chính" },
   { label: "Phòng Nhân sự", value: "Phòng Nhân sự" },
   { label: "Phòng IT", value: "Phòng IT" }
@@ -6531,6 +6556,7 @@ function LessonVideoPlayer({
   const [hasError, setHasError] = useState(false);
   const [nativeControlsEnabled, setNativeControlsEnabled] = useState(false);
   const [seekWidth, setSeekWidth] = useState(0);
+  const canSeekVideo = progressSyncDisabled;
   const currentSecondsRef = useRef(normalizedInitialWatchSeconds);
   const lastSyncedSecondsRef = useRef(normalizedInitialWatchSeconds > 0 ? normalizedInitialWatchSeconds : -1);
   const lastSyncedAtRef = useRef(0);
@@ -6577,7 +6603,13 @@ function LessonVideoPlayer({
         setDurationSeconds(event.duration);
       }
       const resumeSeconds = latestInitialWatchSecondsRef.current;
-      if (!restoredInitialWatchRef.current && resumeSeconds > 0) {
+      if (!canSeekVideo && event.duration > 0) {
+        setVideoTime(0);
+        setCurrentSeconds(0);
+        currentSecondsRef.current = 0;
+        setIsEnded(false);
+        restoredInitialWatchRef.current = true;
+      } else if (!restoredInitialWatchRef.current && resumeSeconds > 0) {
         const resumeAt = event.duration > 0 ? Math.min(resumeSeconds, event.duration) : resumeSeconds;
         setVideoTime(resumeAt);
         setCurrentSeconds(resumeAt);
@@ -6615,7 +6647,7 @@ function LessonVideoPlayer({
       timeSubscription.remove();
       endSubscription.remove();
     };
-  }, [durationSeconds, player, setVideoTime]);
+  }, [canSeekVideo, durationSeconds, player, setVideoTime]);
 
   useEffect(() => {
     const resumeSeconds = latestInitialWatchSecondsRef.current;
@@ -6754,6 +6786,9 @@ function LessonVideoPlayer({
     if (hasError) {
       return;
     }
+    if (!canSeekVideo) {
+      return;
+    }
     const target = Math.max(0, Math.min(durationSeconds || player.duration || 0, player.currentTime + seconds));
     setVideoTime(target);
     setCurrentSeconds(target);
@@ -6762,7 +6797,7 @@ function LessonVideoPlayer({
   };
 
   const seekFromPress = (event: GestureResponderEvent) => {
-    if (!durationSeconds || !seekWidth) {
+    if (!canSeekVideo || !durationSeconds || !seekWidth) {
       return;
     }
     const ratio = Math.max(0, Math.min(1, event.nativeEvent.locationX / seekWidth));
@@ -6778,6 +6813,9 @@ function LessonVideoPlayer({
   };
 
   const openFullscreen = () => {
+    if (!canSeekVideo) {
+      return;
+    }
     setNativeControlsEnabled(true);
     setTimeout(() => {
       callVideoAction(() => videoViewRef.current?.enterFullscreen(), "mở toàn màn hình");
@@ -6806,10 +6844,14 @@ function LessonVideoPlayer({
         </View>
         <Pressable
           accessibilityRole="button"
-          disabled={!durationSeconds}
+          disabled={!canSeekVideo || !durationSeconds}
           onLayout={onSeekLayout}
           onPress={seekFromPress}
-          style={({ pressed }) => [styles.lessonNativeSeekTrack, pressed && styles.lessonNativeSeekTrackPressed]}
+          style={({ pressed }) => [
+            styles.lessonNativeSeekTrack,
+            !canSeekVideo && styles.lessonNativeSeekTrackLocked,
+            pressed && canSeekVideo && styles.lessonNativeSeekTrackPressed
+          ]}
         >
           <View style={[styles.lessonSeekFill, { width: `${watchedPercent}%` }]} />
         </Pressable>
@@ -6818,8 +6860,9 @@ function LessonVideoPlayer({
           <View style={styles.lessonVideoButtonRow}>
             <Pressable
               accessibilityRole="button"
+              disabled={!canSeekVideo}
               onPress={() => seekBy(-10)}
-              style={({ pressed }) => [styles.lessonVideoControlButton, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.lessonVideoControlButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
             >
               <Ionicons name="play-back" size={18} color="#ffffff" />
               <Text style={styles.lessonVideoSmallText}>10s</Text>
@@ -6837,8 +6880,9 @@ function LessonVideoPlayer({
             </Pressable>
             <Pressable
               accessibilityRole="button"
+              disabled={!canSeekVideo}
               onPress={() => seekBy(10)}
-              style={({ pressed }) => [styles.lessonVideoControlButton, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.lessonVideoControlButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
             >
               <Text style={styles.lessonVideoSmallText}>10s</Text>
               <Ionicons name="play-forward" size={18} color="#ffffff" />
@@ -6847,8 +6891,9 @@ function LessonVideoPlayer({
           <View style={styles.lessonVideoSideSlot}>
             <Pressable
               accessibilityRole="button"
+              disabled={!canSeekVideo}
               onPress={openFullscreen}
-              style={({ pressed }) => [styles.lessonVideoFullscreenButton, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.lessonVideoFullscreenButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
             >
               <Ionicons name="scan-outline" size={20} color="#ffffff" />
             </Pressable>
@@ -7973,13 +8018,13 @@ type InventoryInfoTab = {
 
 const defaultInventoryInfoTabs: InventoryInfoTab[] = [
   {
-    content: "Vị trí khu đất đang được cập nhật. Nhân sự có thể dùng chỉ đường khi dự án có Google Maps.",
+    content: "Vị trí khu đất đang được cập nhật. Nhân sự có thể dùng chỉ đường khi khu đất có Google Maps.",
     key: "location",
     label: "Vị trí",
     title: "Vị trí khu đất"
   },
   {
-    content: "Thông tin pháp lý đang được chuẩn hóa theo từng dự án và từng phân khu.",
+    content: "Thông tin pháp lý đang được chuẩn hóa theo từng khu đất và từng phân khu.",
     key: "legal",
     label: "Pháp lý",
     title: "Thông tin pháp lý"
@@ -7991,7 +8036,7 @@ const defaultInventoryInfoTabs: InventoryInfoTab[] = [
     title: "Sơ đồ mặt bằng"
   },
   {
-    content: "Tài liệu bán hàng, hồ sơ quy hoạch và hình ảnh dự án sẽ được cập nhật trong mục này.",
+    content: "Tài liệu bán hàng, hồ sơ quy hoạch và hình ảnh khu đất sẽ được cập nhật trong mục này.",
     key: "documents",
     label: "Tài liệu",
     title: "Tài liệu bán hàng"
@@ -8367,7 +8412,7 @@ export function InventoryMapScreen() {
     [areaId, inventoryRefreshKey]
   );
   const inventoryMapData = isApiObject(data) ? data : {};
-  const apiLots = useMemo(() => apiList(data), [data]);
+  const apiLots = useMemo(() => apiList(inventoryMapData.lots ?? inventoryMapData.lot_list ?? inventoryMapData.lotList ?? data), [data, inventoryMapData.lotList, inventoryMapData.lot_list, inventoryMapData.lots]);
   const salesBoardImageUri = mediaUrl(
     inventoryMapData.sales_board_image ??
       inventoryMapData.salesBoardImage ??
@@ -12596,6 +12641,9 @@ const styles = StyleSheet.create({
   lessonNativeSeekTrackPressed: {
     opacity: 0.82
   },
+  lessonNativeSeekTrackLocked: {
+    opacity: 0.72
+  },
   lessonVideoControlRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -12624,6 +12672,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minWidth: 68,
     paddingHorizontal: 12
+  },
+  lessonVideoControlButtonDisabled: {
+    opacity: 0.42
   },
   lessonVideoPrimaryButton: {
     alignItems: "center",

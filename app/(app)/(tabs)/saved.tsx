@@ -130,7 +130,7 @@ export default function CustomerProjectsScreen() {
         setApiProjects(response.data.data ?? []);
       })
       .catch((error) => {
-        appLogger.warn("customer.projects", "Không thể tải danh sách dự án.", { error });
+        appLogger.warn("customer.projects", "Không thể tải danh sách khu đất.", { error });
       })
       .finally(() => {
         setProjectsLoaded(true);
@@ -171,7 +171,7 @@ export default function CustomerProjectsScreen() {
               ref={searchInputRef}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Tìm kiếm dự án, vị trí..."
+              placeholder="Tìm kiếm khu đất, vị trí..."
               placeholderTextColor={palette.muted}
               style={styles.searchInput}
             />
@@ -232,7 +232,7 @@ export default function CustomerProjectsScreen() {
               </View>
 
               <View style={styles.projectBody}>
-                <Text style={styles.projectTitle}>{isApiProject ? project.name || "Dự án đang cập nhật" : project.title}</Text>
+                <Text style={styles.projectTitle}>{isApiProject ? project.name || "Khu đất đang cập nhật" : project.title}</Text>
                 <View style={styles.locationRow}>
                   <Ionicons name="location-outline" size={16} color={palette.brown} />
                   <Text numberOfLines={2} style={styles.location}>{isApiProject ? project.location || "Đang cập nhật" : project.location}</Text>
@@ -260,7 +260,7 @@ export default function CustomerProjectsScreen() {
           }) : (
             <View style={styles.emptyState}>
               <Ionicons name="search-outline" size={28} color={palette.muted} />
-              <Text style={styles.emptyTitle}>Không tìm thấy dự án phù hợp</Text>
+              <Text style={styles.emptyTitle}>Không tìm thấy khu đất phù hợp</Text>
               <Text style={styles.emptyText}>Đổi từ khóa hoặc bỏ lọc để xem lại danh sách.</Text>
             </View>
           )}

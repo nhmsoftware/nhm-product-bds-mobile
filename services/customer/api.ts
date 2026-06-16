@@ -139,7 +139,9 @@ export type LegalVideo = {
   short_description?: string | null;
   description?: string | null;
   thumbnail?: string | null;
+  thumbnail_url?: string | null;
   duration?: string | number | null;
+  duration_seconds?: string | number | null;
   video_url?: string | null;
   created_at?: string | null;
   published_at?: string | null;
@@ -149,6 +151,10 @@ export type LegalVideoListData = {
   list?: LegalVideo[];
   pagination?: PaginatedData<LegalVideo>["pagination"];
   categories?: unknown[];
+};
+
+export type LegalVideoDetailData = {
+  detail?: LegalVideo;
 };
 
 export type ConsultationSetting = {
@@ -221,6 +227,10 @@ export const customerPublicApi = {
 
   legalVideos(params?: { category?: string; search?: string; page?: number; per_page?: number }) {
     return getData<LegalVideoListData>("/api/v1/legal-videos", params);
+  },
+
+  legalVideoDetail(idOrSlug: string) {
+    return getData<LegalVideoDetailData>(`/api/v1/legal-videos/${encodeURIComponent(idOrSlug)}`);
   },
 
   consultationSetting() {

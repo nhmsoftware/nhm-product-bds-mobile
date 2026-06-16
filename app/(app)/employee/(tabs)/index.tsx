@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, type Href } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Defs, LinearGradient, Path, Rect, Stop, Svg } from "react-native-svg";
@@ -12,7 +12,7 @@ import { useI18n, type TranslationKey } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
 import { mediaUrl } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
-import { isExecutiveAdminRole } from "@/services/auth/roles";
+import { isBaseEmployeeRole, isExecutiveAdminRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import { employeeApi } from "@/services/employee/api";
 
@@ -291,6 +291,8 @@ export default function EmployeeHomeScreen() {
   const roleKnown = session?.user.role !== undefined && session.user.role !== null;
   const hidePersonalAchievementSections = isExecutiveAdminRole(session?.user.role);
   const visibleKpiCopy = hidePersonalAchievementSections ? kpiCopy.slice(0, 1) : kpiCopy;
+  const approvedEmployeeProfile = !isBaseEmployeeRole(session?.user.role) || Boolean(session?.user.isActive && session?.user.jobPosition?.trim());
+  const applicationTarget = (approvedEmployeeProfile ? "/employee/referral-qr" : "/(app)/employee/application") as Href;
   const actionRows = dashboardModules.length > 0
     ? dashboardModulesToActions(dashboardModules, learningTarget)
     : actionCopy.map((copy, index) => ({
@@ -447,7 +449,7 @@ export default function EmployeeHomeScreen() {
           <EmployeeHomeButton
             title={t("employee.home.apply")}
             color={employeePalette.gold}
-            onPress={() => router.push("/employee/referral-qr")}
+            onPress={() => router.push(applicationTarget)}
           />
         </View>
 

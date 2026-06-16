@@ -3,13 +3,14 @@ import type { AppAccessRole, AuthRole, AuthSession } from "@/services/auth/types
 
 export const DEMO_AUTH_ENABLED = true;
 
-export type DemoLoginRole = AppAccessRole | "employee2" | "manager" | "director" | "ceo" | "super_admin";
+export type DemoLoginRole = AppAccessRole | "candidate" | "employee2" | "manager" | "director" | "ceo" | "super_admin";
 
 export const DEMO_LOGIN_OPTIONS: Array<{
   role: DemoLoginRole;
   labelKey:
     | "auth.login.demoCustomer"
     | "auth.login.demoEmployee"
+    | "auth.login.demoCandidate"
     | "auth.login.demoEmployee2"
     | "auth.login.demoManager"
     | "auth.login.demoDirector"
@@ -18,6 +19,7 @@ export const DEMO_LOGIN_OPTIONS: Array<{
 }> = [
   { role: "customer", labelKey: "auth.login.demoCustomer" },
   { role: "employee", labelKey: "auth.login.demoEmployee" },
+  { role: "candidate", labelKey: "auth.login.demoCandidate" },
   { role: "employee2", labelKey: "auth.login.demoEmployee2" },
   { role: "manager", labelKey: "auth.login.demoManager" },
   { role: "director", labelKey: "auth.login.demoDirector" },
@@ -27,7 +29,7 @@ export const DEMO_LOGIN_OPTIONS: Array<{
 
 export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const sessionRole: AuthRole = role === "employee2" ? "employee" : role;
+  const sessionRole: AuthRole = role === "employee2" || role === "candidate" ? "employee" : role;
   const accessRole = normalizeAccessRole(sessionRole);
   const isEmployeeAccess = accessRole === "employee";
   const demoRole: AuthRole = sessionRole;
@@ -41,6 +43,11 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
       fullName: "Nguyễn Văn Nhân Viên",
       email: "employee@test.com",
       phone: "0900 000 001"
+    },
+    candidate: {
+      fullName: "Ứng Viên Chưa Duyệt",
+      email: "candidate@test.com",
+      phone: "0900 000 008"
     },
     employee2: {
       fullName: "Võ Thị Nhân Viên Mới",
@@ -81,7 +88,8 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
       phone: profile.phone,
       role: demoRole,
       isActive: true,
-      emailVerified: true
+      emailVerified: true,
+      jobPosition: role === "candidate" ? null : isEmployeeAccess ? "Nhân viên kinh doanh" : null
     }
   };
 }
