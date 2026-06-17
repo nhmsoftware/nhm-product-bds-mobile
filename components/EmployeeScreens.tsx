@@ -8122,16 +8122,21 @@ function inventoryIntroArticleFromRecord(value: unknown, areaName: string) {
 }
 
 function inventoryAreaCardFromRecord(area: ApiObject, index: number): InventoryAreaCardItem {
-  const type = apiText(area.type, "area").toLowerCase();
+  const recordType = apiText(
+    area.record_type ?? area.recordType ?? area.entity_type ?? area.entityType ?? area.item_type ?? area.itemType ?? area.kind,
+    "area"
+  ).toLowerCase();
+  const isLotResult = recordType === "lot" || Boolean(area.lot_id ?? area.lotId ?? area.lot_code ?? area.lotCode);
   const lotCode = apiText(area.code ?? area.lot_code ?? area.lotCode, "").trim();
   const areaId = apiText(
     area.area_id ??
       area.areaId ??
-      (type === "area" ? area.target_id : undefined) ??
-      (type === "area" ? area.id : undefined),
+      area.target_id ??
+      area.targetId ??
+      (!isLotResult ? area.id : undefined),
     ""
   );
-  const lotId = type === "lot" ? apiText(area.lot_id ?? area.lotId ?? area.id, "") : "";
+  const lotId = isLotResult ? apiText(area.lot_id ?? area.lotId ?? area.id, "") : "";
   const areaName = apiText(area.name ?? area.title, "Khu đất");
 
   return {

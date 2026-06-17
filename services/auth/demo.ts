@@ -36,42 +36,42 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
   const demoProfiles: Record<DemoLoginRole, { fullName: string; email: string; phone: string }> = {
     customer: {
       fullName: "Khách hàng Demo",
-      email: "customer@test.com",
+      email: "[EMAIL_ADDRESS]",
       phone: "0901 234 567"
     },
     employee: {
       fullName: "Nguyễn Văn Nhân Viên",
-      email: "employee@test.com",
+      email: "[EMAIL_ADDRESS]",
       phone: "0900 000 001"
     },
     candidate: {
       fullName: "Ứng Viên Chưa Duyệt",
-      email: "candidate@test.com",
+      email: "[EMAIL_ADDRESS]",
       phone: "0900 000 008"
     },
     employee2: {
       fullName: "Võ Thị Nhân Viên Mới",
-      email: "employee2@test.com",
+      email: "[EMAIL_ADDRESS]",
       phone: "0900 000 006"
     },
     manager: {
       fullName: "Trần Thị Trưởng Phòng",
-      email: "manager@test.com",
+      email: "[EMAIL_ADDRESS]",
       phone: "0900 000 002"
     },
     director: {
       fullName: "Lê Văn Giám Đốc",
-      email: "director@test.com",
+      email: "[EMAIL_ADDRESS]",
       phone: "0900 000 003"
     },
     ceo: {
       fullName: "Phạm Thị Tổng Giám Đốc",
-      email: "ceo@test.com",
+      email: "[EMAIL_ADDRESS]",
       phone: "0900 000 004"
     },
     super_admin: {
-      fullName: "Super Admin Test",
-      email: "superadmin@test.com",
+      fullName: "Phạm Thị Tổng Giám Đốc",
+      email: "[EMAIL_ADDRESS]",
       phone: "0900 000 005"
     }
   };
