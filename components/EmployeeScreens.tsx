@@ -221,7 +221,7 @@ function canCreateInternalNews(user?: AuthUser | null) {
   }
 
   if (role === "director" || role === "3" || role === 3) {
-    return Boolean(apiText(user?.area, "").trim());
+    return Boolean(apiText(user?.department, "").trim());
   }
 
   return isManagerAccessRole(user?.role);

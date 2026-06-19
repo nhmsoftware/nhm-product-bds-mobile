@@ -21,7 +21,6 @@ type BackendUser = {
   avatar?: string | null;
   department?: string | null;
   job_position?: string | null;
-  area?: string | null;
   role?: AuthRole | null;
   is_active?: boolean | number;
   email_verified_at?: string | null;
@@ -46,7 +45,6 @@ function mapUser(user: BackendUser): AuthUser {
     avatar: user.avatar ?? null,
     department: user.department ?? null,
     jobPosition: user.job_position ?? null,
-    area: user.area ?? null,
     role: mapBackendRole(user.role),
     isActive: user.is_active === undefined ? true : Boolean(user.is_active),
     emailVerified: Boolean(user.email_verified_at)

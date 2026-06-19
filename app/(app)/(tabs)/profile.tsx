@@ -3,6 +3,7 @@ import {
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
+  useRef,
   useState } from "react";
 import { Image,
   Linking,
@@ -41,6 +42,9 @@ const contactImages = {
 };
 
 export default function ContactScreen() {
+  const scrollViewRef = useRef<ScrollView>(null);
+  const formCardY = useRef(0);
+
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [callbackModalVisible, setCallbackModalVisible] = useState(false);
   const [callbackSubmitting, setCallbackSubmitting] = useState(false);
@@ -311,7 +315,7 @@ export default function ContactScreen() {
         </Pressable>
       </Modal>
 
-      <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollViewRef} bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <Text style={styles.pageTitle}>Liên Hệ Với Chúng Tôi</Text>
           <Text style={styles.pageDescription}>
@@ -339,16 +343,15 @@ export default function ContactScreen() {
             <Text style={styles.optionText}>{setting?.callback_description || "Để lại thông tin, chúng tôi sẽ gọi lại"}</Text>
             <Pressable
               accessibilityRole="button"
-              disabled={setting?.is_callback_enabled === false}
-              onPress={openCallbackModal}
-              style={[styles.secondaryButton, setting?.is_callback_enabled === false && styles.buttonDisabled]}
+              onPress={() => scrollViewRef.current?.scrollTo({ y: formCardY.current, animated: true })}
+              style={styles.secondaryButton}
             >
               <Text style={styles.secondaryButtonText}>ĐẶT LỊCH HẸN</Text>
             </Pressable>
           </View>
         </View>
 
-        <View style={styles.formCard}>
+        <View onLayout={(e) => { formCardY.current = e.nativeEvent.layout.y; }} style={styles.formCard}>
           <Text style={styles.formTitle}>{setting?.form_title || "Gửi Tin Nhắn"}</Text>
           <View style={styles.formFields}>
             <View style={styles.field}>

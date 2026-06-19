@@ -169,9 +169,9 @@ function formatRewardRank(value: unknown, fallback: string) {
   return /^hạng\b/i.test(rank) ? rank : `Hạng ${rank}`;
 }
 
-function formatKpiStars(value: unknown) {
-  const stars = Number(value);
-  return Number.isFinite(stars) ? `${stars.toLocaleString("en-US")} sao KPI` : "";
+function formatKpiPoints(value: unknown) {
+  const points = Number(value);
+  return Number.isFinite(points) ? `${points.toLocaleString("en-US")} điểm KPI` : "";
 }
 
 function normalizeDashboardModuleKind(module: DashboardRecord) {
@@ -374,10 +374,10 @@ export default function EmployeeHomeScreen() {
         const overview = isDashboardRecord(response.data) ? response.data : {};
         const totalPoints = overview.total_points ?? overview.reward_points ?? overview.points ?? overview.balance;
         const rank = overview.rank ?? overview.rank_label ?? overview.tier;
-        const kpiStars = formatKpiStars(overview.kpi_stars ?? overview.stars ?? overview.kpiStars);
+        const kpiPoints = formatKpiPoints(overview.kpi_points ?? overview.kpi_stars ?? overview.points ?? overview.kpiPoints);
 
         setPointTotal(formatDashboardNumber(totalPoints, fallbackPointTotal));
-        setPointRank(rank ? formatRewardRank(rank, fallbackPointRank) : kpiStars || fallbackPointRank);
+        setPointRank(rank ? formatRewardRank(rank, fallbackPointRank) : kpiPoints || fallbackPointRank);
       })
       .catch((error) => {
         appLogger.warn("employee.reward_points", "Không thể tải điểm tích lũy.", { error });

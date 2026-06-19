@@ -46,7 +46,6 @@ export type AuthUser = {
   avatar?: string | null;
   department?: string | null;
   jobPosition?: string | null;
-  area?: string | null;
   role: AuthRole;
   isActive: boolean;
   emailVerified: boolean;

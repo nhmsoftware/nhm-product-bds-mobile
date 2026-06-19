@@ -89,6 +89,12 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
       role: demoRole,
       isActive: true,
       emailVerified: true,
+      department:
+        role === "employee"
+          ? "Đào tạo"
+          : role === "employee2" || role === "manager" || role === "director"
+          ? "Kinh doanh"
+          : null,
       jobPosition: role === "candidate" ? null : isEmployeeAccess ? "Nhân viên kinh doanh" : null
     }
   };
