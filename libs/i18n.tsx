@@ -28,10 +28,11 @@ const viTranslations = {
   "auth.label.email": "EMAIL",
   "auth.label.emailAddress": "ĐỊA CHỈ EMAIL",
   "auth.label.fullName": "HỌ VÀ TÊN",
+  "auth.label.confirmPassword": "XÁC NHẬN MẬT KHẨU",
   "auth.label.password": "MẬT KHẨU",
   "auth.label.phone": "SỐ ĐIỆN THOẠI",
   "auth.label.referralCode": "MÃ GIỚI THIỆU",
-  "auth.login.demoCeo": "Demo CEO",
+  "auth.login.demoCeo": "Demo Tổng giám đốc",
   "auth.login.demoCustomer": "Demo khách hàng",
   "auth.login.demoDirector": "Demo giám đốc",
   "auth.login.demoEmployee": "Demo nhân viên 1",
@@ -47,6 +48,7 @@ const viTranslations = {
   "auth.placeholder.code": "123456",
   "auth.placeholder.email": "agent@estatepro.vn",
   "auth.placeholder.fullName": "Nguyễn Văn A",
+  "auth.placeholder.confirmPassword": "••••••••",
   "auth.placeholder.password": "••••••••",
   "auth.placeholder.personalEmail": "nguyenvana@eliteestate.com",
   "auth.placeholder.phone": "090 123 4567",
@@ -254,7 +256,8 @@ const viTranslations = {
   "tabs.saved": "Đã lưu",
   "tabs.search": "Tìm kiếm",
   "unit.billionVnd": "{{value}} tỷ",
-  "unit.millionVnd": "{{value}} triệu"
+  "unit.millionVnd": "{{value}} triệu",
+  "validation.passwordMismatch": "Mật khẩu xác nhận không khớp."
 } as const;
 
 export type TranslationKey = keyof typeof viTranslations;
@@ -272,10 +275,11 @@ const enTranslations: Record<TranslationKey, string> = {
   "auth.label.email": "EMAIL",
   "auth.label.emailAddress": "EMAIL ADDRESS",
   "auth.label.fullName": "FULL NAME",
+  "auth.label.confirmPassword": "CONFIRM PASSWORD",
   "auth.label.password": "PASSWORD",
   "auth.label.phone": "PHONE NUMBER",
   "auth.label.referralCode": "REFERRAL CODE",
-  "auth.login.demoCeo": "CEO demo",
+  "auth.login.demoCeo": "General Director demo",
   "auth.login.demoCustomer": "Customer demo",
   "auth.login.demoDirector": "Director demo",
   "auth.login.demoEmployee": "Employee 1 demo",
@@ -291,6 +295,7 @@ const enTranslations: Record<TranslationKey, string> = {
   "auth.placeholder.code": "123456",
   "auth.placeholder.email": "agent@estatepro.vn",
   "auth.placeholder.fullName": "Nguyen Van A",
+  "auth.placeholder.confirmPassword": "••••••••",
   "auth.placeholder.password": "••••••••",
   "auth.placeholder.personalEmail": "nguyenvana@eliteestate.com",
   "auth.placeholder.phone": "090 123 4567",
@@ -498,7 +503,8 @@ const enTranslations: Record<TranslationKey, string> = {
   "tabs.saved": "Saved",
   "tabs.search": "Search",
   "unit.billionVnd": "{{value}} billion VND",
-  "unit.millionVnd": "{{value}} million VND"
+  "unit.millionVnd": "{{value}} million VND",
+  "validation.passwordMismatch": "Passwords do not match."
 };
 
 const translations = {

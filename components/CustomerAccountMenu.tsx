@@ -3,7 +3,8 @@ import {
 import { router,
   type Href } from "expo-router";
 import { useEffect, useMemo, useState, type ComponentProps } from "react";
-import { Modal,
+import { Alert,
+  Modal,
   Image,
   StyleSheet,
   Text,
@@ -79,15 +80,21 @@ export function CustomerAccountMenu({ onClose, visible }: CustomerAccountMenuPro
     };
   }, [session?.user.address, session?.user.avatar, session?.user.email, session?.user.fullName, session?.user.phone, visible]);
 
-  async function handlePress(item: MenuItem) {
-    onClose();
+  function confirmSignOut() {
+    Alert.alert("Đăng xuất", "Bạn có chắc chắn muốn đăng xuất?", [
+      { text: "Hủy", style: "cancel" },
+      { text: "Xác nhận", style: "destructive", onPress: () => void signOut() }
+    ]);
+  }
 
+  function handlePress(item: MenuItem) {
     if (item.route) {
+      onClose();
       router.push(item.route);
       return;
     }
 
-    await signOut();
+    confirmSignOut();
   }
 
   const initial = profileName.trim().charAt(0).toUpperCase() || "K";

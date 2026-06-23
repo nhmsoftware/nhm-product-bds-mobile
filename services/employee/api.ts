@@ -588,5 +588,33 @@ export const employeeApi = {
       }
     });
     return response.data;
+  },
+
+  recruitmentBranches() {
+    return getData<JsonRecord>("/api/v1/recruitment/branches");
+  },
+
+  recruitmentPositions() {
+    return getData<JsonRecord>("/api/v1/recruitment/positions");
+  },
+
+  async applyRecruitment(form: FormData) {
+    const response = await apiClient.post("/api/v1/recruitment/apply", form, {
+      headers: {
+        "Content-Type": "multipart/form-data"
+      }
+    });
+    return response.data;
+  },
+
+  recruitmentApplications() {
+    return getData<JsonRecord>("/api/v1/recruitment/applications");
+  },
+
+  processRecruitmentApplication(id: string, status: "approved" | "rejected", rejectedReason?: string) {
+    return postData<JsonRecord>(`/api/v1/recruitment/applications/${id}/process`, {
+      status,
+      rejected_reason: rejectedReason
+    });
   }
 };

@@ -95,7 +95,14 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
           : role === "employee2" || role === "manager" || role === "director"
           ? "Kinh doanh"
           : null,
-      jobPosition: role === "candidate" ? null : isEmployeeAccess ? "Nhân viên kinh doanh" : null
+      jobPosition:
+        role === "candidate"
+          ? null
+          : role === "employee2"
+          ? "Cộng tác viên"
+          : isEmployeeAccess
+          ? "Chuyên viên kinh doanh"
+          : null
     }
   };
 }

@@ -156,6 +156,7 @@ export default function RequiredLearningRoute() {
   const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
   const [course, setCourse] = useState<MandatoryLearningCourse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [failed, setFailed] = useState(false);
 
   const handleBack = useCallback(() => {
@@ -176,11 +177,13 @@ export default function RequiredLearningRoute() {
     router.replace("/employee");
   }, [returnTo]);
 
-  const loadCourse = useCallback((showLoading = false) => {
+  const loadCourse = useCallback((mode: "loading" | "refreshing" | "silent" = "silent") => {
     let mounted = true;
 
-    if (showLoading) {
+    if (mode === "loading") {
       setLoading(true);
+    } else if (mode === "refreshing") {
+      setRefreshing(true);
     }
     setFailed(false);
 
@@ -205,6 +208,7 @@ export default function RequiredLearningRoute() {
       .finally(() => {
         if (mounted) {
           setLoading(false);
+          setRefreshing(false);
         }
       });
 
@@ -217,7 +221,7 @@ export default function RequiredLearningRoute() {
   }, [selectedCourseId]);
 
   useEffect(() => {
-    const loader = loadCourse(true);
+    const loader = loadCourse("loading");
 
     return () => {
       loader.cancel();
@@ -226,16 +230,16 @@ export default function RequiredLearningRoute() {
 
   useFocusEffect(
     useCallback(() => {
-      if (loading) {
+      if (loading || refreshing) {
         return undefined;
       }
 
-      const loader = loadCourse(false);
+      const loader = loadCourse("silent");
 
       return () => {
         loader.cancel();
       };
-    }, [loadCourse, loading])
+    }, [loadCourse, loading, refreshing])
   );
 
   if (loading) {
@@ -270,5 +274,12 @@ export default function RequiredLearningRoute() {
     );
   }
 
-  return <RequiredLearningScreen course={course} onBack={handleBack} />;
+  return (
+    <RequiredLearningScreen
+      course={course}
+      onBack={handleBack}
+      refreshing={refreshing}
+      onRefresh={() => loadCourse("refreshing")}
+    />
+  );
 }

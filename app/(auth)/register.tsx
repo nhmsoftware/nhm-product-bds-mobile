@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 import {
   AuthButton,
@@ -16,8 +17,9 @@ import { useI18n } from "@/libs/i18n";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { authApi } from "@/services/auth/api";
+import { Pressable } from "@/components/SafePressable";
 
-type RegisterField = "fullName" | "referralCode" | "email" | "phone" | "password" | "acceptedTerms";
+type RegisterField = "fullName" | "referralCode" | "accountType" | "email" | "phone" | "password" | "confirmPassword" | "acceptedTerms";
 type RegisterErrors = Partial<Record<RegisterField, string>>;
 
 const fieldErrorMap: Record<string, RegisterField> = {
@@ -26,7 +28,8 @@ const fieldErrorMap: Record<string, RegisterField> = {
   name: "fullName",
   password: "password",
   phone: "phone",
-  referral_code: "referralCode"
+  referral_code: "referralCode",
+  account_type: "accountType"
 };
 
 function firstError(error?: string[]) {
@@ -37,9 +40,12 @@ export default function RegisterScreen() {
   const { t } = useI18n();
   const [fullName, setFullName] = useState("");
   const [referralCode, setReferralCode] = useState("");
+  const [accountType, setAccountType] = useState<"investor" | "broker">("investor");
+  const [isReferralForced, setIsReferralForced] = useState(false);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<RegisterErrors>({});
   const [submitting, setSubmitting] = useState(false);
@@ -78,6 +84,12 @@ export default function RegisterScreen() {
 
   async function handleRegister() {
     setFieldErrors({});
+    if (password !== confirmPassword) {
+      setFieldErrors({
+        confirmPassword: "Mật khẩu xác nhận không khớp."
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       const response = await authApi.register({
@@ -85,6 +97,7 @@ export default function RegisterScreen() {
         email,
         phone,
         password,
+        accountType,
         referralCode,
         agreeTerms: acceptedTerms
       });
@@ -131,10 +144,23 @@ export default function RegisterScreen() {
         onChangeText={(value) => {
           setReferralCode(value);
           clearFieldError("referralCode");
+
+          const trimmed = value.trim();
+          if (trimmed !== "") {
+            setIsReferralForced(true);
+            if (trimmed.toUpperCase().startsWith("CUS-")) {
+              setAccountType("investor");
+            } else {
+              setAccountType("broker");
+            }
+          } else {
+            setIsReferralForced(false);
+          }
         }}
         placeholder={t("auth.placeholder.referralCode")}
         error={fieldErrors.referralCode}
       />
+
       <AuthField
         label={t("auth.label.email")}
         icon="mail-outline"
@@ -171,6 +197,83 @@ export default function RegisterScreen() {
         placeholder={t("auth.placeholder.password")}
         error={fieldErrors.password}
       />
+      <AuthPasswordField
+        label={t("auth.label.confirmPassword")}
+        icon="lock-closed-outline"
+        value={confirmPassword}
+        onChangeText={(value) => {
+          setConfirmPassword(value);
+          clearFieldError("confirmPassword");
+        }}
+        placeholder={t("auth.placeholder.confirmPassword")}
+        error={fieldErrors.confirmPassword}
+      />
+
+      <View style={styles.accountTypeContainer}>
+        <Text style={styles.fieldLabel}>LOẠI TÀI KHOẢN</Text>
+        <View style={styles.accountTypeRow}>
+          <Pressable
+            disabled={isReferralForced}
+            onPress={() => {
+              setAccountType("investor");
+              clearFieldError("accountType");
+            }}
+            style={[
+              styles.accountTypeButton,
+              accountType === "investor" && styles.accountTypeButtonActive,
+              isReferralForced && accountType !== "investor" && styles.accountTypeButtonDisabled
+            ]}
+          >
+            <Ionicons
+              name="cash-outline"
+              size={18}
+              color={accountType === "investor" ? "#ffffff" : employeePalette.red}
+            />
+            <Text
+              style={[
+                styles.accountTypeButtonText,
+                accountType === "investor" && styles.accountTypeButtonTextActive
+              ]}
+            >
+              Nhà đầu tư
+            </Text>
+          </Pressable>
+          <Pressable
+            disabled={isReferralForced}
+            onPress={() => {
+              setAccountType("broker");
+              clearFieldError("accountType");
+            }}
+            style={[
+              styles.accountTypeButton,
+              accountType === "broker" && styles.accountTypeButtonActive,
+              isReferralForced && accountType !== "broker" && styles.accountTypeButtonDisabled
+            ]}
+          >
+            <Ionicons
+              name="business-outline"
+              size={18}
+              color={accountType === "broker" ? "#ffffff" : employeePalette.red}
+            />
+            <Text
+              style={[
+                styles.accountTypeButtonText,
+                accountType === "broker" && styles.accountTypeButtonTextActive
+              ]}
+            >
+              Môi giới
+            </Text>
+          </Pressable>
+        </View>
+        {isReferralForced && (
+          <Text style={styles.referralForcedMessage}>
+            * Loại tài khoản được chọn tự động theo mã giới thiệu
+          </Text>
+        )}
+        {fieldErrors.accountType ? (
+          <Text style={styles.checkboxError}>{fieldErrors.accountType}</Text>
+        ) : null}
+      </View>
 
       <AuthCheckbox
         checked={acceptedTerms}
@@ -194,7 +297,7 @@ export default function RegisterScreen() {
       <AuthButton
         title={t("auth.action.register")}
         loading={submitting}
-        disabled={!fullName || !email || !phone || !password || !acceptedTerms}
+        disabled={!fullName || !email || !phone || !password || !confirmPassword || !acceptedTerms}
         onPress={handleRegister}
         style={styles.primaryButton}
       />
@@ -203,6 +306,56 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
+  accountTypeContainer: {
+    gap: 8,
+    marginBottom: 8
+  },
+  fieldLabel: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.bold,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    lineHeight: 16
+  },
+  accountTypeRow: {
+    flexDirection: "row",
+    gap: 12
+  },
+  accountTypeButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderColor: "#e3beb8",
+    borderWidth: 1,
+    borderRadius: 6,
+    height: 48,
+    backgroundColor: employeePalette.bg,
+    gap: 8
+  },
+  accountTypeButtonActive: {
+    backgroundColor: employeePalette.red,
+    borderColor: employeePalette.red
+  },
+  accountTypeButtonDisabled: {
+    opacity: 0.4
+  },
+  accountTypeButtonText: {
+    color: employeePalette.red,
+    fontFamily: appFonts.semiBold,
+    fontSize: 16
+  },
+  accountTypeButtonTextActive: {
+    color: "#ffffff"
+  },
+  referralForcedMessage: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 13,
+    fontStyle: "italic",
+    marginTop: -2
+  },
   termsRow: {
     marginTop: -2
   },
@@ -229,3 +382,4 @@ const styles = StyleSheet.create({
     marginTop: 0
   }
 });
+

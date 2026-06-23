@@ -12,6 +12,7 @@ import { Image,
   Text,
   View,
   ViewStyle,
+  RefreshControl,
   type ImageSourcePropType
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
@@ -37,6 +38,8 @@ type EmployeePageProps = PropsWithChildren<{
   scroll?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   edges?: ComponentProps<typeof SafeAreaView>["edges"];
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }>;
 
 type EmployeeButtonProps = PropsWithChildren<{
@@ -62,6 +65,8 @@ export function EmployeePage({
   scroll = true,
   contentStyle,
   edges,
+  refreshing,
+  onRefresh,
   children
 }: EmployeePageProps) {
   const body = (
@@ -81,7 +86,20 @@ export function EmployeePage({
       <EmployeeTopBar back={back} backType={backType} title={headerTitle} right={right} />
       <View style={styles.bodyArea}>
         {scroll ? (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll} style={styles.bodyArea}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scroll}
+            style={styles.bodyArea}
+            refreshControl={
+              onRefresh ? (
+                <RefreshControl
+                  refreshing={refreshing ?? false}
+                  onRefresh={onRefresh}
+                  colors={[employeePalette.redDark]}
+                />
+              ) : undefined
+            }
+          >
             {body}
           </ScrollView>
         ) : (

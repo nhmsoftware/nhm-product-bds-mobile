@@ -564,7 +564,8 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.regular,
     fontSize: 16,
     minHeight: 46,
-    padding: 0
+    padding: 0,
+    lineHeight: 24
   },
   passwordInput: {
     paddingRight: 8

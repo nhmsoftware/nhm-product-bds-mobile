@@ -45,11 +45,13 @@ const palette = {
   white: "#ffffff"
 };
 
+const imageNotFound = require("@/assets/images/placeholders/image_not_found.png");
+
 const projectDetailImages = {
-  hero: require("@/assets/images/customer/project-detail/hero-estates.png"),
+  hero: imageNotFound,
   logo: require("@/assets/images/customer/project-detail/kn-logo.png"),
-  planningMap: require("@/assets/images/customer/project-detail/planning-map.png"),
-  locationMap: require("@/assets/images/customer/project-detail/location-map.png")
+  planningMap: imageNotFound,
+  locationMap: imageNotFound
 };
 
 const amenities = [

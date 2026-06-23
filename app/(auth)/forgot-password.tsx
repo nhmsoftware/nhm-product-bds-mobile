@@ -19,6 +19,7 @@ export default function ForgotPasswordScreen() {
   const method = params.method === "phone" ? "phone" : "email";
   const identity = typeof params.identity === "string" ? params.identity : "";
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -32,13 +33,17 @@ export default function ForgotPasswordScreen() {
   }
 
   async function handleSubmit() {
+    if (password !== confirmPassword) {
+      notifyError(new Error(t("validation.passwordMismatch")));
+      return;
+    }
     setSubmitting(true);
     try {
       await authApi.resetPassword({
         username: identity,
         otp: code,
         password,
-        passwordConfirmation: password
+        passwordConfirmation: confirmPassword
       });
       notifySuccess({
         message: t("notifications.forgotPasswordSuccess")
@@ -68,13 +73,6 @@ export default function ForgotPasswordScreen() {
         placeholder={method === "email" ? t("auth.placeholder.email") : t("auth.placeholder.phone")}
         frameStyle={styles.disabledField}
       />
-      <AuthPasswordField
-        label={t("auth.reset.newPassword")}
-        icon="lock-closed-outline"
-        value={password}
-        onChangeText={setPassword}
-        placeholder={t("auth.placeholder.password")}
-      />
       <AuthField
         label={t("auth.label.code")}
         icon="lock-closed-outline"
@@ -83,12 +81,26 @@ export default function ForgotPasswordScreen() {
         onChangeText={setCode}
         placeholder={t("auth.placeholder.code")}
       />
+      <AuthPasswordField
+        label={t("auth.reset.newPassword")}
+        icon="lock-closed-outline"
+        value={password}
+        onChangeText={setPassword}
+        placeholder={t("auth.placeholder.password")}
+      />
+      <AuthPasswordField
+        label={t("auth.label.confirmPassword")}
+        icon="lock-closed-outline"
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        placeholder={t("auth.placeholder.confirmPassword")}
+      />
 
       <AuthButton
         title={t("auth.reset.submit")}
         rightIcon="arrow-forward"
         loading={submitting}
-        disabled={!identity || !password || !code}
+        disabled={!identity || !password || !confirmPassword || !code}
         onPress={handleSubmit}
         style={styles.primaryButton}
       />

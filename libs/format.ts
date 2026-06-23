@@ -67,3 +67,20 @@ export function formatArea(areaM2: number, language: Language = "vi") {
 export function formatRelativeCount(value: number, language: Language = "vi") {
   return new Intl.NumberFormat(localeByLanguage[language]).format(value);
 }
+
+export function formatDuration(totalSeconds: number): string {
+  if (totalSeconds <= 0) return "0 giây";
+
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days} ngày`);
+  if (hours > 0) parts.push(`${hours} giờ`);
+  if (minutes > 0) parts.push(`${minutes} phút`);
+  if (secs > 0) parts.push(`${secs} giây`);
+
+  return parts.join(" ");
+}

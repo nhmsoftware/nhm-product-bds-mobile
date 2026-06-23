@@ -13,16 +13,17 @@ import {
   useState
 } from "react";
 import {
-  Image,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  Image,
   useWindowDimensions,
   View
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FallbackImage } from "@/components/FallbackImage";
 
 import { mediaSource } from "@/libs/media";
 import { appLogger } from "@/libs/logger";
@@ -44,14 +45,16 @@ const heroHeight = 192;
 const heroHorizontalMargin = 16;
 const heroAutoplayMs = 4000;
 
+const imageNotFound = require("@/assets/images/placeholders/image_not_found.png");
+
 const homeImages = {
   headerBackground: require("@/assets/images/customer/home/main-header-bg.png"),
   hero: require("@/assets/images/customer/home/hero-slider.png"),
-  riverside: require("@/assets/images/customer/home/kn-riverside.png"),
-  centralPoint: require("@/assets/images/customer/home/kn-central-point.png"),
-  marketNews: require("@/assets/images/customer/home/news-market.png"),
-  luxuryNews: require("@/assets/images/customer/home/news-luxury.png"),
-  interestNews: require("@/assets/images/customer/home/news-interest.png")
+  riverside: imageNotFound,
+  centralPoint: imageNotFound,
+  marketNews: imageNotFound,
+  luxuryNews: imageNotFound,
+  interestNews: imageNotFound
 };
 
 const quickActions: {
@@ -59,30 +62,30 @@ const quickActions: {
   label: string;
   destination: Href;
 }[] = [
-    { icon: "map-outline", label: "Check\nQuy hoạch", destination: "/(app)/(tabs)/inquiries" },
+    { icon: "map-outline", label: "Kiểm tra\nQuy hoạch", destination: "/(app)/(tabs)/inquiries" },
     { icon: "document-text-outline", label: "Hỗ trợ\npháp lý", destination: "/(app)/legal-knowledge" },
     { icon: "images-outline", label: "Điểm đến", destination: "/(app)/(tabs)/saved" },
     { icon: "cash-outline", label: "Cơ hội\nđầu tư", destination: "/(app)/(tabs)/saved" }
   ];
 
 const projects = [
-  { image: homeImages.riverside, name: "The Solaria", location: "Phường Bãi Cháy, Quảng Ninh", price: "5.2 Tỷ" },
-  { image: homeImages.centralPoint, name: "Eco Garden", location: "Xã Đông Dư, Gia Lâm, Hà Nội", price: "3.9 Tỷ" },
-  { image: homeImages.riverside, name: "Coastal Bay", location: "Phường Mũi Né, Phan Thiết, Bình Thuận", price: "12.2 Tỷ" }
+  { image: homeImages.riverside, name: "Chưa thiết lập", location: "Chưa thiết lập", price: "" },
+  { image: homeImages.centralPoint, name: "Chưa thiết lập", location: "Chưa thiết lập", price: "" },
+  { image: homeImages.riverside, name: "Chưa thiết lập", location: "Chưa thiết lập", price: "" }
 ] as const;
 
 const newsItems = [
   {
     image: homeImages.marketNews,
-    title: "Xu hướng bất động sản 2024:\nDòng tiền dịch chuyển về đâu?"
+    title: "Chưa thiết lập"
   },
   {
     image: homeImages.luxuryNews,
-    title: "Cập nhật xu hướng bất động sản\ncao cấp động sản cao cấp"
+    title: "Chưa thiết lập"
   },
   {
     image: homeImages.interestNews,
-    title: "Dự báo lãi suất vay mua nhà\ntrong quý 3 năm nay"
+    title: "Chưa thiết lập"
   }
 ] as const;
 
@@ -164,6 +167,7 @@ export default function CustomerHomeScreen() {
 
   useEffect(() => {
     let active = true;
+    appLogger.info("customer.home", "Bắt đầu tải dữ liệu trang chủ...");
 
     Promise.all([
       customerPublicApi.projects({ per_page: 6 }),
@@ -172,8 +176,17 @@ export default function CustomerHomeScreen() {
       .then(([projectResponse, newsResponse]) => {
         if (!active) return;
         const featuredNews = newsResponse.data.featured ?? [];
+        const projects = projectResponse.data.data ?? [];
 
-        setFeaturedProjects(projectResponse.data.data ?? []);
+        appLogger.info("customer.home", "Tải dữ liệu thành công.", {
+          projectCount: projects.length,
+          featuredNewsCount: featuredNews.length,
+          listNewsCount: newsResponse.data.list?.length ?? 0,
+          projectImages: projects.slice(0, 3).map(p => ({ name: p.name, image: p.image })),
+          newsImages: featuredNews.slice(0, 3).map(n => ({ title: n.title?.slice(0, 30), thumbnail: n.thumbnail })),
+        });
+
+        setFeaturedProjects(projects);
         setFeaturedNewsSlides(featuredNews);
         setLatestNews([...featuredNews, ...(newsResponse.data.list ?? [])].slice(0, 3));
       })
@@ -291,8 +304,9 @@ export default function CustomerHomeScreen() {
                       }
                       style={[styles.heroSlide, { width: heroSlideWidth }]}
                     >
-                      <Image
+                      <FallbackImage
                         source={isApiSlide ? mediaSource(slide.thumbnail, homeImages.hero) : slide.image}
+                        fallback={homeImages.hero}
                         style={[styles.heroImage, { width: heroSlideWidth }]}
                       />
                       <View style={styles.heroOverlay} />
@@ -336,8 +350,9 @@ export default function CustomerHomeScreen() {
                       onPress={() => router.push({ pathname: "/(app)/project-detail", params: { id: project.id } })}
                       style={styles.searchResultCard}
                     >
-                      <Image
+                      <FallbackImage
                         source={mediaSource(project.image ?? project.banner, projects[index % projects.length].image)}
+                        fallback={projects[index % projects.length].image}
                         style={styles.searchResultImage}
                       />
                       <View style={styles.searchResultInfo}>
@@ -401,12 +416,13 @@ export default function CustomerHomeScreen() {
                     }
                     style={styles.projectCard}
                   >
-                    <Image
+                    <FallbackImage
                       source={
                         isApiProject
                           ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image)
                           : project.image
                       }
+                      fallback={projects[index % projects.length].image}
                       style={styles.projectImage}
                     />
                     <Text numberOfLines={2} style={styles.projectTitle}>{isApiProject ? project.name || "Khu đất đang cập nhật" : project.name}</Text>
@@ -432,8 +448,9 @@ export default function CustomerHomeScreen() {
                     }
                     style={styles.newsCard}
                   >
-                    <Image
+                    <FallbackImage
                       source={isApiNews ? mediaSource(item.thumbnail, newsItems[index % newsItems.length].image) : item.image}
+                      fallback={newsItems[index % newsItems.length].image}
                       style={styles.newsImage}
                     />
                     <View style={styles.newsCopy}>

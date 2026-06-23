@@ -18,6 +18,7 @@ import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
+import { FallbackImage } from "@/components/FallbackImage";
 import { appLogger } from "@/libs/logger";
 import { mediaSource } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
@@ -36,11 +37,13 @@ const palette = {
   white: "#ffffff"
 };
 
+const imageNotFound = require("@/assets/images/placeholders/image_not_found.png");
+
 const projectImages = {
-  grandHeritage: require("@/assets/images/customer/projects/the-grand-heritage.png"),
-  coastalAzure: require("@/assets/images/customer/projects/coastal-azure-villas.png"),
-  silkRoad: require("@/assets/images/customer/projects/the-silk-road-residences.png"),
-  urbanGold: require("@/assets/images/customer/projects/urban-gold-shophouse.png")
+  grandHeritage: imageNotFound,
+  coastalAzure: imageNotFound,
+  silkRoad: imageNotFound,
+  urbanGold: imageNotFound
 };
 
 const filters = ["Tất cả", "Căn hộ", "Biệt thự", "Shophouse"] as const;
@@ -65,33 +68,33 @@ const projects: FallbackProject[] = [
   {
     badge: "MỞ BÁN",
     image: projectImages.grandHeritage,
-    location: "Phường Bãi Cháy, Quảng Ninh",
-    price: "5.2 Tỷ",
-    title: "The Solaria",
+    location: "Chưa thiết lập",
+    price: "",
+    title: "Chưa thiết lập",
     tone: "gold"
   },
   {
     badge: "MỞ BÁN",
     image: projectImages.coastalAzure,
-    location: "Xã Đông Dư, Gia Lâm, Hà Nội",
-    price: "3.9 Tỷ",
-    title: "Eco Garden",
+    location: "Chưa thiết lập",
+    price: "",
+    title: "Chưa thiết lập",
     tone: "gold"
   },
   {
     badge: "MỞ BÁN",
     image: projectImages.silkRoad,
-    location: "Phường Thảo Điền, TP. Hồ Chí Minh",
-    price: "7.6 Tỷ",
-    title: "Riverfront City",
+    location: "Chưa thiết lập",
+    price: "",
+    title: "Chưa thiết lập",
     tone: "gold"
   },
   {
     badge: "MỞ BÁN",
     image: projectImages.urbanGold,
-    location: "Phường Mũi Né, Phan Thiết, Bình Thuận",
-    price: "12.2 Tỷ",
-    title: "Coastal Bay",
+    location: "Chưa thiết lập",
+    price: "",
+    title: "Chưa thiết lập",
     tone: "gold"
   }
 ];
@@ -102,6 +105,7 @@ export default function CustomerProjectsScreen() {
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<typeof filters[number]>("Tất cả");
   const [searchQuery, setSearchQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(6);
   const searchInputRef = useRef<TextInput>(null);
   const params = useLocalSearchParams<{ focus?: string }>();
 
@@ -123,6 +127,16 @@ export default function CustomerProjectsScreen() {
   const visibleProjects = projectsLoaded
     ? visibleApiProjects
     : (apiProjects.length > 0 ? visibleApiProjects : projects);
+
+  const displayedProjects = useMemo(() => {
+    return visibleProjects.slice(0, visibleCount);
+  }, [visibleProjects, visibleCount]);
+
+  const hasMoreToShow = visibleCount < visibleProjects.length;
+
+  useEffect(() => {
+    setVisibleCount(6);
+  }, [searchQuery, selectedFilter]);
 
   useEffect(() => {
     customerPublicApi.projects({ per_page: 50 })
@@ -211,19 +225,20 @@ export default function CustomerProjectsScreen() {
         </View>
 
         <View style={styles.projectList}>
-          {visibleProjects.length > 0 ? visibleProjects.map((project, index) => {
+          {displayedProjects.length > 0 ? displayedProjects.map((project, index) => {
             const isApiProject = "id" in project;
             return (
             <View key={isApiProject ? project.id : project.title} style={styles.projectCard}>
               <View style={styles.projectImageWrap}>
-                <Image
-                  source={
-                    isApiProject
-                      ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image)
-                      : project.image
-                  }
-                  style={styles.projectImage}
-                />
+                <FallbackImage
+                   source={
+                     isApiProject
+                       ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image)
+                       : project.image
+                   }
+                   fallback={projects[index % projects.length].image}
+                   style={styles.projectImage}
+                 />
                 <View style={[styles.badge, isApiProject ? styles.badgeNeutral : project.tone === "neutral" && styles.badgeNeutral]}>
                   <Text style={[styles.badgeText, isApiProject ? styles.badgeTextNeutral : project.tone === "neutral" && styles.badgeTextNeutral]}>
                     {isApiProject ? projectStatusLabel(project.status) : project.badge}
@@ -262,6 +277,18 @@ export default function CustomerProjectsScreen() {
               <Ionicons name="search-outline" size={28} color={palette.muted} />
               <Text style={styles.emptyTitle}>Không tìm thấy khu đất phù hợp</Text>
               <Text style={styles.emptyText}>Đổi từ khóa hoặc bỏ lọc để xem lại danh sách.</Text>
+            </View>
+          )}
+
+          {hasMoreToShow && (
+            <View style={styles.loadMoreWrap}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setVisibleCount((prev) => prev + 6)}
+                style={({ pressed }) => [styles.loadMoreButton, pressed && styles.loadMoreButtonPressed]}
+              >
+                <Text style={styles.loadMoreText}>Xem thêm khu đất</Text>
+              </Pressable>
             </View>
           )}
         </View>
@@ -529,5 +556,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 0.32,
     lineHeight: 20
+  },
+  loadMoreWrap: {
+    alignItems: "center",
+    paddingTop: 24,
+    paddingBottom: 8
+  },
+  loadMoreButton: {
+    alignItems: "center",
+    borderColor: palette.darkRed,
+    borderRadius: 12,
+    borderWidth: 2,
+    height: 54,
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    width: "100%"
+  },
+  loadMoreButtonPressed: {
+    opacity: 0.6
+  },
+  loadMoreText: {
+    color: palette.darkRed,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 24
   }
 });

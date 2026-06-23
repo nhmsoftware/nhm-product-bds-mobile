@@ -14,6 +14,7 @@ import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CustomerAccountMenu } from "@/components/CustomerAccountMenu";
+import { FallbackImage } from "@/components/FallbackImage";
 import { appLogger } from "@/libs/logger";
 import { mediaSource } from "@/libs/media";
 import { appFonts } from "@/libs/typography";
@@ -122,7 +123,7 @@ export default function CustomerNewsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Image source={mediaSource(featuredNews?.thumbnail, newsImages.hero)} style={styles.heroImage} />
+          <FallbackImage source={mediaSource(featuredNews?.thumbnail, newsImages.hero)} fallback={newsImages.hero} style={styles.heroImage} />
           <View style={styles.heroGradient} />
           <View style={styles.heroCopy}>
             <View style={styles.heroPill}>
@@ -161,7 +162,7 @@ export default function CustomerNewsScreen() {
                   : undefined
               }
             >
-              <Image source={mediaSource(featuredNews?.thumbnail, newsImages.news)} style={styles.newsImage} />
+              <FallbackImage source={mediaSource(featuredNews?.thumbnail, newsImages.news)} fallback={newsImages.news} style={styles.newsImage} />
               <View style={[styles.newsBody, { paddingBottom: 0 }]}>
                 <View style={styles.newsCategory}>
                   <Ionicons name="newspaper-outline" size={13} color={palette.darkRed} />
@@ -230,8 +231,9 @@ export default function CustomerNewsScreen() {
                   style={styles.projectItem}
                 >
                   <View style={styles.projectImageWrap}>
-                    <Image
+                   <FallbackImage
                       source={isApiProject ? mediaSource(project.image ?? project.banner, projects[index % projects.length].image) : project.image}
+                      fallback={projects[index % projects.length].image}
                       style={styles.projectImage}
                     />
                     <View

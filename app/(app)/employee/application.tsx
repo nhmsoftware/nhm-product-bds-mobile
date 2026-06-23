@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useState, useEffect } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Path, Svg } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -8,6 +8,8 @@ import { Pressable } from "@/components/SafePressable";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { useAuth } from "@/services/auth/store";
+import { employeeApi } from "@/services/employee/api";
+import * as DocumentPicker from "expo-document-picker";
 
 const palette = {
   background: "#f8f9fa",
@@ -20,13 +22,6 @@ const palette = {
   text: "#191c1d",
   white: "#ffffff"
 };
-const applicationPositions = [
-  "Cộng tác viên",
-  "Chuyên viên Kinh doanh",
-  "Trưởng phòng Kinh doanh",
-  "Giám đốc Kinh doanh"
-];
-
 
 function formatTwoDigits(value: number) {
   return String(Math.max(0, Math.floor(value))).padStart(2, "0");
@@ -103,14 +98,58 @@ export default function EmployeeApplicationScreen() {
   const [referralCode, setReferralCode] = useState("");
   const [dob, setDob] = useState("");
   const [dobPickerVisible, setDobPickerVisible] = useState(false);
-  const [applicationPosition, setApplicationPosition] = useState("");
-  const [positionPickerVisible, setPositionPickerVisible] = useState(false);
   const [education, setEducation] = useState("");
   const [experienceCompany, setExperienceCompany] = useState("");
   const [profileUrl, setProfileUrl] = useState("");
   const [intro, setIntro] = useState("");
 
-  function submit() {
+  const [branches, setBranches] = useState<{ id: number | string; name: string }[]>([]);
+  const [positions, setPositions] = useState<{ value: number; label: string }[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<{ id: number | string; name: string } | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<{ value: number; label: string } | null>(null);
+  const [branchPickerVisible, setBranchPickerVisible] = useState(false);
+  const [positionPickerVisible, setPositionPickerVisible] = useState(false);
+  const [cvFile, setCvFile] = useState<{ uri: string; name: string; type: string } | null>(null);
+
+  useEffect(() => {
+    employeeApi.recruitmentBranches()
+      .then((res) => {
+        if (res && Array.isArray(res.data)) {
+          setBranches(res.data);
+        }
+      })
+      .catch((err) => console.log("Failed to fetch branches", err));
+
+    employeeApi.recruitmentPositions()
+      .then((res) => {
+        if (res && Array.isArray(res.data)) {
+          setPositions(res.data);
+        }
+      })
+      .catch((err) => console.log("Failed to fetch positions", err));
+  }, []);
+
+  async function pickCvFile() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setCvFile({
+          uri: asset.uri,
+          name: asset.name,
+          type: asset.mimeType || "application/octet-stream"
+        });
+      }
+    } catch (err) {
+      console.log("Error picking document", err);
+    }
+  }
+
+  async function submit() {
     if (!name.trim()) {
       notifyError("Vui lòng nhập họ và tên.");
       return;
@@ -123,13 +162,49 @@ export default function EmployeeApplicationScreen() {
       notifyError("Ngày sinh không hợp lệ. Vui lòng nhập đúng định dạng dd/mm/yyyy.");
       return;
     }
-    if (!applicationPosition.trim()) {
+    if (!selectedBranch) {
+      notifyError("Vui lòng chọn chi nhánh ứng tuyển.");
+      return;
+    }
+    if (!selectedPosition) {
       notifyError("Vui lòng chọn vị trí ứng tuyển.");
       return;
     }
 
-    notifySuccess({ message: "Đã ghi nhận hồ sơ ứng tuyển. Quản trị viên sẽ duyệt trước khi mở mã QR giới thiệu khách hàng." });
-    router.back();
+    try {
+      const formData = new FormData();
+      formData.append("applied_position", String(selectedPosition.value));
+      formData.append("applied_branch_id", String(selectedBranch.id));
+      if (education.trim()) formData.append("education", education.trim());
+      if (experienceCompany.trim()) formData.append("experience", experienceCompany.trim());
+      if (profileUrl.trim()) formData.append("profile_url", profileUrl.trim());
+      if (intro.trim()) formData.append("introduction", intro.trim());
+
+      if (cvFile) {
+        formData.append("cv", {
+          uri: cvFile.uri,
+          name: cvFile.name,
+          type: cvFile.type
+        } as any);
+      }
+
+      await employeeApi.applyRecruitment(formData);
+
+      notifySuccess({
+        message: "Nộp hồ sơ ứng tuyển thành công. Vui lòng chờ duyệt."
+      });
+      router.back();
+    } catch (err: any) {
+      let msg = "Đã xảy ra lỗi khi nộp hồ sơ.";
+      if (err?.response?.data) {
+        if (err.response.data.message) {
+          msg = err.response.data.message;
+        } else if (err.response.data.errors) {
+          msg = Object.values(err.response.data.errors).flat().join("\n");
+        }
+      }
+      notifyError(msg);
+    }
   }
 
   return (
@@ -162,10 +237,16 @@ export default function EmployeeApplicationScreen() {
 
         <ApplicationSection iconKey="professional" title="Hồ sơ chuyên môn">
           <ApplicationSelect
+            label="CHI NHÁNH ỨNG TUYỂN"
+            onPress={() => setBranchPickerVisible(true)}
+            placeholder="Chọn chi nhánh ứng tuyển"
+            value={selectedBranch ? selectedBranch.name : ""}
+          />
+          <ApplicationSelect
             label="VỊ TRÍ ỨNG TUYỂN"
             onPress={() => setPositionPickerVisible(true)}
             placeholder="Chọn vị trí ứng tuyển"
-            value={applicationPosition}
+            value={selectedPosition ? selectedPosition.label : ""}
           />
           <ApplicationInput label="TRÌNH ĐỘ HỌC VẤN" value={education} onChangeText={setEducation} placeholder="VD: Đại học" />
           <ApplicationInput
@@ -175,6 +256,27 @@ export default function EmployeeApplicationScreen() {
             placeholder="VD: 3 năm tại Khởi Nguyên Land"
           />
           <ApplicationInput label="PROFILE (TÙY CHỌN)" value={profileUrl} onChangeText={setProfileUrl} placeholder="VD: linkedin.com/in/" />
+        </ApplicationSection>
+
+        <ApplicationSection iconKey="cv" title="CV ứng tuyển (Tùy chọn)">
+          <View style={styles.uploadBox}>
+            <Ionicons name="document-text-outline" size={40} color={palette.darkRed} />
+            <Text style={styles.uploadTitle}>
+              {cvFile ? cvFile.name : "Tải lên CV của bạn"}
+            </Text>
+            <Text style={styles.uploadHint}>
+              Hỗ trợ định dạng PDF, DOC, DOCX, JPG, PNG (tối đa 10MB)
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={pickCvFile}
+              style={({ pressed }) => [styles.fileButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.fileButtonText}>
+                {cvFile ? "Chọn file khác" : "Chọn file"}
+              </Text>
+            </Pressable>
+          </View>
         </ApplicationSection>
 
         <ApplicationSection iconKey="intro" title="Giới thiệu bản thân">
@@ -207,6 +309,40 @@ export default function EmployeeApplicationScreen() {
           setDobPickerVisible(false);
         }}
       />
+      <Modal animationType="fade" onRequestClose={() => setBranchPickerVisible(false)} transparent visible={branchPickerVisible}>
+        <Pressable onPress={() => setBranchPickerVisible(false)} style={styles.positionModalBackdrop}>
+          <Pressable onPress={(event) => event.stopPropagation()} style={styles.positionModal}>
+            <View style={styles.positionModalHeader}>
+              <Text style={styles.positionModalTitle}>Chọn chi nhánh</Text>
+              <Pressable accessibilityRole="button" onPress={() => setBranchPickerVisible(false)} style={styles.positionModalClose}>
+                <Ionicons name="close" size={22} color={palette.darkRed} />
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 300 }}>
+              <View style={styles.positionModalList}>
+                {branches.map((branch) => {
+                  const active = selectedBranch?.id === branch.id;
+
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={branch.id}
+                      onPress={() => {
+                        setSelectedBranch(branch);
+                        setBranchPickerVisible(false);
+                      }}
+                      style={({ pressed }) => [styles.positionOption, active && styles.positionOptionActive, pressed && styles.pressed]}
+                    >
+                      <Text style={[styles.positionOptionText, active && styles.positionOptionTextActive]}>{branch.name}</Text>
+                      {active ? <Ionicons name="checkmark" size={20} color={palette.darkRed} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <Modal animationType="fade" onRequestClose={() => setPositionPickerVisible(false)} transparent visible={positionPickerVisible}>
         <Pressable onPress={() => setPositionPickerVisible(false)} style={styles.positionModalBackdrop}>
           <Pressable onPress={(event) => event.stopPropagation()} style={styles.positionModal}>
@@ -217,20 +353,20 @@ export default function EmployeeApplicationScreen() {
               </Pressable>
             </View>
             <View style={styles.positionModalList}>
-              {applicationPositions.map((position) => {
-                const active = position === applicationPosition;
+              {positions.map((pos) => {
+                const active = selectedPosition?.value === pos.value;
 
                 return (
                   <Pressable
                     accessibilityRole="button"
-                    key={position}
+                    key={pos.value}
                     onPress={() => {
-                      setApplicationPosition(position);
+                      setSelectedPosition(pos);
                       setPositionPickerVisible(false);
                     }}
                     style={({ pressed }) => [styles.positionOption, active && styles.positionOptionActive, pressed && styles.pressed]}
                   >
-                    <Text style={[styles.positionOptionText, active && styles.positionOptionTextActive]}>{position}</Text>
+                    <Text style={[styles.positionOptionText, active && styles.positionOptionTextActive]}>{pos.label}</Text>
                     {active ? <Ionicons name="checkmark" size={20} color={palette.darkRed} /> : null}
                   </Pressable>
                 );
@@ -473,7 +609,7 @@ const styles = StyleSheet.create({
   dateCancelButton: { borderColor: palette.border, borderRadius: 12, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 10 },
   dateCancelText: { color: palette.brown, fontFamily: appFonts.bold, fontSize: 15, lineHeight: 22 },
   dateConfirmButton: { backgroundColor: palette.darkRed, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 },
-  dateConfirmText: { color: palette.white, fontFamily: appFonts.bold, fontSize: 15, lineHeight: 22 },  positionModalBackdrop: { backgroundColor: "rgba(25,28,29,0.42)", flex: 1, justifyContent: "flex-end", padding: 20 },
+  dateConfirmText: { color: palette.white, fontFamily: appFonts.bold, fontSize: 15, lineHeight: 22 }, positionModalBackdrop: { backgroundColor: "rgba(25,28,29,0.42)", flex: 1, justifyContent: "flex-end", padding: 20 },
   positionModal: { backgroundColor: palette.white, borderRadius: 18, gap: 16, padding: 20 },
   positionModalHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   positionModalTitle: { color: palette.text, fontFamily: appFonts.bold, fontSize: 22, lineHeight: 30 },

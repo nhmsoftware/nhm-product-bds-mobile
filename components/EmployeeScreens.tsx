@@ -19,6 +19,7 @@ import { useCallback,
   type ComponentProps,
   type ReactNode } from "react";
 import {
+  ActivityIndicator,
   AppState,
   Alert,
   BackHandler,
@@ -66,7 +67,7 @@ import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { ApiRequestError } from "@/libs/api";
-import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole } from "@/services/auth/roles";
+import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
@@ -92,13 +93,15 @@ const learningImages = {
   resultQuestion2: require("@/assets/images/learning/result-question-2.png")
 };
 
+const imageNotFound = require("@/assets/images/placeholders/image_not_found.png");
+
 const inventoryImages = {
-  mapOverview: require("@/assets/images/inventory/inventory-map-overview.png"),
-  lotHero: require("@/assets/images/inventory/lot-hero-overlay.png"),
-  planningArea: require("@/assets/images/inventory/planning-area-map.png"),
+  mapOverview: imageNotFound,
+  lotHero: imageNotFound,
+  planningArea: imageNotFound,
   staffProfile: require("@/assets/images/inventory/staff-profile.png"),
-  zoneA: require("@/assets/images/inventory/zone-a-map.png"),
-  zoneB: require("@/assets/images/inventory/zone-b-map.png")
+  zoneA: imageNotFound,
+  zoneB: imageNotFound
 };
 
 const inventoryLotGridColumns = 7;
@@ -1492,10 +1495,14 @@ function LearningCourseCard({
 
 export function RequiredLearningScreen({
   course,
-  onBack
+  onBack,
+  refreshing,
+  onRefresh
 }: {
   course?: MandatoryLearningCourse | null;
   onBack?: () => void;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const handleBack = onBack ?? back;
@@ -1535,7 +1542,13 @@ export function RequiredLearningScreen({
   );
 
   return (
-    <EmployeePage headerTitle={course.isMandatory ? "Lộ trình Học bắt buộc" : "Lộ trình Học"} back={handleBack} contentStyle={styles.requiredLearningContent}>
+    <EmployeePage
+      headerTitle={course.isMandatory ? "Lộ trình Học bắt buộc" : "Lộ trình Học"}
+      back={handleBack}
+      contentStyle={styles.requiredLearningContent}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <View style={styles.requiredHero}>
         <Image source={heroImage} onError={() => setThumbnailFailed(true)} style={styles.requiredHeroImage} />
         <View style={styles.requiredHeroOverlay} />
@@ -2529,6 +2542,13 @@ export function ProfileOverviewScreen() {
   const profileAvatarUri = mediaUrl(user?.avatar ?? profileUser.avatar ?? profile.avatar);
   const profileInitial = avatarInitial(user?.fullName ?? profileUser.name ?? profile.name);
 
+  function confirmSignOut() {
+    Alert.alert("Đăng xuất", "Bạn có chắc chắn muốn đăng xuất?", [
+      { text: "Hủy", style: "cancel" },
+      { text: "Xác nhận", style: "destructive", onPress: () => void signOut() }
+    ]);
+  }
+
   async function shareProfileQr() {
     try {
       await Share.share({
@@ -2614,7 +2634,7 @@ export function ProfileOverviewScreen() {
         </>
       )}
 
-      {isManager ? <ProfileManagerActions canApproveDepartmentTransfers={canApproveDepartmentTransfers} /> : <ProfileEmployeeActions />}
+      {isManager ? <ProfileManagerActions canApproveDepartmentTransfers={canApproveDepartmentTransfers} userRole={user?.role} /> : <ProfileEmployeeActions />}
 
       {approvedEmployeeProfile ? (
         <View style={styles.profileQrSection}>
@@ -2647,7 +2667,7 @@ export function ProfileOverviewScreen() {
           <EmployeeButton title="Mở form ứng tuyển" tone="red" icon="document-text-outline" onPress={() => router.push("/(app)/employee/application" as Href)} />
         </View>
       )}
-      <EmployeeButton title="Đăng xuất" tone="light" icon="log-out-outline" onPress={signOut} style={styles.logoutButton} />
+      <EmployeeButton title="Đăng xuất" tone="light" icon="log-out-outline" onPress={confirmSignOut} style={styles.logoutButton} />
     </EmployeePage>
   );
 }
@@ -2672,7 +2692,7 @@ function ProfileEmployeeActions() {
   );
 }
 
-function ProfileManagerActions({ canApproveDepartmentTransfers }: { canApproveDepartmentTransfers: boolean }) {
+function ProfileManagerActions({ canApproveDepartmentTransfers, userRole }: { canApproveDepartmentTransfers: boolean; userRole?: any }) {
   return (
     <View style={styles.profileActionCard}>
       <Pressable
@@ -2690,6 +2710,14 @@ function ProfileManagerActions({ canApproveDepartmentTransfers }: { canApproveDe
           {canApproveDepartmentTransfers ? "Duyệt đơn xin chuyển phòng ban" : "Xin phép chuyển phòng ban"}
         </Text>
       </Pressable>
+      {isRecruitmentApproverRole(userRole) ? (
+        <Pressable
+          onPress={() => router.push({ pathname: "/(app)/employee/recruitment-approvals", params: { from: "profile" } })}
+          style={({ pressed }) => [styles.profileLeaveButton, { backgroundColor: "#795900", borderColor: "#795900", marginTop: 8 }, pressed && styles.pressed]}
+        >
+          <Text style={styles.profileLeaveButtonText}>Duyệt đơn ứng tuyển</Text>
+        </Pressable>
+      ) : null}
       <Pressable
         onPress={() => router.push({ pathname: "/(app)/employee/department-staff", params: { from: "profile" } })}
         style={({ pressed }) => [styles.profileReceiveTransferButton, pressed && styles.pressed]}
@@ -2854,15 +2882,7 @@ export function MeetClientScreen() {
         };
       })
       .filter((item) => item.id)
-      .sort((left, right) => {
-        const preferredName = "khu 25 thửa phú cát";
-        const leftPreferred = left.name.trim().toLowerCase() === preferredName;
-        const rightPreferred = right.name.trim().toLowerCase() === preferredName;
-
-        if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1;
-
-        return 0;
-      });
+      .sort((left, right) => left.name.localeCompare(right.name, "vi"));
   }, [areasData, c.projects]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -3289,15 +3309,7 @@ export function ShowingClientScreen() {
         };
       })
       .filter((item) => item.id)
-      .sort((left, right) => {
-        const preferredName = "khu 25 thửa phú cát";
-        const leftPreferred = left.name.trim().toLowerCase() === preferredName;
-        const rightPreferred = right.name.trim().toLowerCase() === preferredName;
-
-        if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1;
-
-        return 0;
-      });
+      .sort((left, right) => left.name.localeCompare(right.name, "vi"));
   }, [areasData]);
   const historySourceItems = useMemo(() => apiList(historyData), [historyData]);
   const recentSourceItems = useMemo(() => apiList(recentData), [recentData]);
@@ -7103,7 +7115,7 @@ export function LessonDetailScreen({
             lessonId={lesson.id}
             onProgressUpdate={onProgressUpdate}
             progressSyncDisabled={isCompleted}
-            videoUrl={lesson.video_url}
+            videoUrl={mediaUrl(lesson.video_url) || ""}
           />
         ) : (
           <>
@@ -8115,9 +8127,9 @@ function inventoryIntroArticleFromRecord(value: unknown, areaName: string) {
   const article = isApiObject(value) ? value : {};
 
   return {
-    body: apiText(article.body, "Dữ liệu bảng hàng được cập nhật để đội kinh doanh theo dõi trạng thái lô, kiểm tra quy hoạch và chuẩn bị thông tin tư vấn khách hàng."),
-    summary: apiText(article.summary, `${areaName} được trình bày theo bốn nhóm thông tin: vị trí, pháp lý, mặt bằng và tài liệu.`),
-    title: apiText(article.title, `Giới thiệu ${areaName}`)
+    body: apiText(article.body, "Chưa thiết lập."),
+    summary: apiText(article.summary, "Chưa thiết lập."),
+    title: apiText(article.title, areaName || "Giới thiệu khu đất")
   };
 }
 
@@ -8157,6 +8169,7 @@ export function InventoryListScreen() {
   const [areaRows, setAreaRows] = useState<ApiObject[]>([]);
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [failed, setFailed] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("Không thể tải danh sách khu đất.");
   const [filterPickerVisible, setFilterPickerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
@@ -8190,6 +8203,7 @@ export function InventoryListScreen() {
 
     setLoading(true);
     setFailed(false);
+    setErrorMessage("Không thể tải danh sách khu đất.");
 
     request
       .then((response) => {
@@ -8206,7 +8220,9 @@ export function InventoryListScreen() {
 
         setAreaRows([]);
         setFailed(true);
-        appLogger.warn("employee.inventory", "Không thể tải danh sách khu đất.", { error });
+        const msg = error instanceof Error ? error.message : "Không thể tải danh sách khu đất.";
+        setErrorMessage(msg);
+        appLogger.warn("employee.inventory", msg, { error });
       })
       .finally(() => {
         if (mounted) {
@@ -8266,7 +8282,7 @@ export function InventoryListScreen() {
         </View>
 
         {loading ? <Text style={styles.bodyText}>Đang tải khu đất...</Text> : null}
-        {failed ? <Text style={styles.bodyText}>Không thể tải danh sách khu đất.</Text> : null}
+        {failed ? <Text style={styles.bodyText}>{errorMessage}</Text> : null}
         {!loading && !failed && zones.length === 0 ? (
           <Text style={styles.bodyText}>{hasSearchText ? "Không tìm thấy khu đất phù hợp." : "Chưa có dữ liệu khu đất."}</Text>
         ) : null}
@@ -8465,7 +8481,11 @@ export function InventoryMapScreen() {
   const commentsCurrentPage = apiNumber(commentsPagination.current_page, 1);
   const commentsLastPage = apiNumber(commentsPagination.last_page, 1);
   const commentsTotal = Math.max(apiNumber(commentsPagination.total, areaComments.length), areaComments.length);
-  const activeLotArea = apiText(activeLot.area_name ?? activeLot.area ?? activeLot.location ?? inventoryMapData.area_name, "Khu 25 thửa phú cát");
+  const activeLotAreaObject = isApiObject(activeLot.area) ? activeLot.area : null;
+  const activeLotArea = apiText(
+    activeLot.area_name ?? activeLotAreaObject?.name ?? activeLot.location ?? inventoryMapData.area_name,
+    ""
+  );
   const activeLotStatus = inventoryLotStatus(activeLot, lotItems.find((lot) => lot.id === activeLotId)?.status);
   const backendInfoTabs = useMemo(() => inventoryInfoTabsFromRecord(inventoryMapData.info_tabs ?? inventoryMapData.infoTabs), [inventoryMapData.infoTabs, inventoryMapData.info_tabs]);
   const activeInfoTab = backendInfoTabs.find((tab) => tab.key === selectedInfoTab) ?? backendInfoTabs[0] ?? defaultInventoryInfoTabs[0];
@@ -9062,13 +9082,17 @@ export function LotDetailScreen() {
     [lotId, lotRefreshKey]
   );
   const lot = isApiObject(data) ? data : {};
-  const lotName = apiText(lot.code ?? lot.name ?? lot.title, "Lô A10");
-  const lotArea = apiText(lot.area_name ?? lot.area ?? lot.location, "Khu 25 Thừa Phú Cát");
+  const lotName = apiText(lot.code ?? lot.name ?? lot.title, "Chưa thiết lập");
+  const lotAreaObj = isApiObject(lot.area) ? lot.area : null;
+  const lotArea = apiText(lot.area_name ?? lotAreaObj?.name ?? lot.location, "");
   const totalPrice = formatVietnamRealEstatePrice(lot.total_price ?? lot.price ?? lot.sale_price);
   const lotStatus = normalizeInventoryLotStatus(lot.status);
-  const lotUnitPrice = formatUnitPricePerSquareMeter(lot.unit_price ?? lot.unitPrice, "36.9 tr/m²");
-  const lotAreaSize = formatSquareMeters(lot.area_size ?? lot.areaSize ?? lot.square_meters, "36.9 m²");
-  const lotFrontage = apiText(lot.frontage, "Chưa có");
+  const lotUnitPrice = formatUnitPricePerSquareMeter(lot.unit_price ?? lot.unitPrice, "Chưa thiết lập");
+  const lotAreaSize = formatSquareMeters(lot.area_size ?? lot.areaSize ?? lot.square_meters, "Chưa thiết lập");
+  const rawFrontage = lot.frontage !== null && lot.frontage !== undefined && lot.frontage !== "" ? `${lot.frontage}m` : "";
+  const lotFrontage = (lot.is_corner === true || lot.is_corner === 1 || lot.is_corner === "1")
+    ? (rawFrontage ? `${rawFrontage} (Lô góc)` : "Lô góc")
+    : (rawFrontage || "Chưa có");
   const lotLegal = apiText(lot.legal, "Chưa có");
   const lotIsLockedByOther = apiBoolean(lot.is_locked_by_other ?? lot.isLockedByOther);
   const lotIsDepositedByOther = apiBoolean(lot.is_deposit_by_other ?? lot.isDepositByOther);
@@ -9087,7 +9111,7 @@ export function LotDetailScreen() {
   const lotGalleryCountText = lotImages.length > 0 ? `${visibleLotImageIndex + 1}/${lotImages.length}` : "0/0";
   const lotDescription = apiText(
     lot.description,
-    "Lô đất góc 2 mặt tiền cực hiếm tại phân khu trung tâm The Pearl. View trực diện công viên nội khu và rạch cảnh quan. Cơ sở hạ tầng đã hoàn thiện 100%, sẵn sàng xây dựng ngay. Rất thích hợp để xây biệt thự nghỉ dưỡng hoặc shophouse thương mại cao cấp."
+    "Chưa thiết lập."
   );
   const nestedArea = isApiObject(lot.area) ? lot.area : {};
   const nestedProject = isApiObject(nestedArea.project) ? nestedArea.project : {};
@@ -9271,11 +9295,12 @@ export function LotDetailScreen() {
             styles.lotDetailActionButton,
             styles.lotDetailLockButton,
             lotIsLocked && styles.lotDetailLockButtonLocked,
+            (!lotCanLock && !lotIsLocked) && styles.lotDetailLockButtonDisabled,
             lockSubmitting && styles.pressed
           ]}
         >
-          <Ionicons name={lotIsLocked ? "lock-closed-outline" : "save-outline"} size={20} color="#1e8e3e" />
-          <Text style={[styles.lotDetailLockText, lotIsLocked && styles.lotDetailLockTextLocked]}>{lotLockButtonText}</Text>
+          <Ionicons name={lotIsLocked ? "lock-closed-outline" : "save-outline"} size={20} color={lotIsLocked ? "#1e8e3e" : (!lotCanLock && !lotIsLocked ? "#a1a1aa" : "#1e8e3e")} />
+          <Text style={[styles.lotDetailLockText, lotIsLocked && styles.lotDetailLockTextLocked, (!lotCanLock && !lotIsLocked) && styles.lotDetailLockTextDisabled]}>{lotLockButtonText}</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -9702,6 +9727,358 @@ export function CommentsScreen() {
         </>
       )}
     </EmployeePage>
+  );
+}
+
+function getPositionLabel(posValue: number | string) {
+  const val = Number(posValue);
+  if (val === 1) return "Nhân viên";
+  if (val === 2) return "Trưởng phòng";
+  if (val === 3) return "Giám đốc";
+  return "Không xác định";
+}
+
+export type RecruitmentApplicationData = {
+  id: string;
+  user_id: string;
+  name: string;
+  phone: string;
+  applied_position: number;
+  applied_branch_id: number;
+  education: string;
+  experience: string;
+  profile_url: string;
+  introduction: string;
+  cv_url: string;
+  status: "pending" | "approved" | "rejected";
+  rejected_reason?: string;
+  processed_by?: string;
+  processed_at?: string;
+  created_at: string;
+  user?: {
+    fullName?: string;
+    phone?: string;
+  };
+  branch?: {
+    name?: string;
+  };
+};
+
+export function RecruitmentApprovalsScreen() {
+  const [applications, setApplications] = useState<RecruitmentApplicationData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+
+  async function fetchApplications() {
+    try {
+      const res = await employeeApi.recruitmentApplications();
+      if (res && Array.isArray(res.data)) {
+        setApplications(res.data);
+      }
+    } catch (err) {
+      console.log("Failed to fetch recruitment applications", err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchApplications();
+  }, []);
+
+  function onRefresh() {
+    setRefreshing(true);
+    fetchApplications();
+  }
+
+  const filtered = applications.filter((app) => {
+    if (filter === "all") return true;
+    return app.status === filter;
+  });
+
+  return (
+    <EmployeePage edges={["top", "left", "right"]} contentStyle={{ flex: 1, backgroundColor: "#f8f9fa" }}>
+      <View style={styles.headerRow}>
+        <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={employeePalette.redDark} />
+        </Pressable>
+        <Text style={styles.screenTitle}>Duyệt đơn ứng tuyển</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <View style={styles.tabBar}>
+        {(["pending", "approved", "rejected", "all"] as const).map((tab) => {
+          const active = filter === tab;
+          const label =
+            tab === "pending"
+              ? "Chờ duyệt"
+              : tab === "approved"
+                ? "Đã duyệt"
+                : tab === "rejected"
+                  ? "Từ chối"
+                  : "Tất cả";
+          return (
+            <Pressable
+              key={tab}
+              onPress={() => setFilter(tab)}
+              style={[styles.tabButton, active && styles.tabButtonActive]}
+            >
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color={employeePalette.redDark} />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={{ padding: 16, gap: 16 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[employeePalette.redDark]} />}
+        >
+          {filtered.length === 0 ? (
+            <View style={{ alignItems: "center", paddingVertical: 40 }}>
+              <Ionicons name="document-text-outline" size={48} color="#b0b0b0" />
+              <Text style={{ marginTop: 8, color: "#808080", fontFamily: appFonts.regular, fontSize: 16 }}>
+                Không có đơn ứng tuyển nào.
+              </Text>
+            </View>
+          ) : (
+            filtered.map((item) => (
+              <RecruitmentApplicationCard key={item.id} application={item} onChanged={fetchApplications} />
+            ))
+          )}
+        </ScrollView>
+      )}
+    </EmployeePage>
+  );
+}
+
+function RecruitmentApplicationCard({
+  application,
+  onChanged
+}: {
+  application: RecruitmentApplicationData;
+  onChanged: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [processing, setProcessing] = useState<"approve" | "reject" | null>(null);
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [reason, setReason] = useState("");
+
+  const statusLabel =
+    application.status === "approved"
+      ? "Đã duyệt"
+      : application.status === "rejected"
+        ? "Từ chối"
+        : "Chờ duyệt";
+
+  const statusColor =
+    application.status === "approved"
+      ? "#2e7d32"
+      : application.status === "rejected"
+        ? "#c62828"
+        : "#ef6c00";
+
+  const statusBg =
+    application.status === "approved"
+      ? "#e8f5e9"
+      : application.status === "rejected"
+        ? "#ffebee"
+        : "#fff3e0";
+
+  async function handleApprove() {
+    Alert.alert("Phê duyệt", `Xác nhận phê duyệt hồ sơ của ứng viên ${application.name || application.user?.fullName}?`, [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Xác nhận",
+        onPress: async () => {
+          setProcessing("approve");
+          try {
+            await employeeApi.processRecruitmentApplication(application.id, "approved");
+            notifySuccess({ message: "Phê duyệt hồ sơ thành công." });
+            onChanged();
+          } catch (err: any) {
+            notifyError(err);
+          } finally {
+            setProcessing(null);
+          }
+        }
+      }
+    ]);
+  }
+
+  async function handleReject() {
+    if (!reason.trim()) {
+      notifyError("Vui lòng nhập lý do từ chối.");
+      return;
+    }
+    setProcessing("reject");
+    try {
+      await employeeApi.processRecruitmentApplication(application.id, "rejected", reason.trim());
+      notifySuccess({ message: "Đã từ chối hồ sơ ứng tuyển." });
+      setRejectModalVisible(false);
+      setReason("");
+      onChanged();
+    } catch (err: any) {
+      notifyError(err);
+    } finally {
+      setProcessing(null);
+    }
+  }
+
+  function handleOpenCv() {
+    if (!application.cv_url) return;
+    const url = application.cv_url.startsWith("http")
+      ? application.cv_url
+      : `${API_URL}/storage/${application.cv_url}`;
+    Linking.openURL(url).catch((err) => {
+      console.log("Failed to open URL", err);
+      notifyError("Không thể mở CV lúc này.");
+    });
+  }
+
+  return (
+    <View style={styles.recruitmentCard}>
+      <View style={styles.recruitmentCardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.recruitmentName}>
+            {application.name || application.user?.fullName || "Ứng viên"}
+          </Text>
+          <Text style={styles.recruitmentPhone}>
+            SĐT: {application.phone || application.user?.phone || "N/A"}
+          </Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+        </View>
+      </View>
+
+      <View style={styles.recruitmentInfoRow}>
+        <Text style={styles.recruitmentInfoLabel}>Vị trí:</Text>
+        <Text style={styles.recruitmentInfoValue}>
+          {getPositionLabel(application.applied_position)}
+        </Text>
+      </View>
+      <View style={styles.recruitmentInfoRow}>
+        <Text style={styles.recruitmentInfoLabel}>Chi nhánh:</Text>
+        <Text style={styles.recruitmentInfoValue}>
+          {application.branch?.name || "N/A"}
+        </Text>
+      </View>
+
+      {expanded && (
+        <View style={styles.recruitmentDetails}>
+          <View style={styles.detailDivider} />
+          {application.education && (
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Học vấn:</Text>
+              <Text style={styles.detailValue}>{application.education}</Text>
+            </View>
+          )}
+          {application.experience && (
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Kinh nghiệm:</Text>
+              <Text style={styles.detailValue}>{application.experience}</Text>
+            </View>
+          )}
+          {application.introduction && (
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Giới thiệu:</Text>
+              <Text style={styles.detailValue}>{application.introduction}</Text>
+            </View>
+          )}
+          {application.profile_url && (
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Profile link:</Text>
+              <Pressable onPress={() => Linking.openURL(application.profile_url)}>
+                <Text style={[styles.detailValue, { color: "#0066cc", textDecorationLine: "underline" }]}>
+                  {application.profile_url}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+          {application.cv_url && (
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>CV file:</Text>
+              <Pressable onPress={handleOpenCv} style={styles.cvButton}>
+                <Ionicons name="document-attach-outline" size={16} color="#6a0100" />
+                <Text style={styles.cvButtonText}>Xem CV đính kèm</Text>
+              </Pressable>
+            </View>
+          )}
+          {application.rejected_reason && (
+            <View style={[styles.detailField, { backgroundColor: "#ffebee", padding: 8, borderRadius: 6 }]}>
+              <Text style={[styles.detailLabel, { color: "#c62828" }]}>Lý do từ chối:</Text>
+              <Text style={[styles.detailValue, { color: "#c62828" }]}>{application.rejected_reason}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      <View style={styles.recruitmentCardActions}>
+        <Pressable onPress={() => setExpanded(!expanded)} style={styles.toggleExpandButton}>
+          <Text style={styles.toggleExpandText}>{expanded ? "Thu gọn" : "Xem chi tiết"}</Text>
+          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={16} color="#6b7280" />
+        </Pressable>
+
+        {application.status === "pending" && (
+          <View style={styles.actionButtonContainer}>
+            <Pressable
+              disabled={processing !== null}
+              onPress={() => setRejectModalVisible(true)}
+              style={[styles.actionBtn, styles.rejectBtn]}
+            >
+              <Text style={styles.actionBtnTextReject}>Từ chối</Text>
+            </Pressable>
+            <Pressable
+              disabled={processing !== null}
+              onPress={handleApprove}
+              style={[styles.actionBtn, styles.approveBtn]}
+            >
+              {processing === "approve" ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.actionBtnTextApprove}>Duyệt</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
+      </View>
+
+      <Modal animationType="fade" onRequestClose={() => setRejectModalVisible(false)} transparent visible={rejectModalVisible}>
+        <Pressable onPress={() => setRejectModalVisible(false)} style={styles.modalBackdrop}>
+          <Pressable onPress={(e) => e.stopPropagation()} style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Từ chối hồ sơ</Text>
+            <Text style={styles.modalSubtitle}>Nhập lý do từ chối hồ sơ của ứng viên {application.name}:</Text>
+            <TextInput
+              multiline
+              onChangeText={setReason}
+              placeholder="Nhập lý do từ chối tại đây..."
+              placeholderTextColor="#9ca3af"
+              style={styles.modalInput}
+              value={reason}
+            />
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setRejectModalVisible(false)} style={[styles.modalBtn, styles.modalCancelBtn]}>
+                <Text style={styles.modalBtnTextCancel}>Hủy</Text>
+              </Pressable>
+              <Pressable disabled={processing !== null} onPress={handleReject} style={[styles.modalBtn, styles.modalConfirmBtn]}>
+                {processing === "reject" ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.modalBtnTextConfirm}>Từ chối</Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
   );
 }
 
@@ -15944,6 +16321,10 @@ const styles = StyleSheet.create({
   lotDetailLockButtonLocked: {
     backgroundColor: "#eef8f1"
   },
+  lotDetailLockButtonDisabled: {
+    borderColor: "#e1e3e4",
+    backgroundColor: "#f8f9fa"
+  },
   lotDetailDepositButton: {
     backgroundColor: employeePalette.red,
     flex: 1,
@@ -15966,6 +16347,9 @@ const styles = StyleSheet.create({
   lotDetailLockTextLocked: {
     letterSpacing: 0,
     lineHeight: 24
+  },
+  lotDetailLockTextDisabled: {
+    color: "#a1a1aa"
   },
   lotDetailDepositText: {
     color: "#ffffff",
@@ -16570,6 +16954,263 @@ const styles = StyleSheet.create({
   legend: {
     flexDirection: "row",
     gap: 8
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: "#ffffff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb"
+  },
+  backButton: {
+    padding: 8
+  },
+  screenTitle: {
+    fontSize: 20,
+    fontFamily: appFonts.bold,
+    color: employeePalette.redDark
+  },
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: "#ffffff",
+    padding: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb"
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 8,
+    borderRadius: 8
+  },
+  tabButtonActive: {
+    backgroundColor: "#f7e8e5"
+  },
+  tabText: {
+    fontSize: 14,
+    fontFamily: appFonts.semiBold,
+    color: "#6b7280"
+  },
+  tabTextActive: {
+    color: employeePalette.redDark,
+    fontFamily: appFonts.bold
+  },
+  recruitmentCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  recruitmentCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12
+  },
+  recruitmentName: {
+    fontSize: 18,
+    fontFamily: appFonts.bold,
+    color: "#1f2937",
+    marginBottom: 2
+  },
+  recruitmentPhone: {
+    fontSize: 14,
+    fontFamily: appFonts.regular,
+    color: "#6b7280"
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6
+  },
+  statusText: {
+    fontSize: 12,
+    fontFamily: appFonts.bold
+  },
+  recruitmentInfoRow: {
+    flexDirection: "row",
+    marginBottom: 6
+  },
+  recruitmentInfoLabel: {
+    width: 90,
+    fontSize: 14,
+    fontFamily: appFonts.semiBold,
+    color: "#6b7280"
+  },
+  recruitmentInfoValue: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: appFonts.bold,
+    color: "#374151"
+  },
+  recruitmentDetails: {
+    marginTop: 8,
+    paddingTop: 8
+  },
+  detailDivider: {
+    height: 1,
+    backgroundColor: "#f3f4f6",
+    marginBottom: 8
+  },
+  detailField: {
+    marginBottom: 8
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontFamily: appFonts.semiBold,
+    color: "#9ca3af",
+    marginBottom: 2
+  },
+  detailValue: {
+    fontSize: 14,
+    fontFamily: appFonts.regular,
+    color: "#1f2937"
+  },
+  cvButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: "#f7e8e5",
+    borderWidth: 1,
+    borderColor: "#edc8c2",
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginTop: 4
+  },
+  cvButtonText: {
+    fontSize: 14,
+    fontFamily: appFonts.bold,
+    color: "#6a0100"
+  },
+  recruitmentCardActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f3f4f6"
+  },
+  toggleExpandButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  toggleExpandText: {
+    fontSize: 14,
+    fontFamily: appFonts.semiBold,
+    color: "#6b7280"
+  },
+  actionButtonContainer: {
+    flexDirection: "row",
+    gap: 8
+  },
+  actionBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  rejectBtn: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d1d5db"
+  },
+  approveBtn: {
+    backgroundColor: employeePalette.redDark
+  },
+  actionBtnTextReject: {
+    fontSize: 14,
+    fontFamily: appFonts.bold,
+    color: "#4b5563"
+  },
+  actionBtnTextApprove: {
+    fontSize: 14,
+    fontFamily: appFonts.bold,
+    color: "#ffffff"
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20
+  },
+  modalContent: {
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: appFonts.bold,
+    color: "#1f2937",
+    marginBottom: 8
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    fontFamily: appFonts.regular,
+    color: "#4b5563",
+    marginBottom: 12
+  },
+  modalInput: {
+    height: 100,
+    borderColor: "#d1d5db",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    textAlignVertical: "top",
+    color: "#1f2937",
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    marginBottom: 16
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12
+  },
+  modalBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  modalCancelBtn: {
+    backgroundColor: "#f3f4f6"
+  },
+  modalConfirmBtn: {
+    backgroundColor: "#c62828"
+  },
+  modalBtnTextCancel: {
+    fontSize: 14,
+    fontFamily: appFonts.bold,
+    color: "#4b5563"
+  },
+  modalBtnTextConfirm: {
+    fontSize: 14,
+    fontFamily: appFonts.bold,
+    color: "#ffffff"
   },
   pressed: {
     opacity: 0.84

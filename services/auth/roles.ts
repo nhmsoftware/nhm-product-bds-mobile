@@ -107,6 +107,23 @@ export function isExecutiveAdminRole(role?: AuthRole | null) {
   );
 }
 
+export function isRecruitmentApproverRole(role?: AuthRole | null) {
+  const normalized = typeof role === "string" ? role.toLowerCase() : role;
+
+  return (
+    normalized === "director" ||
+    normalized === "ceo" ||
+    normalized === "super_admin" ||
+    normalized === "admin" ||
+    normalized === "3" ||
+    normalized === "4" ||
+    normalized === "5" ||
+    normalized === 3 ||
+    normalized === 4 ||
+    normalized === 5
+  );
+}
+
 export function getHomeHrefForRole(role?: AuthRole | null): RoleHomeHref {
   const normalizedRole = normalizeAccessRole(role);
   return normalizedRole ? roleHomeHref[normalizedRole] : "/(app)/forbidden";

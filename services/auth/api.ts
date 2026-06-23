@@ -101,8 +101,8 @@ function expiresAtFromSeconds(seconds?: number) {
   return new Date(Date.now() + (seconds ?? 60 * 60) * 1000).toISOString();
 }
 
-function logDevOtp(username: string, data: ForgotPasswordResponse) {
-  const otpCode = data.otp_code;
+function logDevOtp(username: string, data: ForgotPasswordResponse | null) {
+  const otpCode = data?.otp_code;
 
   if (!__DEV__ || otpCode === undefined || otpCode === null || otpCode === "") {
     return;
@@ -111,8 +111,8 @@ function logDevOtp(username: string, data: ForgotPasswordResponse) {
   appLogger.info("auth.otp.dev", `[DEV ONLY] OTP for ${username}: ${String(otpCode)}`, {
     username,
     otp_code: String(otpCode),
-    expires_at: data.expires_at ?? null,
-    retry_after_seconds: data.retry_after_seconds ?? null
+    expires_at: data?.expires_at ?? null,
+    retry_after_seconds: data?.retry_after_seconds ?? null
   });
 }
 
@@ -138,6 +138,7 @@ export const authApi = {
     email: string;
     phone?: string;
     password: string;
+    accountType: "investor" | "broker";
     referralCode?: string;
     agreeTerms?: boolean;
   }) {
@@ -146,6 +147,7 @@ export const authApi = {
       email: input.email,
       phone: input.phone,
       password: input.password,
+      account_type: input.accountType,
       referral_code: input.referralCode || undefined,
       agree_terms: input.agreeTerms ?? true
     });
@@ -173,7 +175,7 @@ export const authApi = {
   },
 
   async forgotPassword(input: { username: string }) {
-    const response = await postData<ForgotPasswordResponse>("/api/v1/auth/forgot-password", input);
+    const response = await postData<ForgotPasswordResponse | null>("/api/v1/auth/forgot-password", input);
     logDevOtp(input.username, response.data);
     return response;
   },
