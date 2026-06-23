@@ -20,6 +20,7 @@ export default function EmployeeLayout() {
         <Stack.Screen name="meet-client" />
         <Stack.Screen name="meeting-activities" />
         <Stack.Screen name="showing-client" />
+        <Stack.Screen name="site-tour-activities" />
         <Stack.Screen name="point-history" />
         <Stack.Screen name="personal-info" />
         <Stack.Screen name="application" />

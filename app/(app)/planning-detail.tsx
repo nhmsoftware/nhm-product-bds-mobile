@@ -60,18 +60,30 @@ export default function PlanningDetailScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [planning, setPlanning] = useState<PublicPlanning | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!params.id) return;
+    if (!params.id) {
+      setLoading(false);
+      return;
+    }
     let active = true;
+    setLoading(true);
 
     customerPublicApi
       .planningDetail(params.id)
       .then((response) => {
-        if (active) setPlanning(response.data);
+        if (active) {
+          setPlanning(response.data);
+          setLoading(false);
+        }
       })
       .catch((error) => {
         appLogger.warn("customer.planningDetail", "Không thể tải chi tiết quy hoạch.", { error, id: params.id });
+        if (active) {
+          notifyError("Quy hoạch không còn tồn tại hoặc đã bị xóa.");
+          router.back();
+        }
       });
 
     return () => {
@@ -133,6 +145,16 @@ export default function PlanningDetailScreen() {
     } finally {
       setPdfLoading(false);
     }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator color={palette.darkRed} size="large" />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (

@@ -3114,6 +3114,25 @@ export function MeetingActivitiesScreen() {
   );
 }
 
+export function SiteTourActivitiesScreen() {
+  const { data, failed, loading } = useEmployeeApiData(() => employeeApi.siteTourHistory(), []);
+  const tours = useMemo(() => apiList(data).map(mapSiteTourHistory), [data]);
+
+  return (
+    <EmployeePage headerTitle="Lịch sử dẫn khách" back={backToCheckInHistory} backType="previous">
+      <View style={styles.meetingActivitiesHeader}>
+        <Text style={styles.meetingActivitiesTitle}>Lịch sử dẫn khách</Text>
+        <Text style={styles.meetingActivitiesSubtitle}>Toàn bộ hoạt động dẫn khách đã được ghi nhận từ hệ thống.</Text>
+      </View>
+      <ShowingHistoryTimeline
+        failed={failed}
+        items={tours}
+        loading={loading}
+      />
+    </EmployeePage>
+  );
+}
+
 function MeetClientProjectPicker({
   onClose,
   onSelect,
@@ -3530,10 +3549,20 @@ export function ShowingClientScreen() {
         onPress={captureSiteTourPhoto}
       />
       <ShowingPrimaryButton disabled={submitting} title={submitting ? "Đang gửi..." : c.action} onPress={submitSiteTour} />
-      <EmployeeSectionTitle title={c.history} />
+      <View style={styles.rowBetween}>
+        <EmployeeSectionTitle title={c.history} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/employee/site-tour-activities")}
+          style={({ pressed }) => [styles.meetSeeAll, pressed && styles.pressed]}
+        >
+          <Text style={styles.meetSeeAllText}>Xem tất cả</Text>
+          <Image source={meetClientImages.historyForward} style={styles.meetForwardIcon} />
+        </Pressable>
+      </View>
       <ShowingHistoryTimeline
         failed={timelineFailed}
-        items={historyItems}
+        items={historyItems.slice(0, 3)}
         loading={timelineLoading}
       />
     </EmployeePage>

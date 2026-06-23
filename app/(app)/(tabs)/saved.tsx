@@ -1,11 +1,12 @@
 import {
   Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
   useMemo,
   useRef,
-  useState } from "react";
+  useState,
+  useCallback } from "react";
 import { Image,
   type ImageSourcePropType,
   ScrollView,
@@ -138,24 +139,27 @@ export default function CustomerProjectsScreen() {
     setVisibleCount(6);
   }, [searchQuery, selectedFilter]);
 
-  useEffect(() => {
-    customerPublicApi.projects({ per_page: 50 })
-      .then((response) => {
-        setApiProjects(response.data.data ?? []);
-      })
-      .catch((error) => {
-        appLogger.warn("customer.projects", "Không thể tải danh sách khu đất.", { error });
-      })
-      .finally(() => {
-        setProjectsLoaded(true);
-      });
+  useFocusEffect(
+    useCallback(() => {
+      customerPublicApi.projects({ per_page: 50 })
+        .then((response) => {
+          setApiProjects(response.data.data ?? []);
+        })
+        .catch((error) => {
+          appLogger.warn("customer.projects", "Không thể tải danh sách khu đất.", { error });
+        })
+        .finally(() => {
+          setProjectsLoaded(true);
+        });
 
-    if (params.focus === "true") {
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 300);
-    }
-  }, [params.focus]);
+      if (params.focus === "true") {
+        const timer = setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+    }, [params.focus])
+  );
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>

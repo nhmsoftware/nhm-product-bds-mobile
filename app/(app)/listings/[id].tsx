@@ -45,7 +45,10 @@ function ListingDetailContent() {
         setListing(listingResponse.data);
         setSaved(savedState);
       })
-      .catch((error) => notifyError(error, t("listing.error.detail")))
+      .catch((error) => {
+        notifyError(error, t("listing.error.detail"));
+        router.back();
+      })
       .finally(() => setLoading(false));
   }, [params.id, t]);
 

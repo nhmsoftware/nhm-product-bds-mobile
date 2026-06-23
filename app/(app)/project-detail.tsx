@@ -70,18 +70,30 @@ export default function ProjectDetailScreen() {
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
   const [brochureLoading, setBrochureLoading] = useState(false);
   const [consultLoading, setConsultLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!params.id) return;
+    if (!params.id) {
+      setLoading(false);
+      return;
+    }
     let active = true;
+    setLoading(true);
 
     customerPublicApi
       .projectDetail(params.id)
       .then((response) => {
-        if (active) setProject(response.data);
+        if (active) {
+          setProject(response.data);
+          setLoading(false);
+        }
       })
       .catch((error) => {
         appLogger.warn("customer.projectDetail", "Không thể tải chi tiết khu đất.", { error, id: params.id });
+        if (active) {
+          notifyError("Dự án không còn tồn tại hoặc đã bị xóa.");
+          router.back();
+        }
       });
 
     return () => {
@@ -190,6 +202,16 @@ export default function ProjectDetailScreen() {
     } finally {
       setConsultLoading(false);
     }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator color={palette.darkRed} size="large" />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (

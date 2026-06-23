@@ -1,9 +1,10 @@
 import {
   Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
-  useState } from "react";
+  useState,
+  useCallback } from "react";
 import { Image,
   ScrollView,
   StyleSheet,
@@ -117,26 +118,28 @@ export default function PlanningListScreen() {
   const [selectedFilter, setSelectedFilter] = useState<string>("Tất cả khu vực");
   const [searchKeyword, setSearchKeyword] = useState("");
 
-  useEffect(() => {
-    let active = true;
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-    Promise.all([
-      customerPublicApi.plannings({ per_page: 30 }),
-      customerPublicApi.planningCities()
-    ])
-      .then(([planningResponse, cityResponse]) => {
-        if (!active) return;
-        setApiPlannings(planningResponse.data.data ?? []);
-        setApiCities(cityResponse.data ?? []);
-      })
-      .catch((error) => {
-        appLogger.warn("customer.plannings", "Không thể tải danh sách quy hoạch.", { error });
-      });
+      Promise.all([
+        customerPublicApi.plannings({ per_page: 30 }),
+        customerPublicApi.planningCities()
+      ])
+        .then(([planningResponse, cityResponse]) => {
+          if (!active) return;
+          setApiPlannings(planningResponse.data.data ?? []);
+          setApiCities(cityResponse.data ?? []);
+        })
+        .catch((error) => {
+          appLogger.warn("customer.plannings", "Không thể tải danh sách quy hoạch.", { error });
+        });
 
-    return () => {
-      active = false;
-    };
-  }, []);
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const displayFilters = apiCities.length > 0 ? ["Tất cả khu vực", ...apiCities] : [...filters];
   const sourceSections: PlanningSection[] = apiPlannings.length > 0

@@ -4,13 +4,15 @@ import {
 import { StatusBar } from "expo-status-bar";
 import {
   router,
+  useFocusEffect,
   type Href
 } from "expo-router";
 import type { ComponentProps } from "react";
 import {
   useEffect,
   useRef,
-  useState
+  useState,
+  useCallback
 } from "react";
 import {
   ScrollView,
@@ -165,39 +167,41 @@ export default function CustomerHomeScreen() {
     return () => clearInterval(timer);
   }, [heroSlideWidth, heroSlides.length]);
 
-  useEffect(() => {
-    let active = true;
-    appLogger.info("customer.home", "Bắt đầu tải dữ liệu trang chủ...");
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      appLogger.info("customer.home", "Bắt đầu tải dữ liệu trang chủ...");
 
-    Promise.all([
-      customerPublicApi.projects({ per_page: 6 }),
-      customerPublicApi.news({ page: 1, per_page: 3 })
-    ])
-      .then(([projectResponse, newsResponse]) => {
-        if (!active) return;
-        const featuredNews = newsResponse.data.featured ?? [];
-        const projects = projectResponse.data.data ?? [];
+      Promise.all([
+        customerPublicApi.projects({ per_page: 6 }),
+        customerPublicApi.news({ page: 1, per_page: 3 })
+      ])
+        .then(([projectResponse, newsResponse]) => {
+          if (!active) return;
+          const featuredNews = newsResponse.data.featured ?? [];
+          const projects = projectResponse.data.data ?? [];
 
-        appLogger.info("customer.home", "Tải dữ liệu thành công.", {
-          projectCount: projects.length,
-          featuredNewsCount: featuredNews.length,
-          listNewsCount: newsResponse.data.list?.length ?? 0,
-          projectImages: projects.slice(0, 3).map(p => ({ name: p.name, image: p.image })),
-          newsImages: featuredNews.slice(0, 3).map(n => ({ title: n.title?.slice(0, 30), thumbnail: n.thumbnail })),
+          appLogger.info("customer.home", "Tải dữ liệu thành công.", {
+            projectCount: projects.length,
+            featuredNewsCount: featuredNews.length,
+            listNewsCount: newsResponse.data.list?.length ?? 0,
+            projectImages: projects.slice(0, 3).map(p => ({ name: p.name, image: p.image })),
+            newsImages: featuredNews.slice(0, 3).map(n => ({ title: n.title?.slice(0, 30), thumbnail: n.thumbnail })),
+          });
+
+          setFeaturedProjects(projects);
+          setFeaturedNewsSlides(featuredNews);
+          setLatestNews([...featuredNews, ...(newsResponse.data.list ?? [])].slice(0, 3));
+        })
+        .catch((error) => {
+          appLogger.warn("customer.home", "Không thể tải dữ liệu trang chủ khách hàng.", { error });
         });
 
-        setFeaturedProjects(projects);
-        setFeaturedNewsSlides(featuredNews);
-        setLatestNews([...featuredNews, ...(newsResponse.data.list ?? [])].slice(0, 3));
-      })
-      .catch((error) => {
-        appLogger.warn("customer.home", "Không thể tải dữ liệu trang chủ khách hàng.", { error });
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   function handleHeroScroll(offsetX: number) {
     if (heroSlideWidth <= 0) return;
