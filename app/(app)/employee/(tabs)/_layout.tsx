@@ -108,7 +108,7 @@ export default function EmployeeTabsLayout() {
       <Tabs.Screen
         name="news"
         options={{
-          title: "Tin tức",
+          title: "Điểm đến",
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="calendar-outline" size={size} />
         }}
       />

@@ -63,6 +63,7 @@ export type PublicPlanning = {
   setback?: string | null;
   land_type_notes?: string | null;
   pdf_url?: string | null;
+  check_planning_link?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   content?: string | null;
@@ -131,11 +132,21 @@ export type NewsDetailData = {
   related?: PublicNews[];
 };
 
+export type LegalTopic = {
+  id: string;
+  name?: string | null;
+  slug?: string | null;
+};
+
 export type LegalVideo = {
   id: string;
   title?: string | null;
   slug?: string | null;
   category?: string | null;
+  legal_topic_id?: string | null;
+  legal_topic?: LegalTopic | null;
+  category_label?: string | null;
+  published_date?: string | null;
   short_description?: string | null;
   description?: string | null;
   thumbnail?: string | null;
@@ -145,6 +156,7 @@ export type LegalVideo = {
   video_url?: string | null;
   created_at?: string | null;
   published_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type LegalVideoListData = {
@@ -195,6 +207,10 @@ export const customerPublicApi = {
 
   projects(params?: { search?: string; location?: string; type?: string; status?: string; page?: number; per_page?: number }) {
     return getData<PaginatedData<PublicProject>>("/api/v1/public/projects", params);
+  },
+
+  projectTypes() {
+    return getData<string[]>("/api/v1/public/projects/types");
   },
 
   searchProjects(params: { q: string; per_page?: number; page?: number }) {

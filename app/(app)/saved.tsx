@@ -47,14 +47,7 @@ const projectImages = {
   urbanGold: imageNotFound
 };
 
-const filters = ["Tất cả", "Căn hộ", "Biệt thự", "Shophouse"] as const;
-
-const filterTypeMap: Record<string, string | undefined> = {
-  "Tất cả": undefined,
-  "Căn hộ": "Căn hộ dịch vụ",
-  "Biệt thự": "Biệt thự nghỉ dưỡng đồi thông",
-  "Shophouse": "Shophouse ven sông",
-};
+const DEFAULT_FILTERS = ["Tất cả", "Căn hộ", "Biệt thự", "Shophouse"] as const;
 
 type FallbackProject = {
   badge: string;
@@ -103,23 +96,41 @@ const projects: FallbackProject[] = [
 export default function CustomerProjectsScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [apiProjects, setApiProjects] = useState<PublicProject[]>([]);
+  const [apiTypes, setApiTypes] = useState<string[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<typeof filters[number]>("Tất cả");
+  const [selectedFilter, setSelectedFilter] = useState<string>("Tất cả");
   const [searchQuery, setSearchQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(6);
   const searchInputRef = useRef<TextInput>(null);
   const params = useLocalSearchParams<{ focus?: string }>();
 
+  const dynamicFilters = useMemo<string[]>(() => {
+    const list = apiTypes.length > 0 ? apiTypes : [...DEFAULT_FILTERS];
+    const filteredList = list.filter(t => t !== "Tất cả" && Boolean(t));
+    return ["Tất cả", ...filteredList];
+  }, [apiTypes]);
+
+  useEffect(() => {
+    if (!dynamicFilters.includes(selectedFilter)) {
+      setSelectedFilter("Tất cả");
+    }
+  }, [dynamicFilters, selectedFilter]);
+
   const visibleApiProjects = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const selectedType = filterTypeMap[selectedFilter];
 
     return apiProjects.filter((project) => {
       const name = (project.name || "").toLowerCase();
       const location = (project.location || "").toLowerCase();
       const type = (project.type || "").toLowerCase();
       const queryMatch = !query || name.includes(query) || location.includes(query) || type.includes(query);
-      const typeMatch = !selectedType || type.includes(selectedType.toLowerCase());
+      
+      let typeMatch = false;
+      if (selectedFilter === "Tất cả") {
+        typeMatch = true;
+      } else {
+        typeMatch = type.includes(selectedFilter.toLowerCase());
+      }
 
       return queryMatch && typeMatch;
     });
@@ -152,6 +163,14 @@ export default function CustomerProjectsScreen() {
           setProjectsLoaded(true);
         });
 
+      customerPublicApi.projectTypes()
+        .then((response) => {
+          setApiTypes(response.data ?? []);
+        })
+        .catch((error) => {
+          appLogger.warn("customer.projectTypes", "Không thể tải danh sách loại hình.", { error });
+        });
+
       if (params.focus === "true") {
         const timer = setTimeout(() => {
           searchInputRef.current?.focus();
@@ -165,12 +184,10 @@ export default function CustomerProjectsScreen() {
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <StatusBar backgroundColor={palette.background} style="dark" />
       <View style={styles.topBar}>
-        <Pressable accessibilityRole="button" onPress={() => router.push("/(app)/(tabs)")} style={styles.brandRow}>
-          <View style={styles.brandIcon}>
-            <Ionicons name="business" size={17} color={palette.white} />
-          </View>
-          <Text style={styles.brandText}>LUXE REALTY</Text>
+        <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color={palette.darkRed} />
         </Pressable>
+        <Text style={styles.brandText}>LUXE REALTY</Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => setAccountMenuVisible(true)}
@@ -207,8 +224,12 @@ export default function CustomerProjectsScreen() {
             )}
           </View>
 
-          <View style={styles.filterWrap}>
-            {filters.map((filter) => {
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterWrap}
+          >
+            {dynamicFilters.map((filter) => {
               const isActive = selectedFilter === filter;
               return (
                 <Pressable
@@ -225,14 +246,14 @@ export default function CustomerProjectsScreen() {
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
 
         <View style={styles.projectList}>
           {displayedProjects.length > 0 ? displayedProjects.map((project, index) => {
             const isApiProject = "id" in project;
             return (
-            <View key={isApiProject ? project.id : project.title} style={styles.projectCard}>
+            <View key={isApiProject ? project.id : `project-${index}`} style={styles.projectCard}>
               <View style={styles.projectImageWrap}>
                 <FallbackImage
                    source={
@@ -332,19 +353,6 @@ const styles = StyleSheet.create({
     shadowRadius: 1,
     elevation: 1
   },
-  brandRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12
-  },
-  brandIcon: {
-    alignItems: "center",
-    backgroundColor: palette.darkRed,
-    borderRadius: 999,
-    height: 32,
-    justifyContent: "center",
-    width: 32
-  },
   brandText: {
     color: palette.darkRed,
     fontFamily: appFonts.bold,
@@ -358,6 +366,12 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: "center",
     width: 40
+  },
+  backButton: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 44
   },
   scroll: {
     paddingBottom: 24,
@@ -396,7 +410,6 @@ const styles = StyleSheet.create({
   },
   filterWrap: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 8
   },
   filterButton: {

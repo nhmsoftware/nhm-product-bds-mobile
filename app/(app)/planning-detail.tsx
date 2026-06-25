@@ -8,6 +8,7 @@ import { useEffect,
   useState } from "react";
 import { ActivityIndicator,
   Image,
+  Linking,
   ScrollView,
   Share,
   StyleSheet,
@@ -81,7 +82,7 @@ export default function PlanningDetailScreen() {
       .catch((error) => {
         appLogger.warn("customer.planningDetail", "Không thể tải chi tiết quy hoạch.", { error, id: params.id });
         if (active) {
-          notifyError("Quy hoạch không còn tồn tại hoặc đã bị xóa.");
+          notifyError(error, "Quy hoạch không còn tồn tại hoặc đã bị xóa.");
           router.back();
         }
       });
@@ -93,10 +94,10 @@ export default function PlanningDetailScreen() {
 
   const displayStats = planning
     ? [
-        { label: "MẬT ĐỘ XD", value: planning.density || "N/A" },
-        { label: "TẦNG CAO TỐI ĐA", value: planning.max_height || "N/A" },
-        { label: "HỆ SỐ SDĐ", value: planning.land_use_ratio || "N/A" },
-        { label: "KHOẢNG LÙI", value: planning.setback || "N/A" }
+        { label: "MẬT ĐỘ XD", value: planning.density || "Chưa cập nhật" },
+        { label: "TẦNG CAO TỐI ĐA", value: planning.max_height || "Chưa cập nhật" },
+        { label: "HỆ SỐ SDĐ", value: planning.land_use_ratio || "Chưa cập nhật" },
+        { label: "KHOẢNG LÙI", value: planning.setback || "Chưa cập nhật" }
       ]
     : stats;
   const zoneTitle = planning?.sub_area || "KHU TRUNG TÂM TÀI CHÍNH";
@@ -229,6 +230,24 @@ export default function PlanningDetailScreen() {
           <Text style={styles.downloadText}>{pdfLoading ? "Đang tải" : "TẢI HỒ SƠ QUY HOẠCH (PDF)"}</Text>
         </Pressable>
 
+        {planning?.check_planning_link ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (planning.check_planning_link) {
+                Linking.openURL(planning.check_planning_link).catch((error) => {
+                  appLogger.error("customer.checkPlanningLink", "Không thể mở link kiểm tra quy hoạch.", { error, url: planning.check_planning_link });
+                  notifyError("Không thể mở liên kết kiểm tra quy hoạch.");
+                });
+              }
+            }}
+            style={styles.checkPlanningButton}
+          >
+            <Ionicons name="map-outline" size={22} color={palette.white} />
+            <Text style={styles.downloadText}>KIỂM TRA QUY HOẠCH</Text>
+          </Pressable>
+        ) : null}
+
         <View style={styles.updatedWrap}>
           <Text style={styles.updatedText}>Cập nhật lần cuối: {formatUpdatedDate(planning?.updated_at) || "15/10/2023"}</Text>
         </View>
@@ -259,7 +278,7 @@ export default function PlanningDetailScreen() {
 const bottomNavItems = [
   { href: "/(app)/(tabs)" as const, icon: "home-outline" as const, label: "HOME" },
   { href: "/(app)/(tabs)/search" as const, icon: "newspaper-outline" as const, label: "Tin tức" },
-  { href: "/(app)/(tabs)/saved" as const, icon: "business-outline" as const, label: "Khu đất" },
+  { href: "/(app)/(tabs)/legal" as const, icon: "shield-checkmark-outline" as const, label: "Pháp lý" },
   { href: "/(app)/(tabs)/inquiries" as const, icon: "map-outline" as const, label: "Quy hoạch" },
   { href: "/(app)/(tabs)/profile" as const, icon: "call-outline" as const, label: "Liên hệ" }
 ];
@@ -271,23 +290,42 @@ function formatUpdatedDate(value?: string | null) {
   return date.toLocaleDateString("vi-VN");
 }
 
+function htmlToPlainText(content: string) {
+  return content
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function planningZoneDescription(planning: PublicPlanning | null) {
   if (!planning) return "Ký hiệu: C1-Z1. Quy hoạch chi tiết 1/2000 phục vụ phát triển kinh tế vùng.";
 
-  const parts = [planning.symbol ? `Ký hiệu: ${planning.symbol}.` : "", planning.description || ""].filter(Boolean);
+  const cleanDescription = htmlToPlainText(planning.description || "");
+  const parts = [planning.symbol ? `Ký hiệu: ${planning.symbol}.` : "", cleanDescription].filter(Boolean);
   return parts.join(" ") || "Thông tin quy hoạch đang được cập nhật.";
 }
 
-function planningLandLegends(notes?: string | null) {
-  if (!notes?.trim()) return legends;
+function planningLandLegends(notes?: Array<{ label: string; color: string }> | string | null) {
+  // Format mới: JSON array [{label, color}]
+  if (Array.isArray(notes)) {
+    const valid = notes.filter((item) => item?.label?.trim());
+    if (valid.length > 0) return valid.map((item) => ({ label: item.label, color: item.color || legends[0].color }));
+    return legends;
+  }
 
+  // Format cũ: string phân cách bởi \n, ;, ,
+  if (!notes?.trim()) return legends;
   const labels = notes
     .split(/[\n;,]+/)
     .map((item) => item.trim())
     .filter(Boolean);
-
   if (labels.length === 0) return legends;
-
   return labels.map((label, index) => ({
     color: legends[index % legends.length].color,
     label
@@ -539,6 +577,23 @@ const styles = StyleSheet.create({
   },
   downloadButtonDisabled: {
     opacity: 0.7
+  },
+  checkPlanningButton: {
+    alignItems: "center",
+    backgroundColor: palette.goldDark,
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 12,
+    minHeight: 56,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4
   },
   downloadText: {
     color: palette.white,

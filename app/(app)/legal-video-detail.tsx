@@ -104,12 +104,12 @@ export default function LegalVideoDetailScreen() {
             <LegalVideoPlayer thumbnail={thumbnail} title={title} videoUrl={videoUrl} />
 
             <View style={styles.metaRow}>
-              <Text style={styles.category}>{formatCategory(video?.category)}</Text>
+              <Text style={styles.category}>{video?.legal_topic?.name || formatCategory(video?.category)}</Text>
               <Text style={styles.metaText}>{formatDuration(video?.duration ?? video?.duration_seconds)}</Text>
             </View>
 
             <Text style={styles.title}>{title}</Text>
-            <Text style={styles.dateText}>{formatDate(video?.published_at ?? video?.created_at)}</Text>
+            <Text style={styles.dateText}>{formatDate(video?.updated_at || video?.published_at || video?.created_at)}</Text>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Thông tin chi tiết</Text>

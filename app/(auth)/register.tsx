@@ -1,6 +1,6 @@
-import { router } from "expo-router";
-import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { useState, useEffect } from "react";
+import { StyleSheet, Text, View, Clipboard } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
@@ -38,6 +38,7 @@ function firstError(error?: string[]) {
 
 export default function RegisterScreen() {
   const { t } = useI18n();
+  const params = useLocalSearchParams<{ ref?: string; type?: string }>();
   const [fullName, setFullName] = useState("");
   const [referralCode, setReferralCode] = useState("");
   const [accountType, setAccountType] = useState<"investor" | "broker">("investor");
@@ -49,6 +50,57 @@ export default function RegisterScreen() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<RegisterErrors>({});
   const [submitting, setSubmitting] = useState(false);
+  
+  useEffect(() => {
+    if (params.ref) {
+      const code = params.ref.trim();
+      setReferralCode(code);
+      if (params.type === "customer") {
+        setAccountType("investor");
+        setIsReferralForced(true);
+      } else if (params.type === "recruitment") {
+        setAccountType("broker");
+        setIsReferralForced(true);
+      } else {
+        if (code.toUpperCase().startsWith("CUS-")) {
+          setAccountType("investor");
+          setIsReferralForced(true);
+        } else if (code.toUpperCase().startsWith("REC-")) {
+          setAccountType("broker");
+          setIsReferralForced(true);
+        } else {
+          setIsReferralForced(false);
+        }
+      }
+    } else {
+      const checkClipboard = async () => {
+        try {
+          const content = await Clipboard.getString();
+          if (content) {
+            const trimmed = content.trim();
+            const isWordCode = /^[A-Z0-9]{6}$/.test(trimmed.toUpperCase());
+            const isPhoneCode = /^(0[3|5|7|8|9])[0-9]{8}$/.test(trimmed);
+            if (isWordCode || isPhoneCode) {
+              setReferralCode(trimmed);
+              if (trimmed.toUpperCase().startsWith("CUS-")) {
+                setAccountType("investor");
+                setIsReferralForced(true);
+              } else if (trimmed.toUpperCase().startsWith("REC-")) {
+                setAccountType("broker");
+                setIsReferralForced(true);
+              } else {
+                setIsReferralForced(false);
+              }
+              notifySuccess({ message: `Đã tự động điền mã giới thiệu: ${trimmed}` });
+            }
+          }
+        } catch {
+          // Ignore clipboard access errors
+        }
+      };
+      checkClipboard();
+    }
+  }, [params.ref, params.type]);
 
   function clearFieldError(field: RegisterField) {
     setFieldErrors((current) => {
@@ -147,11 +199,14 @@ export default function RegisterScreen() {
 
           const trimmed = value.trim();
           if (trimmed !== "") {
-            setIsReferralForced(true);
             if (trimmed.toUpperCase().startsWith("CUS-")) {
               setAccountType("investor");
-            } else {
+              setIsReferralForced(true);
+            } else if (trimmed.toUpperCase().startsWith("REC-")) {
               setAccountType("broker");
+              setIsReferralForced(true);
+            } else {
+              setIsReferralForced(false);
             }
           } else {
             setIsReferralForced(false);

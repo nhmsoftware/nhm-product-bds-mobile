@@ -211,7 +211,7 @@ export default function CustomerNewsScreen() {
               </View>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push("/(app)/(tabs)/saved")}
+                onPress={() => router.push("/(app)/saved")}
               >
                 <Text style={styles.projectsLink}>Xem tất cả</Text>
               </Pressable>

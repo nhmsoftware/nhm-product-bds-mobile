@@ -482,8 +482,8 @@ export const employeeApi = {
     return getData<JsonRecord>("/api/v1/auth/team/members", params);
   },
 
-  departments() {
-    return getData<JsonRecord>("/api/v1/auth/departments");
+  departments(params?: { branch_id?: string }) {
+    return getData<JsonRecord>("/api/v1/auth/departments", params);
   },
 
   teamKpiOverview() {

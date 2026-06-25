@@ -4,10 +4,12 @@ import { router, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect,
   useState,
+  useMemo,
   useCallback } from "react";
 import { Image,
   ScrollView,
   StyleSheet,
+  RefreshControl,
   Text,
   TextInput,
   View
@@ -33,82 +35,16 @@ const palette = {
 };
 
 const planningImages = {
-  logo: require("@/assets/images/customer/project-detail/kn-logo.png"),
-  hcmQuan2: require("@/assets/images/customer/planning/hcm-quan-2.png"),
-  hcmThuDuc: require("@/assets/images/customer/planning/hcm-thu-duc.png"),
-  hcmQuan7: require("@/assets/images/customer/planning/hcm-quan-7.png"),
-  haNoiTayHo: require("@/assets/images/customer/planning/ha-noi-tay-ho.png"),
-  haNoiLongBien: require("@/assets/images/customer/planning/ha-noi-long-bien.png"),
-  daNangSonTra: require("@/assets/images/customer/planning/da-nang-son-tra.png")
+  logo: require("@/assets/images/customer/project-detail/kn-logo.png")
 };
+
+const imageNotFound = require("@/assets/images/placeholders/image_not_found.png");
 
 const filters = ["Tất cả khu vực", "TP. Hồ Chí Minh", "Hà Nội", "Đà Nẵng"] as const;
 
-const planningSections = [
-  {
-    city: "TP. Hồ Chí Minh",
-    items: [
-      {
-        description: "Quy hoạch phân khu tỷ lệ 1/2000 khu đô thị mới Thủ Thiêm và các vùng phụ",
-        image: planningImages.hcmQuan2,
-        status: "ĐÃ PHÊ DUYỆT",
-        title: "Quy hoạch Quận 2",
-        year: "2024"
-      },
-      {
-        description: "Quy hoạch chung thành phố Thủ Đức tầm nhìn đến năm 2040, tập trung vào",
-        image: planningImages.hcmThuDuc,
-        status: "ĐANG ĐIỀU CHỈNH",
-        title: "TP. Thủ Đức",
-        year: "2023"
-      },
-      {
-        description: "Điều chỉnh quy hoạch chi tiết 1/500 khu đô thị Phú Mỹ Hưng và các phường",
-        image: planningImages.hcmQuan7,
-        status: "ĐÃ PHÊ DUYỆT",
-        title: "Quy hoạch Quận 7",
-        year: "2022"
-      }
-    ]
-  },
-  {
-    city: "Hà Nội",
-    items: [
-      {
-        description: "Phát triển đô thị ven hồ Tây và các dự án trục Nhật Tân - Nội Bài.",
-        image: planningImages.haNoiTayHo,
-        status: "ĐÃ PHÊ DUYỆT",
-        title: "Quy hoạch Tây Hồ",
-        year: "2024"
-      },
-      {
-        description: "Mở rộng hạ tầng giao thông và khu dân cư phía Đông sông Hồng.",
-        image: planningImages.haNoiLongBien,
-        status: "ĐÃ PHÊ DUYỆT",
-        title: "Quy hoạch Long Biên",
-        year: "2023"
-      }
-    ]
-  },
-  {
-    city: "Đà Nẵng",
-    items: [
-      {
-        description: "Phát triển hạ tầng du lịch biển và bảo tồn đa dạng sinh học bán đảo Sơn Trà.",
-        image: planningImages.daNangSonTra,
-        status: "ĐÃ PHÊ DUYỆT",
-        title: "Quy hoạch Sơn Trà",
-        year: "2024"
-      }
-    ]
-  }
-] as const;
-
-type StaticPlanningItem = typeof planningSections[number]["items"][number];
-type PlanningListItem = PublicPlanning | StaticPlanningItem;
 type PlanningSection = {
   city: string;
-  items: PlanningListItem[];
+  items: PublicPlanning[];
 };
 
 export default function PlanningListScreen() {
@@ -117,38 +53,76 @@ export default function PlanningListScreen() {
   const [apiCities, setApiCities] = useState<string[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string>("Tất cả khu vực");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [visibleCount, setVisibleCount] = useState(6);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    setVisibleCount(6);
+  }, [searchKeyword, selectedFilter]);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [planningResponse, cityResponse] = await Promise.all([
+        customerPublicApi.plannings({ per_page: 50 }),
+        customerPublicApi.planningCities()
+      ]);
+      setApiPlannings(planningResponse.data.data ?? []);
+      setApiCities(cityResponse.data ?? []);
+    } catch (error) {
+      appLogger.warn("customer.plannings", "Không thể tải danh sách quy hoạch.", { error });
+    }
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  }, [fetchData]);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-
-      Promise.all([
-        customerPublicApi.plannings({ per_page: 30 }),
-        customerPublicApi.planningCities()
-      ])
-        .then(([planningResponse, cityResponse]) => {
-          if (!active) return;
-          setApiPlannings(planningResponse.data.data ?? []);
-          setApiCities(cityResponse.data ?? []);
-        })
-        .catch((error) => {
-          appLogger.warn("customer.plannings", "Không thể tải danh sách quy hoạch.", { error });
-        });
-
+      fetchData().then(() => {
+        if (!active) return;
+      });
       return () => {
         active = false;
       };
-    }, [])
+    }, [fetchData])
   );
 
   const displayFilters = apiCities.length > 0 ? ["Tất cả khu vực", ...apiCities] : [...filters];
-  const sourceSections: PlanningSection[] = apiPlannings.length > 0
-    ? groupPlannings(apiPlannings)
-    : planningSections.map((section) => ({ city: section.city, items: [...section.items] }));
+  const sourceSections: PlanningSection[] = groupPlannings(apiPlannings);
   const cityFilteredSections = selectedFilter === "Tất cả khu vực"
     ? sourceSections
     : sourceSections.filter((section) => planningCityMatchesFilter(section.city, selectedFilter));
   const displaySections = filterPlanningSections(cityFilteredSections, searchKeyword);
+
+  const totalItemsCount = useMemo(() => {
+    return displaySections.reduce((sum, section) => sum + section.items.length, 0);
+  }, [displaySections]);
+
+  const displayedSections = useMemo(() => {
+    let count = 0;
+    const result: PlanningSection[] = [];
+    for (const section of displaySections) {
+      if (count >= visibleCount) break;
+      const remaining = visibleCount - count;
+      if (section.items.length <= remaining) {
+        result.push(section);
+        count += section.items.length;
+      } else {
+        result.push({
+          ...section,
+          items: section.items.slice(0, remaining)
+        });
+        count += remaining;
+      }
+    }
+    return result;
+  }, [displaySections, visibleCount]);
+
+  const hasMoreToShow = visibleCount < totalItemsCount;
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
@@ -164,7 +138,15 @@ export default function PlanningListScreen() {
       </View>
       <CustomerAccountMenu onClose={() => setAccountMenuVisible(false)} visible={accountMenuVisible} />
 
-      <ScrollView bounces contentContainerStyle={styles.scroll} overScrollMode="always" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        bounces
+        contentContainerStyle={styles.scroll}
+        overScrollMode="always"
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[palette.darkRed]} />
+        }
+      >
         <View style={styles.intro}>
           <Text style={styles.pageTitle}>Bản đồ Quy hoạch</Text>
           <Text style={styles.pageDescription}>
@@ -202,28 +184,25 @@ export default function PlanningListScreen() {
           </ScrollView>
         </View>
 
-        {displaySections.length === 0 ? (
+        {apiPlannings.length === 0 ? (
+          <Text style={styles.emptyText}>Chưa có thông tin quy hoạch.</Text>
+        ) : displayedSections.length === 0 ? (
           <Text style={styles.emptyText}>Không tìm thấy quy hoạch phù hợp.</Text>
         ) : null}
 
-        {displaySections.map((section) => (
+        {displayedSections.map((section) => (
           <View key={section.city} style={styles.section}>
             <View style={styles.sectionHeading}>
               <View style={styles.sectionLine} />
               <Text style={styles.sectionTitle}>{section.city}</Text>
             </View>
             <View style={styles.cardList}>
-              {section.items.map((item, index) => {
-                const isApiPlanning = "id" in item;
+              {section.items.map((item) => {
                 return (
-                <View key={isApiPlanning ? item.id : item.title} style={styles.card}>
+                <View key={item.id} style={styles.card}>
                   <View style={styles.cardImageWrap}>
                     <Image
-                      source={
-                        isApiPlanning
-                          ? mediaSource(item.map_image, planningSections[0].items[index % planningSections[0].items.length].image)
-                          : item.image
-                      }
+                      source={mediaSource(item.map_image, imageNotFound)}
                       style={styles.cardImage}
                     />
                     <View style={[styles.statusBadge, planningStatusLabel(item.status) === "ĐANG ĐIỀU CHỈNH" && styles.statusBadgeGold]}>
@@ -233,15 +212,13 @@ export default function PlanningListScreen() {
                   <View style={styles.cardBody}>
                     <View style={styles.cardTitleRow}>
                       <Text style={styles.cardTitle}>{item.title || "Quy hoạch đang cập nhật"}</Text>
-                      <Text style={styles.cardYear}>{isApiPlanning ? item.updated_year || "N/A" : item.year}</Text>
+                      <Text style={styles.cardYear}>{item.updated_year || "Chưa cập nhật"}</Text>
                     </View>
                     <Text numberOfLines={2} style={styles.cardDescription}>{item.description}</Text>
                     <Pressable
                       accessibilityRole="button"
                       onPress={() =>
-                        isApiPlanning
-                          ? router.push({ pathname: "/(app)/planning-detail", params: { id: item.id } })
-                          : router.push("/(app)/planning-detail")
+                        router.push({ pathname: "/(app)/planning-detail", params: { id: item.id } })
                       }
                       style={styles.detailButton}
                     >
@@ -255,6 +232,18 @@ export default function PlanningListScreen() {
             </View>
           </View>
         ))}
+
+        {hasMoreToShow && (
+          <View style={styles.loadMoreWrap}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setVisibleCount((prev) => prev + 6)}
+              style={({ pressed }) => [styles.loadMoreButton, pressed && styles.loadMoreButtonPressed]}
+            >
+              <Text style={styles.loadMoreText}>Xem thêm quy hoạch</Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -286,13 +275,13 @@ function filterPlanningSections(sections: PlanningSection[], keyword: string) {
     .filter((section) => section.items.length > 0);
 }
 
-function planningItemMatchesSearch(item: PlanningListItem, normalizedKeyword: string) {
+function planningItemMatchesSearch(item: PublicPlanning, normalizedKeyword: string) {
   return normalizePlanningSearchText([
     item.title,
     item.description,
-    "city" in item ? item.city : "",
-    "district" in item ? item.district : "",
-    "sub_area" in item ? item.sub_area : ""
+    item.city,
+    item.district,
+    item.sub_area
   ].filter(Boolean).join(" ")).includes(normalizedKeyword);
 }
 
@@ -559,5 +548,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 0.32,
     lineHeight: 20
+  },
+  loadMoreWrap: {
+    alignItems: "center",
+    paddingTop: 24,
+    paddingBottom: 8
+  },
+  loadMoreButton: {
+    alignItems: "center",
+    borderColor: palette.darkRed,
+    borderRadius: 12,
+    borderWidth: 2,
+    height: 54,
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    width: "100%"
+  },
+  loadMoreButtonPressed: {
+    opacity: 0.6
+  },
+  loadMoreText: {
+    color: palette.darkRed,
+    fontFamily: appFonts.regular,
+    fontSize: 16,
+    lineHeight: 24
   }
 });

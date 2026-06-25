@@ -65,9 +65,9 @@ const quickActions: {
   destination: Href;
 }[] = [
     { icon: "map-outline", label: "Kiểm tra\nQuy hoạch", destination: "/(app)/(tabs)/inquiries" },
-    { icon: "document-text-outline", label: "Hỗ trợ\npháp lý", destination: "/(app)/legal-knowledge" },
-    { icon: "images-outline", label: "Điểm đến", destination: "/(app)/(tabs)/saved" },
-    { icon: "cash-outline", label: "Cơ hội\nđầu tư", destination: "/(app)/(tabs)/saved" }
+    { icon: "document-text-outline", label: "Hỗ trợ\npháp lý", destination: "/(app)/(tabs)/legal" },
+    { icon: "images-outline", label: "Điểm đến", destination: "/(app)/saved" },
+    { icon: "cash-outline", label: "Cơ hội\nđầu tư", destination: "/(app)/saved" }
   ];
 
 const projects = [
@@ -395,7 +395,7 @@ export default function CustomerHomeScreen() {
               ))}
             </View>
 
-            <HomeSectionHeader title="KHU ĐẤT NỔI BẬT" link="Xem tất cả" onPress={() => router.push("/(app)/(tabs)/saved")} />
+            <HomeSectionHeader title="Cơ hội đầu tư" link="Xem tất cả" onPress={() => router.push("/(app)/saved")} />
             <ScrollView
               alwaysBounceVertical={false}
               alwaysBounceHorizontal
@@ -411,7 +411,7 @@ export default function CustomerHomeScreen() {
                 const isApiProject = "id" in project;
                 return (
                   <Pressable
-                    key={isApiProject ? project.id : project.name}
+                    key={isApiProject ? project.id : `project-${index}`}
                     accessibilityRole="button"
                     onPress={() =>
                       isApiProject
@@ -443,7 +443,7 @@ export default function CustomerHomeScreen() {
                 const isApiNews = "id" in item;
                 return (
                   <Pressable
-                    key={isApiNews ? item.id : item.title}
+                    key={isApiNews ? item.id : `news-${index}`}
                     accessibilityRole="button"
                     onPress={() =>
                       isApiNews

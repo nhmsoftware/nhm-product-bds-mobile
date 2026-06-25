@@ -23,6 +23,7 @@ import {
   AppState,
   Alert,
   BackHandler,
+  Clipboard,
   Image,
   Linking,
   Modal,
@@ -2032,8 +2033,8 @@ export function NewsFeedScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.newsFeedPageHeader}>
-          <Text style={styles.newsFeedTitle}>Bảng Tin Nội Bộ</Text>
-          <Text style={styles.newsFeedSubtitle}>Cập nhật tin tức và khu đất mới nhất.</Text>
+          <Text style={styles.newsFeedTitle}>Điểm đến</Text>
+          <Text style={styles.newsFeedSubtitle}>Cập nhật điểm đến và khu đất mới nhất.</Text>
         </View>
 
         {canCreateNews ? (
@@ -2533,9 +2534,8 @@ export function ProfileOverviewScreen() {
   );
   const profileRankSummary = `${profileRankName === "Chưa xếp hạng" ? profileRankName : `Hạng ${profileRankName}`} hiện tại với ${profileRewardPoints} điểm tích lũy.`;
   const customerQr = referralQrValue(customerQrData);
-  const recruitmentQr = referralQrValue(recruitmentQrData);
-  const activeProfileQrData = activeProfileQr === "customer" ? customerQrData : recruitmentQrData;
-  const activeProfileQrValue = activeProfileQr === "customer" ? customerQr : recruitmentQr;
+  const activeProfileQrValue = customerQr;
+  const activeProfileReferralCode = isApiObject(customerQrData) ? apiText(customerQrData.referral_code ?? customerQrData.referralCode ?? customerQrData.code, "") : "";
   const profileCertificates = learningCertificateData?.certificates ?? [];
   const profileQuizRows = learningCertificateData?.quizRows ?? [];
   const profileUser = isApiObject(profile.user) ? profile.user : {};
@@ -2553,8 +2553,8 @@ export function ProfileOverviewScreen() {
     try {
       await Share.share({
         message: referralQrShareText(
-          activeProfileQrData,
-          activeProfileQrValue || (activeProfileQr === "customer" ? qrCopy.customerSubtitle : qrCopy.recruitmentSubtitle)
+          customerQrData,
+          activeProfileQrValue || qrCopy.customerSubtitle
         )
       });
     } catch (error) {
@@ -2639,25 +2639,12 @@ export function ProfileOverviewScreen() {
       {approvedEmployeeProfile ? (
         <View style={styles.profileQrSection}>
           <Text style={[styles.profileSectionTitle, styles.profileQrTitle]}>{qrCopy.title}</Text>
-          <View style={styles.profileQrSegment}>
-            <ReferralQrSegmentButton
-              active={activeProfileQr === "recruitment"}
-              label={qrCopy.employee}
-              size="narrow"
-              onPress={() => setActiveProfileQr("recruitment")}
-            />
-            <ReferralQrSegmentButton
-              active={activeProfileQr === "customer"}
-              label={qrCopy.customer}
-              size="wide"
-              onPress={() => setActiveProfileQr("customer")}
-            />
-          </View>
           <ReferralQrPanel
             copy={qrCopy}
-            mode={activeProfileQr}
+            mode="customer"
             onShare={shareProfileQr}
             qrValue={activeProfileQrValue}
+            referralCode={activeProfileReferralCode}
           />
         </View>
       ) : (
@@ -4347,6 +4334,8 @@ export function PersonalInfoScreen() {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [selectedDocType, setSelectedDocType] = useState<string>("Bằng cấp");
+  const [docTypeDropdownOpen, setDocTypeDropdownOpen] = useState(false);
   const user = session?.user;
   const fullName = form.name || user?.fullName || "Nhân viên";
   const jobTitle = (form.employee_title || user?.jobPosition || "Chưa có chức danh").toUpperCase();
@@ -4444,7 +4433,7 @@ export function PersonalInfoScreen() {
     }
   }
 
-  async function uploadDocument() {
+  async function uploadDocument(type: string) {
     const result = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: true,
       multiple: false,
@@ -4461,7 +4450,7 @@ export function PersonalInfoScreen() {
 
     const fileName = asset.name || `employee-document-${Date.now()}`;
     const formData = new FormData();
-    formData.append("type", "Tài liệu khác");
+    formData.append("type", type);
     formData.append("file", {
       name: fileName,
       type: employeeDocumentMimeType(fileName, asset.mimeType),
@@ -4519,7 +4508,7 @@ export function PersonalInfoScreen() {
           </View>
         </View>
 
-        <View style={styles.personalSectionGrid}>
+        <View style={[styles.personalSectionGrid, { zIndex: docTypeDropdownOpen ? 10 : 1 }]}>
           {loading ? <Text style={styles.personalStatusText}>Đang tải hồ sơ nhân viên...</Text> : null}
           {failed ? <Text style={styles.personalStatusText}>Không thể tải hồ sơ, vui lòng thử lại sau.</Text> : null}
           <PersonalSection title="Thông tin cá nhân" icon="id-card-outline">
@@ -4548,24 +4537,120 @@ export function PersonalInfoScreen() {
           </PersonalSection>
 
           <PersonalSection title="Tài liệu đính kèm" icon="folder-open-outline">
-            {attachments.length > 0 ? attachments.map((item, index) => (
-              <PersonalDocument
-                key={`${apiText(item.name ?? item.url, "document")}-${index}`}
-                title={apiText(item.name, "Tài liệu nhân sự")}
-                icon="document-text-outline"
-                url={apiText(item.url ?? item.file_url ?? item.fileUrl ?? item.path ?? item.uri, "")}
-              />
-            )) : (
-              <Text style={styles.personalStatusText}>Chưa có tài liệu đính kèm.</Text>
+            <View style={{ marginBottom: 16, zIndex: 999, position: "relative" }}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setDocTypeDropdownOpen(!docTypeDropdownOpen)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  backgroundColor: "#ffffff",
+                  borderColor: "rgba(227, 190, 184, 0.6)",
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  height: 52,
+                  paddingHorizontal: 16,
+                }}
+              >
+                <Text style={{ fontFamily: appFonts.regular, fontSize: 16, color: "#191c1d" }}>
+                  {selectedDocType}
+                </Text>
+                <Ionicons
+                  name={docTypeDropdownOpen ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color="#5b403c"
+                />
+              </Pressable>
+
+              {docTypeDropdownOpen && (
+                <View
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderColor: "rgba(227, 190, 184, 0.6)",
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    marginTop: 4,
+                    overflow: "hidden",
+                    position: "absolute",
+                    top: 54,
+                    left: 0,
+                    right: 0,
+                    zIndex: 1000,
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 8,
+                    elevation: 3,
+                  }}
+                >
+                  {['Bằng cấp', 'Chứng chỉ', 'CCCD/CMND', 'Hợp đồng lao động', 'Tài liệu khác'].map((type) => {
+                    const isSelected = selectedDocType === type;
+                    return (
+                      <Pressable
+                        key={type}
+                        accessibilityRole="button"
+                        onPress={() => {
+                          setSelectedDocType(type);
+                          setDocTypeDropdownOpen(false);
+                        }}
+                        style={({ pressed }) => [
+                          {
+                            paddingVertical: 12,
+                            paddingHorizontal: 16,
+                            backgroundColor: isSelected ? "#fdf2f0" : pressed ? "#fcf7f6" : "#ffffff",
+                            borderBottomWidth: 1,
+                            borderBottomColor: "#fdf2f0",
+                          }
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            fontFamily: isSelected ? appFonts.bold : appFonts.regular,
+                            fontSize: 15,
+                            color: isSelected ? "#950100" : "#191c1d",
+                          }}
+                        >
+                          {type}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
+            {attachments.filter(item => apiText(item.type, "").trim() === selectedDocType).length > 0 ? (
+              attachments
+                .filter(item => apiText(item.type, "").trim() === selectedDocType)
+                .map((item, index) => {
+                  const docName = apiText(item.name, "Tài liệu nhân sự");
+                  return (
+                    <PersonalDocument
+                      key={`${apiText(item.name ?? item.url, "document")}-${index}`}
+                      title={docName}
+                      icon="document-text-outline"
+                      url={apiText(item.url ?? item.file_url ?? item.fileUrl ?? item.path ?? item.uri, "")}
+                    />
+                  );
+                })
+            ) : (
+              <Text style={styles.personalStatusText}>Chưa có tài liệu đính kèm thuộc loại này.</Text>
             )}
-            <Pressable accessibilityRole="button" onPress={uploadDocument} disabled={uploading} style={({ pressed }) => [styles.personalUploadButton, pressed && styles.pressed]}>
+            
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => uploadDocument(selectedDocType)}
+              disabled={uploading}
+              style={({ pressed }) => [styles.personalUploadButton, pressed && styles.pressed]}
+            >
               <Ionicons name="share-outline" size={16} color="#5b403c" />
               <Text style={styles.personalUploadText}>{uploading ? "Đang tải lên..." : "Tải lên tài liệu mới"}</Text>
             </Pressable>
           </PersonalSection>
         </View>
 
-        <View style={styles.personalSaveWrap}>
+        <View style={[styles.personalSaveWrap, { zIndex: docTypeDropdownOpen ? 1 : 2 }]}>
           <Pressable accessibilityRole="button" onPress={saveProfile} disabled={saving} style={({ pressed }) => [styles.personalSaveButton, pressed && styles.pressed]}>
             <Ionicons name="save-outline" size={18} color="#ffffff" />
             <Text style={styles.personalSaveText}>{saving ? "Đang lưu..." : "Lưu thay đổi"}</Text>
@@ -4581,6 +4666,7 @@ export function PersonalInfoScreen() {
           setDobPickerVisible(false);
         }}
       />
+
     </SafeAreaView>
   );
 }
@@ -4801,6 +4887,7 @@ function PersonalDatePickerModal({
   );
 }
 
+
 function personalExperienceRows(value: string) {
   const text = profileValue(value);
   const lines = text
@@ -4956,22 +5043,24 @@ function PersonalDocument({
 
 export function ReferralQrScreen() {
   const c = useCopy().qr;
+  const { session } = useAuth();
+  const userPhone = session?.user?.phone || "";
   const params = useLocalSearchParams<{ from?: string }>();
-  const [activeQr, setActiveQr] = useState<"recruitment" | "customer">("customer");
   const handleBack = () => backWithProfileSource(params.from);
+  
   const { data: customerQrData } = useEmployeeApiData(() => employeeApi.customerReferralQr(), []);
-  const { data: recruitmentQrData } = useEmployeeApiData(() => employeeApi.recruitmentReferralQr(), []);
   const customerQr = referralQrValue(customerQrData);
-  const recruitmentQr = referralQrValue(recruitmentQrData);
-  const activeQrData = activeQr === "customer" ? customerQrData : recruitmentQrData;
-  const activeQrValue = activeQr === "customer" ? customerQr : recruitmentQr;
+  const activeQrValue = customerQr;
+  const activeReferralCode = isApiObject(customerQrData)
+    ? apiText(customerQrData.referral_code ?? customerQrData.referralCode ?? customerQrData.code, "")
+    : "";
 
   async function shareQr() {
     try {
       await Share.share({
         message: referralQrShareText(
-          activeQrData,
-          activeQrValue || (activeQr === "customer" ? c.customerSubtitle : c.recruitmentSubtitle)
+          customerQrData,
+          activeQrValue || c.customerSubtitle
         )
       });
     } catch (error) {
@@ -4983,21 +5072,14 @@ export function ReferralQrScreen() {
   return (
     <EmployeePage back={handleBack} contentStyle={styles.referralQrContent}>
       <Text style={styles.referralQrTitle}>{c.title}</Text>
-      <View style={styles.referralQrSegment}>
-        <ReferralQrSegmentButton
-          active={activeQr === "recruitment"}
-          label={c.employee}
-          size="narrow"
-          onPress={() => setActiveQr("recruitment")}
-        />
-        <ReferralQrSegmentButton
-          active={activeQr === "customer"}
-          label={c.customer}
-          size="wide"
-          onPress={() => setActiveQr("customer")}
-        />
-      </View>
-      <ReferralQrPanel copy={c} mode={activeQr} qrValue={activeQrValue} onShare={shareQr} />
+      
+      <ReferralQrPanel 
+        copy={c} 
+        mode="customer" 
+        qrValue={activeQrValue} 
+        referralCode={activeReferralCode} 
+        onShare={shareQr} 
+      />
     </EmployeePage>
   );
 }
@@ -5088,16 +5170,25 @@ function ReferralQrPanel({
   copy,
   mode = "customer",
   onShare,
-  qrValue = ""
+  qrValue = "",
+  referralCode = ""
 }: {
   copy: typeof vi.qr;
   mode?: "recruitment" | "customer";
   onShare?: () => void;
   qrValue?: string;
+  referralCode?: string;
 }) {
   const helper = mode === "customer" ? copy.customerSubtitle : copy.recruitmentSubtitle;
   const remoteImage = isRemoteImage(qrValue);
   const remoteSvg = remoteImage && isRemoteSvg(qrValue);
+
+  const copyToClipboard = () => {
+    if (referralCode) {
+      Clipboard.setString(referralCode);
+      notifySuccess({ message: "Đã sao chép mã giới thiệu vào bộ nhớ tạm." });
+    }
+  };
 
   return (
     <View style={styles.qrCard}>
@@ -5113,6 +5204,21 @@ function ReferralQrPanel({
           <ReferralQrCode />
         )}
       </View>
+
+      {referralCode ? (
+        <Pressable 
+          accessibilityRole="button"
+          onPress={copyToClipboard}
+          style={({ pressed }) => [styles.referralCodeContainer, pressed && styles.pressed]}
+        >
+          <Text style={styles.referralCodeLabel}>MÃ GIỚI THIỆU CỦA BẠN</Text>
+          <View style={styles.referralCodeRow}>
+            <Text style={styles.referralCodeText}>{referralCode}</Text>
+            <Ionicons name="copy-outline" size={16} color={employeePalette.red} />
+          </View>
+        </Pressable>
+      ) : null}
+
       <Pressable
         accessibilityRole="button"
         onPress={onShare}
@@ -6052,7 +6158,15 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
 function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
   const { session } = useAuth();
   const currentDepartment = apiText(session?.user.department, "Chưa cập nhật");
-  const { data: departmentsData, failed: departmentsFailed, loading: departmentsLoading } = useEmployeeApiData(() => employeeApi.departments(), []);
+
+  const [branches, setBranches] = useState<{ id: number | string; name: string }[]>([]);
+  const [targetBranch, setTargetBranch] = useState("");
+  const [branchPickerVisible, setBranchPickerVisible] = useState(false);
+
+  const [departmentsData, setDepartmentsData] = useState<unknown>(null);
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
+  const [departmentsFailed, setDepartmentsFailed] = useState(false);
+
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const {
     data: historyData,
@@ -6068,6 +6182,43 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
   const departmentOptions = departmentOptionsFromApi(departmentsData, currentDepartment);
   const selectedTargetDepartment = departmentOptions.find((option) => option.value === targetDepartment);
   const historyRows = transferRowsFromApi(historyData);
+
+  useEffect(() => {
+    employeeApi.recruitmentBranches()
+      .then((res) => {
+        if (res && Array.isArray(res.data)) {
+          setBranches(res.data);
+        }
+      })
+      .catch((err) => console.log("Failed to fetch branches in transfer", err));
+  }, []);
+
+  useEffect(() => {
+    if (!targetBranch) {
+      setDepartmentsData(null);
+      return;
+    }
+    setDepartmentsLoading(true);
+    setDepartmentsFailed(false);
+    employeeApi.departments({ branch_id: String(targetBranch) })
+      .then((res) => {
+        if (res && res.data) {
+          setDepartmentsData(res.data);
+        } else {
+          setDepartmentsFailed(true);
+        }
+      })
+      .catch(() => {
+        setDepartmentsFailed(true);
+      })
+      .finally(() => {
+        setDepartmentsLoading(false);
+      });
+  }, [targetBranch]);
+
+  useEffect(() => {
+    setTargetDepartment("");
+  }, [targetBranch]);
 
   useEffect(() => {
     if (!targetDepartment) return;
@@ -6148,24 +6299,43 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
           </View>
 
           <View style={styles.transferField}>
+            <Text style={styles.transferLabel}>CHI NHÁNH MUỐN CHUYỂN</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setBranchPickerVisible(true)}
+              style={({ pressed }) => [
+                styles.transferDepartmentSelect,
+                pressed && styles.pressed
+              ]}
+            >
+              <Text style={[styles.transferDepartmentSelectText, !targetBranch && styles.transferDepartmentPlaceholder]}>
+                {branches.find(b => String(b.id) === targetBranch)?.name || "Chọn chi nhánh muốn chuyển"}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color="#950100" />
+            </Pressable>
+          </View>
+
+          <View style={styles.transferField}>
             <Text style={styles.transferLabel}>PHÒNG BAN MUỐN CHUYỂN</Text>
             <Pressable
               accessibilityRole="button"
-              disabled={departmentOptions.length === 0}
+              disabled={!targetBranch || departmentsLoading || departmentOptions.length === 0}
               onPress={() => setDepartmentPickerVisible(true)}
               style={({ pressed }) => [
                 styles.transferDepartmentSelect,
-                departmentOptions.length === 0 && styles.transferDepartmentSelectDisabled,
+                (!targetBranch || departmentsLoading || departmentOptions.length === 0) && styles.transferDepartmentSelectDisabled,
                 pressed && styles.pressed
               ]}
             >
               <Text style={[styles.transferDepartmentSelectText, !selectedTargetDepartment && styles.transferDepartmentPlaceholder]}>
-                {selectedTargetDepartment?.label || (departmentsLoading ? "Đang tải phòng ban..." : "Chọn phòng ban muốn chuyển")}
+                {!targetBranch
+                  ? "Vui lòng chọn chi nhánh trước"
+                  : selectedTargetDepartment?.label || (departmentsLoading ? "Đang tải phòng ban..." : "Chọn phòng ban muốn chuyển")}
               </Text>
               <Ionicons name="chevron-down" size={18} color="#950100" />
             </Pressable>
             {departmentsFailed ? (
-              <Text style={styles.transferHelperText}>Không tải được danh sách phòng ban. Đang dùng danh sách mặc định.</Text>
+              <Text style={styles.transferHelperText}>Không tải được danh sách phòng ban.</Text>
             ) : null}
           </View>
 
@@ -6230,6 +6400,16 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
           setDatePickerVisible(false);
         }}
       />
+      <BranchPickerModal
+        options={branches}
+        value={targetBranch}
+        visible={branchPickerVisible}
+        onClose={() => setBranchPickerVisible(false)}
+        onSelect={(value) => {
+          setTargetBranch(value);
+          setBranchPickerVisible(false);
+        }}
+      />
       <DepartmentPickerModal
         currentDepartment={currentDepartment}
         options={departmentOptions}
@@ -6242,6 +6422,65 @@ function DepartmentTransferCreateScreen({ onBack }: { onBack: () => void }) {
         }}
       />
     </SafeAreaView>
+  );
+}
+
+function BranchPickerModal({
+  onClose,
+  onSelect,
+  options,
+  value,
+  visible
+}: {
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  options: { id: string | number; name: string }[];
+  value: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.transferRejectOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.departmentPickerModal}>
+          <View style={styles.departmentPickerHeader}>
+            <View style={styles.flex}>
+              <Text style={styles.departmentPickerTitle}>Chọn chi nhánh muốn chuyển</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.personalDateCloseButton}>
+              <Ionicons name="close" size={20} color="#5b403c" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.departmentPickerList}>
+            {options.length === 0 ? (
+              <Text style={styles.leaveStateText}>Đang tải danh sách chi nhánh...</Text>
+            ) : null}
+            {options.map((option) => {
+              const active = String(option.id) === value;
+
+              return (
+                <Pressable
+                  key={String(option.id)}
+                  accessibilityRole="button"
+                  onPress={() => onSelect(String(option.id))}
+                  style={({ pressed }) => [
+                    styles.departmentPickerOption,
+                    active && styles.departmentPickerOptionActive,
+                    pressed && styles.pressed
+                  ]}
+                >
+                  <Text style={[styles.departmentPickerOptionText, active && styles.departmentPickerOptionTextActive]}>
+                    {option.name}
+                  </Text>
+                  {active ? <Ionicons name="checkmark-circle" size={20} color="#950100" /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -9979,7 +10218,7 @@ function RecruitmentApplicationCard({
             {application.name || application.user?.fullName || "Ứng viên"}
           </Text>
           <Text style={styles.recruitmentPhone}>
-            SĐT: {application.phone || application.user?.phone || "N/A"}
+            SĐT: {application.phone || application.user?.phone || "Chưa cập nhật"}
           </Text>
         </View>
         <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
@@ -9996,7 +10235,7 @@ function RecruitmentApplicationCard({
       <View style={styles.recruitmentInfoRow}>
         <Text style={styles.recruitmentInfoLabel}>Chi nhánh:</Text>
         <Text style={styles.recruitmentInfoValue}>
-          {application.branch?.name || "N/A"}
+          {application.branch?.name || "Chưa cập nhật"}
         </Text>
       </View>
 
@@ -14681,6 +14920,37 @@ const styles = StyleSheet.create({
     letterSpacing: 0.32,
     lineHeight: 16
   },
+  referralCodeContainer: {
+    alignItems: "center",
+    backgroundColor: "#fcf8f7",
+    borderColor: "#e3beb8",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    gap: 4,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    width: "100%"
+  },
+  referralCodeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8
+  },
+  referralCodeLabel: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.semiBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: "uppercase"
+  },
+  referralCodeText: {
+    color: employeePalette.red,
+    fontFamily: appFonts.bold,
+    fontSize: 22,
+    letterSpacing: 1
+  },
   logoutButton: {
     borderColor: "#e3beb8",
     marginTop: 4
@@ -17240,6 +17510,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: appFonts.bold,
     color: "#ffffff"
+  },
+  phoneNoteContainer: {
+    backgroundColor: "#FDF2F2",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FCD2D2",
+    padding: 14,
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    maxWidth: 350,
+    width: "100%",
+  },
+  phoneNoteText: {
+    color: "#6B7280",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: appFonts.regular,
+    flex: 1,
+  },
+  phoneHighlight: {
+    color: employeePalette.red,
+    fontFamily: appFonts.semiBold,
   },
   pressed: {
     opacity: 0.84

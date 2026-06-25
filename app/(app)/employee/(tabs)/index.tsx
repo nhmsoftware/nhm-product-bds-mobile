@@ -292,7 +292,6 @@ export default function EmployeeHomeScreen() {
   const hidePersonalAchievementSections = isExecutiveAdminRole(session?.user.role);
   const visibleKpiCopy = hidePersonalAchievementSections ? kpiCopy.slice(0, 1) : kpiCopy;
   const approvedEmployeeProfile = !isBaseEmployeeRole(session?.user.role) || Boolean(session?.user.isActive && session?.user.jobPosition?.trim());
-  const applicationTarget = (approvedEmployeeProfile ? "/employee/referral-qr" : "/(app)/employee/application") as Href;
   const actionRows = dashboardModules.length > 0
     ? dashboardModulesToActions(dashboardModules, learningTarget)
     : actionCopy.map((copy, index) => ({
@@ -446,11 +445,13 @@ export default function EmployeeHomeScreen() {
             icon="qr-code-outline"
             onPress={() => router.push("/employee/check-in")}
           />
-          <EmployeeHomeButton
-            title={t("employee.home.apply")}
-            color={employeePalette.gold}
-            onPress={() => router.push(applicationTarget)}
-          />
+          {approvedEmployeeProfile ? null : (
+            <EmployeeHomeButton
+              title={t("employee.home.apply")}
+              color={employeePalette.gold}
+              onPress={() => router.push("/(app)/employee/application" as Href)}
+            />
+          )}
         </View>
 
         <View style={styles.actions}>

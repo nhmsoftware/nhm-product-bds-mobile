@@ -1,9 +1,12 @@
 import {
-  Ionicons } from "@expo/vector-icons";
-import type { ComponentProps,
+  Ionicons
+} from "@expo/vector-icons";
+import type {
+  ComponentProps,
   PropsWithChildren,
-  ReactNode } from "react";
-import { useState } from "react";
+  ReactNode
+} from "react";
+import { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -17,7 +20,8 @@ import {
   TextInputProps,
   TextStyle,
   View,
-  ViewStyle
+  ViewStyle,
+  Keyboard
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -98,15 +102,48 @@ export function AuthScreen({
   const showHeader = Boolean(headerTitle || onBackPress);
   const computedBrandGap =
     brandGap ?? (variant === "register" ? 59 : showHeading ? 20 : 20);
-  const footerBottomPadding =
-    Platform.OS === "android" ? Math.max(insets.bottom, 22) : Math.max(insets.bottom, 10);
-  const footerTopPadding = Platform.OS === "android" ? 18 : 14;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSubscription = Keyboard.addListener(showEvent, () => {
+      setKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  const basePaddingBottom =
+    footerMode === "bar"
+      ? 30
+      : variant === "register"
+      ? 44
+      : (Platform.OS === "android" ? Math.max(insets.bottom, 56) : 56);
+
+  const computedPaddingBottom = keyboardVisible
+    ? basePaddingBottom + (variant === "register" ? 150 : 100)
+    : basePaddingBottom;
+
+  const computedJustifyContent = keyboardVisible
+    ? "flex-start"
+    : variant === "register"
+    ? "flex-start"
+    : "center";
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.flex}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 40}
+        enabled={!keyboardVisible}
       >
         <View style={styles.root}>
           {showHeader ? (
@@ -127,15 +164,16 @@ export function AuthScreen({
             </View>
           ) : null}
           <ScrollView
+            automaticallyAdjustKeyboardInsets={true}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={[
               styles.scroll,
               variant === "register" ? styles.scrollRegister : styles.scrollDefault,
               scrollTopPadding !== undefined && { paddingTop: scrollTopPadding },
-              footerMode === "bar" && styles.scrollWithFooter,
-              footerMode !== "bar" && {
-                paddingBottom: Platform.OS === "android" ? Math.max(insets.bottom, 56) : 56
+              {
+                paddingBottom: computedPaddingBottom,
+                justifyContent: computedJustifyContent
               }
             ]}
           >
@@ -168,14 +206,14 @@ export function AuthScreen({
             </View>
           </ScrollView>
 
-          {footer && footerMode === "bar" ? (
+          {footer && footerMode === "bar" && !keyboardVisible ? (
             <View
               style={[
                 styles.footerBar,
                 {
-                  minHeight: 44 + footerTopPadding + footerBottomPadding,
-                  paddingBottom: footerBottomPadding,
-                  paddingTop: footerTopPadding
+                  minHeight: 44 + (Platform.OS === "android" ? 18 : 14) + (Platform.OS === "android" ? Math.max(insets.bottom, 22) : Math.max(insets.bottom, 10)),
+                  paddingBottom: Platform.OS === "android" ? Math.max(insets.bottom, 22) : Math.max(insets.bottom, 10),
+                  paddingTop: Platform.OS === "android" ? 18 : 14
                 }
               ]}
             >
@@ -537,7 +575,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 1.2,
-    lineHeight: 16
+    lineHeight: 20
   },
   inputFrame: {
     alignItems: "center",
@@ -564,8 +602,7 @@ const styles = StyleSheet.create({
     fontFamily: appFonts.regular,
     fontSize: 16,
     minHeight: 46,
-    padding: 0,
-    lineHeight: 24
+    padding: 0
   },
   passwordInput: {
     paddingRight: 8

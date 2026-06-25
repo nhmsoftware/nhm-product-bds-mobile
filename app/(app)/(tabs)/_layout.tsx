@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { router, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RoleGuard } from "@/components/RoleGuard";
@@ -51,11 +51,11 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="saved"
+          name="legal"
           options={{
-            title: "Khu đất",
+            title: "Pháp lý",
             tabBarIcon: ({ color }) => (
-              <Ionicons color={color} name="business-outline" size={24} />
+              <Ionicons color={color} name="shield-checkmark-outline" size={24} />
             )
           }}
         />
