@@ -1,1 +1,1 @@
-export { NewsFeedScreen as default } from "@/components/EmployeeScreens";
+export { InventoryListScreen as default } from "@/components/EmployeeScreens";

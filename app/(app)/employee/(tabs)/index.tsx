@@ -48,6 +48,7 @@ type EmployeeHomeRoute =
   | "/employee/inventory-list"
   | "/employee/learning"
   | "/employee/news"
+  | "/employee/news-feed"
   | "/employee/notifications"
   | "/employee/point-history"
   | "/employee/required-learning";
@@ -205,6 +206,7 @@ function normalizeDashboardModuleKind(module: DashboardRecord) {
 }
 
 function dashboardModuleIcon(kind: string): keyof typeof Ionicons.glyphMap {
+  if (kind === "news") return "newspaper-outline";
   if (kind === "learning") return "school-outline";
   if (kind === "inventory") return "business-outline";
   if (kind === "notifications") return "notifications-outline";
@@ -219,7 +221,8 @@ function dashboardModuleTarget(kind: string, learningTarget: EmployeeHomeRoute):
   if (kind === "notifications") return "/employee/notifications";
   if (kind === "attendance") return "/employee/check-in";
   if (kind === "kpi") return "/employee/point-history";
-  return "/employee/news";
+  // news kind → standalone news-feed route (không phải tab khu đất)
+  return "/employee/news-feed";
 }
 
 function dashboardModulesToActions(modules: DashboardRecord[], learningTarget: EmployeeHomeRoute): HomeActionRow[] {
@@ -232,6 +235,7 @@ function dashboardModulesToActions(modules: DashboardRecord[], learningTarget: E
     }
   });
 
+  // Ưu tiên hiển thị: thông báo, kho hàng, học tập
   return ["notifications", "inventory", "learning"]
     .map((kind) => {
       const module = byKind.get(kind);
@@ -292,14 +296,32 @@ export default function EmployeeHomeScreen() {
   const hidePersonalAchievementSections = isExecutiveAdminRole(session?.user.role);
   const visibleKpiCopy = hidePersonalAchievementSections ? kpiCopy.slice(0, 1) : kpiCopy;
   const approvedEmployeeProfile = !isBaseEmployeeRole(session?.user.role) || Boolean(session?.user.isActive && session?.user.jobPosition?.trim());
-  const actionRows = dashboardModules.length > 0
+  // Fallback cứng — luôn hiện đủ 3 card dù API có hay không có modules
+  const fallbackActions: HomeActionRow[] = [
+    {
+      description: t("employee.action.news.description"),
+      icon: "notifications-outline",
+      target: "/employee/notifications",
+      title: t("employee.action.news.title")
+    },
+    {
+      description: t("employee.action.inventory.description"),
+      icon: "business-outline",
+      target: "/employee/inventory-list",
+      title: t("employee.action.inventory.title")
+    },
+    {
+      description: t("employee.action.learning.description"),
+      icon: "school-outline",
+      target: learningTarget,
+      title: t("employee.action.learning.title")
+    }
+  ];
+  const apiActions = dashboardModules.length > 0
     ? dashboardModulesToActions(dashboardModules, learningTarget)
-    : actionCopy.map((copy, index) => ({
-        description: t(copy.descriptionKey),
-        icon: index === 0 ? "notifications-outline" : index === 1 ? "business-outline" : "school-outline",
-        target: index === 0 ? "/employee/notifications" : index === 1 ? "/employee/inventory-list" : learningTarget,
-        title: t(copy.titleKey)
-      } satisfies HomeActionRow));
+    : [];
+  // Nếu API trả về đủ 3 card thì dùng API, ngược lại dùng fallback
+  const actionRows = apiActions.length >= 3 ? apiActions : fallbackActions;
 
   useEffect(() => {
     let mounted = true;
@@ -407,7 +429,8 @@ export default function EmployeeHomeScreen() {
             const primaryColor = isPointCard ? employeePalette.goldDark : employeePalette.red;
             const softColor = isPointCard ? employeePalette.goldSoft : employeePalette.redSoft;
             const hintColor = isPointCard ? employeePalette.goldDark : employeePalette.gold;
-            const target = isPointCard ? "/employee/point-history" : "/employee/news";
+            const target = isPointCard ? "/employee/point-history" : "/employee/news-feed";
+
 
             return (
               <Pressable

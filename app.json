@@ -2,7 +2,7 @@
   "expo": {
     "name": "KHỞI NGUYÊN LAND",
     "slug": "khoi-nguyen-land",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "icon": "./assets/images/icons/app-icon.png",
     "orientation": "portrait",
     "scheme": "BDS",
@@ -22,6 +22,7 @@
     },
     "android": {
       "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",

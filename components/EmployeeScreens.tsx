@@ -27,6 +27,9 @@ import {
   Image,
   Linking,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable as RNPressable,
   RefreshControl,
   ScrollView,
   Share,
@@ -82,6 +85,8 @@ import type {
   MandatoryLearningQuiz
 } from "@/services/employee/types";
 import WebView from "react-native-webview";
+import { RichText, Toolbar, DEFAULT_TOOLBAR_ITEMS, useEditorBridge, useBridgeState, ImageBridge, TenTapStartKit } from "@10play/tentap-editor";
+import RenderHtml from "react-native-render-html";
 
 const learningImages = {
   legal: require("@/assets/images/learning/project-legal.png"),
@@ -121,12 +126,6 @@ const certificateImages = {
   operations: require("@/assets/images/profile/certificates/certificate-operations.png"),
   digitalMarketing: require("@/assets/images/profile/certificates/certificate-digital-marketing.png"),
   negotiation: require("@/assets/images/profile/certificates/certificate-negotiation.png")
-};
-
-const leaveImages = {
-  nguyenVanA: require("@/assets/images/employee/leave/avatar-nguyen-van-a.png"),
-  tranThiB: require("@/assets/images/employee/leave/avatar-tran-thi-b.png"),
-  leVanC: require("@/assets/images/employee/leave/avatar-le-van-c.png")
 };
 
 const showingImages = {
@@ -619,6 +618,31 @@ async function logImageUploadAsset(scope: string, photo: ImagePicker.ImagePicker
   });
 }
 
+const NEWS_IMAGE_EXTENSIONS: Record<string, string> = {
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml"
+};
+
+function resolveNewsImageAsset(photo: ImagePicker.ImagePickerAsset): { uri: string; name: string; type: string } {
+  const uri = photo.uri;
+  const fileName = photo.fileName || `image-${Date.now()}.jpg`;
+  let mimeType = photo.mimeType;
+
+  if (!mimeType) {
+    const dotIndex = fileName.lastIndexOf(".");
+    const ext = dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : "";
+    mimeType = NEWS_IMAGE_EXTENSIONS[ext] || "image/jpeg";
+  }
+
+  return { name: fileName, type: mimeType, uri };
+}
+
 function areaCommentKey(comment: ApiObject) {
   const id = apiText(comment.id, "").trim();
   if (id) return `id:${id}`;
@@ -863,8 +887,7 @@ function isLearningCourseCompleted(course: ApiObject | null) {
   if (!course) return false;
   const progress = isApiObject(course.progress) ? course.progress : {};
   const status = apiText(progress.status ?? course.status, "").toLowerCase();
-  const percent = apiNumber(progress.percent ?? course.progress_percent ?? course.progressPercent, 0);
-  return status === "completed" || percent >= 100;
+  return status === "completed";
 }
 
 function formatCertificateDate(value: unknown, fallback = "Đã hoàn thành") {
@@ -1581,6 +1604,159 @@ export function RequiredLearningScreen({
   );
 }
 
+export function MandatoryCourseListScreen({ onBack }: { onBack?: () => void }) {
+  const { data, loading, failed } = useEmployeeApiData(() => employeeApi.courses(), []);
+  const [thumbnailFailed, setThumbnailFailed] = useState<Record<string, boolean>>({});
+
+  const courses = useMemo(() => {
+    const payload: ApiObject = isApiObject(data) ? data : {};
+    const apiCourses = apiList(payload.courses);
+    const fallbackCourse = isApiObject(payload.course) ? payload.course : null;
+    const allCourses = apiCourses.length > 0 ? apiCourses : fallbackCourse ? [fallbackCourse] : [];
+
+    return allCourses.filter((course) => {
+      const isMandatory = apiBoolean(course.isMandatory ?? course.is_mandatory, false);
+      const courseProgress = isApiObject(course.progress) ? course.progress : {};
+      const status = apiText(courseProgress.status, "").toLowerCase();
+      const percent = apiNumber(courseProgress.percent, 0);
+      const isCompleted = status === "completed" || percent >= 100;
+      return isMandatory && !isCompleted;
+    }).map((course) => {
+      const courseProgress = isApiObject(course.progress) ? course.progress : {};
+      const thumbnail = course.thumbnailUrl ?? course.thumbnail_url ?? course.image;
+
+      return {
+        id: apiText(course.id, ""),
+        title: apiText(course.title, "Khóa học bắt buộc"),
+        description: apiText(course.description, "Hoàn thành lộ trình bắt buộc để tiếp tục."),
+        percent: apiNumber(courseProgress.percent, 0),
+        totalLessons: apiNumber(courseProgress.totalLessons ?? courseProgress.total_lessons, 0),
+        completedLessons: apiNumber(courseProgress.completedLessons ?? courseProgress.completed_lessons, 0),
+        thumbnail: thumbnail ? String(thumbnail) : null,
+        lessons: apiNumber(course.lessons_count ?? course.lessonCount, 0)
+      };
+    });
+  }, [data]);
+
+  function handleThumbnailError(id: string) {
+    setThumbnailFailed((prev) => ({ ...prev, [id]: true }));
+  }
+
+  function openCourse(courseId: string) {
+    if (!courseId) {
+      notifyError(new Error("Khóa học chưa có dữ liệu lộ trình để mở."));
+      return;
+    }
+    router.push({
+      pathname: "/employee/required-learning",
+      params: { courseId, returnTo: "/employee/mandatory-courses" }
+    });
+  }
+
+  const handleBack = onBack ?? backToCheckInHistory;
+
+  if (loading) {
+    return (
+      <EmployeePage headerTitle="Khóa học bắt buộc" back={handleBack} backType="previous">
+        <View style={styles.meetingActivitiesHeader}>
+          <ActivityIndicator color={employeePalette.goldDark} />
+        </View>
+      </EmployeePage>
+    );
+  }
+
+  if (failed) {
+    return (
+      <EmployeePage headerTitle="Khóa học bắt buộc" back={handleBack} backType="previous">
+        <View style={styles.meetingActivitiesHeader}>
+          <Text style={styles.meetRecentStateText}>Không thể tải danh sách khóa học. Vui lòng thử lại.</Text>
+        </View>
+      </EmployeePage>
+    );
+  }
+
+  return (
+    <EmployeePage headerTitle="Khóa học bắt buộc" back={handleBack} backType="previous">
+      <View style={styles.meetingActivitiesHeader}>
+        <Text style={styles.meetingActivitiesTitle}>Lộ trình học bắt buộc</Text>
+        <Text style={styles.meetingActivitiesSubtitle}>
+          Hoàn thành tất cả khóa học bên dưới để sử dụng chức năng Gặp khách và Dẫn khách.
+        </Text>
+      </View>
+
+      <View style={styles.mandatoryCourseList}>
+        {courses.length === 0 ? (
+          <View style={styles.mandatoryEmptyWrap}>
+            <Ionicons name="checkmark-circle-outline" size={56} color="#1b8a5a" />
+            <Text style={styles.mandatoryEmptyTitle}>Tất cả đã hoàn thành</Text>
+            <Text style={styles.mandatoryEmptyDesc}>
+              Bạn đã hoàn thành toàn bộ khóa học bắt buộc. Chức năng Gặp khách và Dẫn khách đã được mở khóa.
+            </Text>
+            <Pressable
+              onPress={() => router.replace("/employee/(tabs)/check-in" as Href)}
+              style={({ pressed }) => [styles.mandatoryContinueBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.mandatoryContinueBtnText}>Về trang chủ</Text>
+            </Pressable>
+          </View>
+        ) : (
+          courses.map((course) => {
+            const thumbFailed = Boolean(thumbnailFailed[course.id]);
+            const hasThumb = Boolean(course.thumbnail) && !thumbFailed;
+
+            return (
+              <Pressable
+                key={course.id}
+                onPress={() => openCourse(course.id)}
+                style={({ pressed }) => [styles.mandatoryCourseCard, pressed && styles.pressed]}
+              >
+                <View style={styles.mandatoryCourseThumbWrap}>
+                  {hasThumb ? (
+                    <Image
+                      source={{ uri: course.thumbnail! }}
+                      style={styles.mandatoryCourseThumb}
+                      onError={() => handleThumbnailError(course.id)}
+                    />
+                  ) : (
+                    <View style={styles.mandatoryCourseThumbPlaceholder}>
+                      <Ionicons name="book-outline" size={28} color="#ffffff" />
+                    </View>
+                  )}
+                  <View style={styles.mandatoryBadge}>
+                    <Text style={styles.mandatoryBadgeText}>BẮT BUỘC</Text>
+                  </View>
+                </View>
+
+                <View style={styles.mandatoryCourseBody}>
+                  <Text style={styles.mandatoryCourseTitle} numberOfLines={2}>{course.title}</Text>
+                  <Text style={styles.mandatoryCourseDesc} numberOfLines={2}>{course.description}</Text>
+
+                  <View style={styles.mandatoryCourseMeta}>
+                    <Ionicons name="layers-outline" size={14} color={employeePalette.muted} />
+                    <Text style={styles.mandatoryCourseMetaText}>
+                      {course.totalLessons > 0
+                        ? `${course.completedLessons}/${course.totalLessons} bài học`
+                        : course.lessons > 0 ? `${course.lessons} bài học` : "Chưa có bài học"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.mandatoryProgressHeader}>
+                    <Text style={styles.mandatoryProgressLabel}>TIẾN ĐỘ</Text>
+                    <Text style={styles.mandatoryProgressPercent}>{course.percent}%</Text>
+                  </View>
+                  <View style={styles.learningProgressTrack}>
+                    <View style={[styles.learningProgressFill, { width: `${course.percent}%` }]} />
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })
+        )}
+      </View>
+    </EmployeePage>
+  );
+}
+
 function formatLessonDuration(seconds: number) {
   return `${Math.ceil(seconds / 60)} Phút`;
 }
@@ -1765,6 +1941,7 @@ function RequiredQuizCard({ canStart, quiz }: { canStart: boolean; quiz: Mandato
 
 export function NewsFeedScreen() {
   const { session } = useAuth();
+  const { width: screenWidth } = useWindowDimensions();
   const [newsRefreshKey, setNewsRefreshKey] = useState(0);
   const newsFocusedRef = useRef(false);
   const [newsRefreshing, setNewsRefreshing] = useState(false);
@@ -1773,15 +1950,30 @@ export function NewsFeedScreen() {
   const [newPostTitle, setNewPostTitle] = useState("");
   const [newPostContent, setNewPostContent] = useState("");
   const [newPostImage, setNewPostImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
-  const [newPostAttachment, setNewPostAttachment] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const [newPostAttachments, setNewPostAttachments] = useState<DocumentPicker.DocumentPickerAsset[]>([]);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editPostTitle, setEditPostTitle] = useState("");
   const [editPostContent, setEditPostContent] = useState("");
   const [editPostImage, setEditPostImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [editPostThumbnailUrl, setEditPostThumbnailUrl] = useState("");
+  const [editPostNewAttachments, setEditPostNewAttachments] = useState<DocumentPicker.DocumentPickerAsset[]>([]);
+  const [editPostKeepAttachments, setEditPostKeepAttachments] = useState<any[]>([]);
   const [activePostMenuId, setActivePostMenuId] = useState<string | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [updatingPost, setUpdatingPost] = useState(false);
+  // Rich editor — tentap-editor dùng EditorBridge, không dùng useRef
+  const [showRichModal, setShowRichModal] = useState(false);
+  const [richModalMode, setRichModalMode] = useState<"create" | "edit">("create");
+  const editorCreate = useEditorBridge({
+    bridgeExtensions: TenTapStartKit,
+    initialContent: "",
+    avoidIosKeyboard: true
+  });
+  const editorEdit = useEditorBridge({
+    bridgeExtensions: TenTapStartKit,
+    initialContent: "",
+    avoidIosKeyboard: true
+  });
   const { data, failed, loading } = useEmployeeApiData(() => employeeApi.internalNews(), [newsRefreshKey]);
   const apiPosts = apiList(data);
   const posts: ApiObject[] = apiPosts;
@@ -1813,6 +2005,73 @@ export function NewsFeedScreen() {
     setNewsRefreshKey((value) => value + 1);
   }
 
+  function openRichModal(mode: "create" | "edit") {
+    setRichModalMode(mode);
+    setShowRichModal(true);
+    const content = mode === "create" ? newPostContent : editPostContent;
+    const bridge = mode === "create" ? editorCreate : editorEdit;
+    // Delay setContent to make sure WebView is fully mounted and ready
+    setTimeout(() => {
+      bridge.setContent(content);
+    }, 400);
+  }
+
+  async function closeRichModalAndSave() {
+    try {
+      if (richModalMode === "create") {
+        const html = await editorCreate.getHTML();
+        setNewPostContent(html);
+      } else {
+        const html = await editorEdit.getHTML();
+        setEditPostContent(html);
+      }
+    } catch (e) {
+      console.warn("Failed to retrieve HTML content from editor:", e);
+    }
+    setShowRichModal(false);
+  }
+
+  async function insertInlineImageToRichEditor(mode: "create" | "edit") {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      notifyError("Vui lòng cấp quyền truy cập thư viện ảnh.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: false,
+      mediaTypes: ["images"],
+      quality: 0.85,
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible
+    });
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      if (asset) {
+        try {
+          const form = new FormData();
+          form.append("image", {
+            uri: asset.uri,
+            name: asset.fileName || `inline-image-${Date.now()}.jpg`,
+            type: asset.mimeType || "image/jpeg"
+          } as any);
+
+          const response = await employeeApi.uploadEvidence(form);
+          if (response.success && response.data?.url) {
+            const imageUrl = mediaUrl(response.data.url);
+            if (imageUrl) {
+              const bridge = mode === "edit" ? editorEdit : editorCreate;
+              bridge.setImage(imageUrl);
+            }
+          } else {
+            notifyError(response.message || "Không thể upload ảnh lên hệ thống.");
+          }
+        } catch (error) {
+          appLogger.warn("employee.news.inlineImage", "Không thể upload ảnh inline.", { error });
+          notifyError(error, "Lỗi khi upload ảnh.");
+        }
+      }
+    }
+  }
+
   async function pickNewsImage(target: "create" | "edit" = editingPostId ? "edit" : "create") {
     if (target === "create" && !canCreateNews) {
       return;
@@ -1827,14 +2086,19 @@ export function NewsFeedScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: false,
       mediaTypes: ["images"],
-      quality: 0.85
+      quality: 0.85,
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible
     });
 
     if (!result.canceled) {
       const asset = result.assets[0] ?? null;
-      if (asset?.fileSize && asset.fileSize > 2 * 1024 * 1024) {
-        notifyError("Ảnh bài viết không được vượt quá 2MB.");
+      if (asset?.fileSize && asset.fileSize > 8 * 1024 * 1024) {
+        notifyError("Ảnh bài viết không được vượt quá 8MB.");
         return;
+      }
+
+      if (asset) {
+        void logImageUploadAsset("employee.news.thumbnail", asset);
       }
 
       if (target === "edit") {
@@ -1847,27 +2111,35 @@ export function NewsFeedScreen() {
     }
   }
 
-  async function pickNewsAttachment() {
-    if (!canCreateNews) {
+  async function pickNewsAttachment(target: "create" | "edit" = "create") {
+    if (target === "create" && !canCreateNews) {
       return;
     }
 
     const result = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: true,
-      multiple: false,
+      multiple: true,
       type: employeeDocumentMimeTypes
     });
 
-    if (result.canceled || !result.assets[0]) return;
+    if (result.canceled || !result.assets) return;
 
-    const asset = result.assets[0];
-    if (asset.size && asset.size > employeeDocumentMaxBytes) {
-      notifyError("Dung lượng tài liệu không được vượt quá 10MB.");
-      return;
+    const validAssets = result.assets.filter((asset) => {
+      if (asset.size && asset.size > employeeDocumentMaxBytes) {
+        notifyError(`Tài liệu "${asset.name}" vượt quá dung lượng 10MB.`);
+        return false;
+      }
+      return true;
+    });
+
+    if (validAssets.length === 0) return;
+
+    if (target === "edit") {
+      setEditPostNewAttachments((current) => [...current, ...validAssets]);
+    } else {
+      setNewPostAttachments((current) => [...current, ...validAssets]);
+      setCreateExpanded(true);
     }
-
-    setNewPostAttachment(asset);
-    setCreateExpanded(true);
   }
 
   async function submitInternalNews() {
@@ -1886,19 +2158,15 @@ export function NewsFeedScreen() {
     setCreating(true);
     try {
       const thumbnail = newPostImage
-        ? {
-            name: newPostImage.fileName || `internal-news-${Date.now()}.jpg`,
-            type: newPostImage.mimeType || "image/jpeg",
-            uri: newPostImage.uri
-          }
+        ? resolveNewsImageAsset(newPostImage)
         : undefined;
       const response = await employeeApi.createInternalNews({
-        attachments: newPostAttachment
-          ? [{
-              name: newPostAttachment.name || `tai-lieu-bai-viet-${Date.now()}`,
-              type: employeeDocumentMimeType(newPostAttachment.name || "", newPostAttachment.mimeType),
-              uri: newPostAttachment.uri
-            }]
+        attachments: newPostAttachments.length > 0
+          ? newPostAttachments.map((attachment) => ({
+              name: attachment.name || `tai-lieu-bai-viet-${Date.now()}`,
+              type: employeeDocumentMimeType(attachment.name || "", attachment.mimeType),
+              uri: attachment.uri
+            }))
           : undefined,
         content,
         thumbnail,
@@ -1909,7 +2177,7 @@ export function NewsFeedScreen() {
       setNewPostTitle("");
       setNewPostContent("");
       setNewPostImage(null);
-      setNewPostAttachment(null);
+      setNewPostAttachments([]);
       setCreateExpanded(false);
       setNewsRefreshKey((value) => value + 1);
     } catch (error) {
@@ -1927,6 +2195,8 @@ export function NewsFeedScreen() {
     setEditPostContent("");
     setEditPostImage(null);
     setEditPostThumbnailUrl("");
+    setEditPostNewAttachments([]);
+    setEditPostKeepAttachments([]);
   }
 
   function startEditInternalNews(postId: string, post: ApiObject) {
@@ -1936,6 +2206,8 @@ export function NewsFeedScreen() {
     setEditPostContent(apiText(post.content ?? post.summary ?? post.excerpt ?? post.description ?? post.body, ""));
     setEditPostThumbnailUrl(apiText(post.image_url ?? post.thumbnail_url ?? post.thumbnail, ""));
     setEditPostImage(null);
+    setEditPostNewAttachments([]);
+    setEditPostKeepAttachments(apiList(post.attachments));
   }
 
   function confirmDeleteInternalNews(postId: string) {
@@ -1988,15 +2260,19 @@ export function NewsFeedScreen() {
     setUpdatingPost(true);
     try {
       const thumbnail = editPostImage
-        ? {
-            name: editPostImage.fileName || `internal-news-${Date.now()}.jpg`,
-            type: editPostImage.mimeType || "image/jpeg",
-            uri: editPostImage.uri
-          }
+        ? resolveNewsImageAsset(editPostImage)
         : undefined;
 
       const response = await employeeApi.updateInternalNews(editingPostId, {
+        attachments: editPostNewAttachments.length > 0
+          ? editPostNewAttachments.map((attachment) => ({
+              name: attachment.name || `tai-lieu-bai-viet-${Date.now()}`,
+              type: employeeDocumentMimeType(attachment.name || "", attachment.mimeType),
+              uri: attachment.uri
+            }))
+          : undefined,
         content,
+        keep_attachments: JSON.stringify(editPostKeepAttachments),
         thumbnail,
         thumbnail_url: thumbnail ? undefined : editPostThumbnailUrl,
         title: title || undefined
@@ -2033,8 +2309,8 @@ export function NewsFeedScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.newsFeedPageHeader}>
-          <Text style={styles.newsFeedTitle}>Điểm đến</Text>
-          <Text style={styles.newsFeedSubtitle}>Cập nhật điểm đến và khu đất mới nhất.</Text>
+          <Text style={styles.newsFeedTitle}>Bảng tin nội bộ</Text>
+          <Text style={styles.newsFeedSubtitle}>Bài viết, thông báo và thảo luận trong đội ngũ.</Text>
         </View>
 
         {canCreateNews ? (
@@ -2069,16 +2345,25 @@ export function NewsFeedScreen() {
                   style={styles.newsCreateTitleInput}
                   value={newPostTitle}
                 />
-                <TextInput
-                  editable={!creating}
-                  multiline
-                  onChangeText={setNewPostContent}
-                  placeholder="Nội dung bài viết..."
-                  placeholderTextColor="rgba(91, 64, 60, 0.45)"
-                  style={styles.newsCreateContentInput}
-                  textAlignVertical="top"
-                  value={newPostContent}
-                />
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => { setCreateExpanded(true); openRichModal("create"); }}
+                  style={styles.newsRichPreviewButton}
+                >
+                  {newPostContent ? (
+                    <RenderHtml
+                      contentWidth={screenWidth - 64}
+                      source={{ html: newPostContent }}
+                      tagsStyles={{
+                        p: { color: "#3b2c2a", fontSize: 14, marginVertical: 2 },
+                        img: { maxWidth: "100%", borderRadius: 8 }
+                      }}
+                    />
+                  ) : (
+                    <Text style={styles.newsCreatePlaceholder}>Nội dung bài viết... (hỗ trợ ảnh inline)</Text>
+                  )}
+                </Pressable>
+
                 {newPostImage ? (
                   <View style={styles.newsCreateImagePreview}>
                     <Image source={{ uri: newPostImage.uri }} style={styles.newsCreateImage} />
@@ -2091,19 +2376,23 @@ export function NewsFeedScreen() {
                     </Pressable>
                   </View>
                 ) : null}
-                {newPostAttachment ? (
-                  <View style={styles.newsCreateAttachmentPreview}>
-                    <View style={styles.newsCreateAttachmentTitleRow}>
-                      <Ionicons name="document-text-outline" size={18} color={employeePalette.red} />
-                      <Text numberOfLines={1} style={styles.newsCreateAttachmentName}>{newPostAttachment.name}</Text>
-                    </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setNewPostAttachment(null)}
-                      style={({ pressed }) => [styles.newsCreateAttachmentRemove, pressed && styles.pressed]}
-                    >
-                      <Ionicons name="close" size={16} color={employeePalette.muted} />
-                    </Pressable>
+                {newPostAttachments.length > 0 ? (
+                  <View style={styles.newsCreateAttachmentsList}>
+                    {newPostAttachments.map((attachment, idx) => (
+                      <View key={`new-attach-${idx}`} style={styles.newsCreateAttachmentPreview}>
+                        <View style={styles.newsCreateAttachmentTitleRow}>
+                          <Ionicons name="document-text-outline" size={18} color={employeePalette.red} />
+                          <Text numberOfLines={1} style={styles.newsCreateAttachmentName}>{attachment.name}</Text>
+                        </View>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => setNewPostAttachments((current) => current.filter((_, i) => i !== idx))}
+                          style={({ pressed }) => [styles.newsCreateAttachmentRemove, pressed && styles.pressed]}
+                        >
+                          <Ionicons name="close" size={16} color={employeePalette.muted} />
+                        </Pressable>
+                      </View>
+                    ))}
                   </View>
                 ) : null}
               </View>
@@ -2121,7 +2410,7 @@ export function NewsFeedScreen() {
                 <Pressable
                   accessibilityRole="button"
                   disabled={creating}
-                  onPress={pickNewsAttachment}
+                  onPress={() => pickNewsAttachment("create")}
                   style={({ pressed }) => [styles.newsCreateToolButton, pressed && styles.pressed]}
                 >
                   <Ionicons name="attach-outline" size={22} color={employeePalette.red} />
@@ -2136,7 +2425,7 @@ export function NewsFeedScreen() {
                     setNewPostTitle("");
                     setNewPostContent("");
                     setNewPostImage(null);
-                    setNewPostAttachment(null);
+                    setNewPostAttachments([]);
                   }}
                   style={styles.newsCreateCancelButton}
                 >
@@ -2251,16 +2540,25 @@ export function NewsFeedScreen() {
                       style={styles.newsCreateTitleInput}
                       value={editPostTitle}
                     />
-                    <TextInput
-                      editable={!updatingPost}
-                      multiline
-                      onChangeText={setEditPostContent}
-                      placeholder="Nội dung bài viết..."
-                      placeholderTextColor="rgba(91, 64, 60, 0.45)"
-                      style={styles.newsCreateContentInput}
-                      textAlignVertical="top"
-                      value={editPostContent}
-                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => openRichModal("edit")}
+                      style={styles.newsRichPreviewButton}
+                    >
+                      {editPostContent ? (
+                        <RenderHtml
+                          contentWidth={screenWidth - 64}
+                          source={{ html: editPostContent }}
+                          tagsStyles={{
+                            p: { color: "#3b2c2a", fontSize: 14, marginVertical: 2 },
+                            img: { maxWidth: "100%", borderRadius: 8 }
+                          }}
+                        />
+                      ) : (
+                        <Text style={styles.newsCreatePlaceholder}>Nội dung bài viết... (hỗ trợ ảnh inline)</Text>
+                      )}
+                    </Pressable>
+
                     {editPostImage || editPostThumbnailUrl ? (
                       <View style={styles.newsCreateImagePreview}>
                         <Image source={{ uri: editPostImage?.uri || mediaUrl(editPostThumbnailUrl) }} style={styles.newsCreateImage} />
@@ -2276,6 +2574,48 @@ export function NewsFeedScreen() {
                         </Pressable>
                       </View>
                     ) : null}
+                    {editPostKeepAttachments.length > 0 ? (
+                      <View style={styles.newsCreateAttachmentsList}>
+                        {editPostKeepAttachments.map((attachment, idx) => (
+                          <View key={`keep-attach-${idx}`} style={styles.newsCreateAttachmentPreview}>
+                            <View style={styles.newsCreateAttachmentTitleRow}>
+                              <Ionicons name="document-text-outline" size={18} color={employeePalette.red} />
+                              <Text numberOfLines={1} style={styles.newsCreateAttachmentName}>
+                                {attachment.name || attachment.title || "Tài liệu cũ"}
+                              </Text>
+                            </View>
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => setEditPostKeepAttachments((current) => current.filter((_, i) => i !== idx))}
+                              style={({ pressed }) => [styles.newsCreateAttachmentRemove, pressed && styles.pressed]}
+                            >
+                              <Ionicons name="close" size={16} color={employeePalette.muted} />
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    {editPostNewAttachments.length > 0 ? (
+                      <View style={styles.newsCreateAttachmentsList}>
+                        {editPostNewAttachments.map((attachment, idx) => (
+                          <View key={`new-edit-attach-${idx}`} style={styles.newsCreateAttachmentPreview}>
+                            <View style={styles.newsCreateAttachmentTitleRow}>
+                              <Ionicons name="document-text-outline" size={18} color={employeePalette.red} />
+                              <Text numberOfLines={1} style={styles.newsCreateAttachmentName}>{attachment.name}</Text>
+                            </View>
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => setEditPostNewAttachments((current) => current.filter((_, i) => i !== idx))}
+                              style={({ pressed }) => [styles.newsCreateAttachmentRemove, pressed && styles.pressed]}
+                            >
+                              <Ionicons name="close" size={16} color={employeePalette.muted} />
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+
                     <View style={styles.newsEditActions}>
                       <Pressable
                         accessibilityRole="button"
@@ -2285,6 +2625,15 @@ export function NewsFeedScreen() {
                       >
                         <Ionicons name="image-outline" size={18} color={employeePalette.red} />
                         <Text style={styles.newsEditImageText}>Đổi ảnh</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={updatingPost}
+                        onPress={() => pickNewsAttachment("edit")}
+                        style={({ pressed }) => [styles.newsEditImageButton, pressed && styles.pressed, { marginLeft: 8 }]}
+                      >
+                        <Ionicons name="attach-outline" size={20} color={employeePalette.red} />
+                        <Text style={styles.newsEditImageText}>Đính kèm</Text>
                       </Pressable>
                       <View style={styles.newsEditActionButtons}>
                         <Pressable
@@ -2342,16 +2691,185 @@ export function NewsFeedScreen() {
           })}
         </View>
       </ScrollView>
+
+      {/* Rich Editor Modal */}
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setShowRichModal(false)}
+        presentationStyle="pageSheet"
+        visible={showRichModal}
+      >
+        <SafeAreaView edges={["top", "left", "right"]} style={styles.richModalSafe}>
+          {/* Header */}
+          <View style={styles.richModalHeader}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setShowRichModal(false)}
+              style={({ pressed }) => [styles.richModalClose, pressed && styles.pressed]}
+            >
+              <Ionicons name="close" size={24} color={employeePalette.text} />
+            </Pressable>
+            <Text style={styles.richModalTitle}>Soạn nội dung</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={closeRichModalAndSave}
+              style={({ pressed }) => [styles.richModalDone, pressed && styles.pressed]}
+            >
+              <Text style={styles.richModalDoneText}>Xong</Text>
+            </Pressable>
+          </View>
+
+          {/* Editor chiếm toàn bộ không gian, thêm paddingBottom để không bị che bởi toolbar */}
+          <RichText
+            editor={richModalMode === "create" ? editorCreate : editorEdit}
+            style={{ flex: 1 }}
+          />
+
+          {/*
+            Toolbar: absolute-positioned KAV bám sát đáy màn hình.
+            Khi bàn phím lên, KAV tự đẩy toolbar lên đúng phía trên bàn phím.
+          */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
+          >
+            <NewsRichToolbar
+              mode={richModalMode}
+              editorCreate={editorCreate}
+              editorEdit={editorEdit}
+              onPickImage={() => insertInlineImageToRichEditor(richModalMode)}
+            />
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Custom Rich Toolbar dùng Ionicons — không phụ thuộc vào PNG assets của TenTap
+// ---------------------------------------------------------------------------
+type NewsRichToolbarProps = {
+  mode: "create" | "edit";
+  editorCreate: ReturnType<typeof useEditorBridge>;
+  editorEdit: ReturnType<typeof useEditorBridge>;
+  onPickImage: () => void;
+};
+function NewsRichToolbar({ mode, editorCreate, editorEdit, onPickImage }: NewsRichToolbarProps) {
+  const editor = mode === "create" ? editorCreate : editorEdit;
+  const editorState = useBridgeState(editor);
+
+  const txtBtn = (label: string, onPress: () => void, active = false, fontStyle?: "normal" | "italic", textDecorationLine?: "none" | "line-through" | "underline") => (
+    <Pressable
+      key={label + String(active)}
+      onPress={onPress}
+      style={({ pressed }) => [richToolbarBtnStyle, active && richToolbarBtnActive, pressed && richToolbarBtnPressed]}
+    >
+      <Text style={{
+        color: active ? employeePalette.red : employeePalette.text,
+        fontFamily: label === "B" ? appFonts.bold : appFonts.regular,
+        fontStyle: fontStyle ?? "normal",
+        fontSize: 14,
+        textDecorationLine: textDecorationLine ?? "none"
+      }}>{label}</Text>
+    </Pressable>
+  );
+
+  const icoBtn = (icon: React.ComponentProps<typeof Ionicons>["name"], onPress: () => void, active = false) => (
+    <Pressable
+      key={icon}
+      onPress={onPress}
+      style={({ pressed }) => [richToolbarBtnStyle, active && richToolbarBtnActive, pressed && richToolbarBtnPressed]}
+    >
+      <Ionicons name={icon} size={19} color={active ? employeePalette.red : employeePalette.text} />
+    </Pressable>
+  );
+
+  return (
+    <View style={richToolbarWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={richToolbarScroll}
+        keyboardShouldPersistTaps="always"
+      >
+        {txtBtn("B", () => editor.toggleBold(), editorState.isBoldActive)}
+        {txtBtn("I", () => editor.toggleItalic(), editorState.isItalicActive, "italic")}
+        {txtBtn("U", () => editor.toggleUnderline(), editorState.isUnderlineActive, "normal", "underline")}
+        {txtBtn("S", () => editor.toggleStrike(), editorState.isStrikeActive, "normal", "line-through")}
+        <View style={richToolbarDivider} />
+        {icoBtn("list-outline", () => editor.toggleBulletList(), editorState.isBulletListActive)}
+        {icoBtn("list-circle-outline", () => editor.toggleOrderedList(), editorState.isOrderedListActive)}
+        <View style={richToolbarDivider} />
+        {icoBtn("arrow-undo-outline", () => editor.undo(), false)}
+        {icoBtn("arrow-redo-outline", () => editor.redo(), false)}
+        <View style={richToolbarDivider} />
+        {icoBtn("image-outline", onPickImage, false)}
+      </ScrollView>
+    </View>
+  );
+}
+const richToolbarWrap: import("react-native").ViewStyle = {
+  backgroundColor: "#fdf5f4",
+  borderTopColor: "rgba(227,190,184,0.5)",
+  borderTopWidth: StyleSheet.hairlineWidth
+};
+const richToolbarScroll: import("react-native").ViewStyle = {
+  alignItems: "center",
+  flexDirection: "row",
+  gap: 2,
+  paddingHorizontal: 8,
+  paddingVertical: 6
+};
+const richToolbarBtnStyle: import("react-native").ViewStyle = {
+  alignItems: "center",
+  borderRadius: 8,
+  height: 36,
+  justifyContent: "center",
+  width: 36
+};
+const richToolbarBtnActive: import("react-native").ViewStyle = {
+  backgroundColor: "rgba(227,190,184,0.25)"
+};
+const richToolbarBtnPressed: import("react-native").ViewStyle = {
+  opacity: 0.55
+};
+const richToolbarDivider: import("react-native").ViewStyle = {
+  backgroundColor: "rgba(227,190,184,0.5)",
+  height: 22,
+  marginHorizontal: 4,
+  width: StyleSheet.hairlineWidth
+};
+
 function ExpandableNewsPostText({ content }: { content: string }) {
+  const { width: screenWidth } = useWindowDimensions();
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
 
+  // Detect xem content có phải HTML không (có chứa HTML tag)
+  const isHtmlContent = /<[a-z][\s\S]*>/i.test(content);
+
   function handleTextLayout(event: NativeSyntheticEvent<TextLayoutEventData>) {
     setCanExpand(event.nativeEvent.lines.length > newsPostPreviewLines);
+  }
+
+  if (isHtmlContent) {
+    return (
+      <View style={styles.newsPostBodyWrap}>
+        <RenderHtml
+          contentWidth={screenWidth - 32}
+          source={{ html: content }}
+          tagsStyles={{
+            body: { color: "#3b2c2a", fontFamily: appFonts.regular, fontSize: 14, lineHeight: 22 },
+            p: { marginVertical: 2 },
+            strong: { fontFamily: appFonts.semiBold },
+            img: { borderRadius: 8, maxWidth: "100%" },
+            ul: { paddingLeft: 16 },
+            ol: { paddingLeft: 16 }
+          }}
+        />
+      </View>
+    );
   }
 
   return (
@@ -2686,7 +3204,7 @@ function ProfileManagerActions({ canApproveDepartmentTransfers, userRole }: { ca
         onPress={() => router.push({ pathname: "/(app)/employee/leave-requests", params: { from: "profile" } })}
         style={({ pressed }) => [styles.profileLeaveButton, pressed && styles.pressed]}
       >
-        <Text style={styles.profileLeaveButtonText}>Duyệt đơn xin phép</Text>
+        <Text style={styles.profileLeaveButtonText}>Duyệt đơn xin nghỉ phép</Text>
       </Pressable>
       <Pressable
         onPress={() => router.push({ pathname: "/(app)/employee/transfer-requests", params: { from: "profile" } })}
@@ -2702,7 +3220,7 @@ function ProfileManagerActions({ canApproveDepartmentTransfers, userRole }: { ca
           onPress={() => router.push({ pathname: "/(app)/employee/recruitment-approvals", params: { from: "profile" } })}
           style={({ pressed }) => [styles.profileLeaveButton, { backgroundColor: "#795900", borderColor: "#795900", marginTop: 8 }, pressed && styles.pressed]}
         >
-          <Text style={styles.profileLeaveButtonText}>Duyệt đơn ứng tuyển</Text>
+          <Text style={[styles.profileLeaveButtonText, { color: "#FFD700" }]}>Duyệt đơn ứng tuyển</Text>
         </Pressable>
       ) : null}
       <Pressable
@@ -2851,6 +3369,65 @@ export function ManagerProfileScreen() {
       />
     </EmployeePage>
   );
+}
+
+export function MandatoryCourseGate({ children, returnTo }: { children: ReactNode; returnTo: string }) {
+  const { loading: authLoading } = useAuth();
+  const [checking, setChecking] = useState(true);
+  const [allowed, setAllowed] = useState(false);
+  const redirected = useRef(false);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    let active = true;
+    setChecking(true);
+
+    employeeApi
+      .learningAccess()
+      .then((result) => {
+        if (!active) return;
+        const completed = Boolean(result.mandatoryLearningCompleted);
+        setAllowed(completed);
+        if (!completed && !redirected.current) {
+          redirected.current = true;
+          router.replace({
+            pathname: "/employee/mandatory-courses",
+            params: { returnTo }
+          });
+        }
+      })
+      .catch(() => {
+        if (active) setAllowed(false);
+      })
+      .finally(() => {
+        if (active) setChecking(false);
+      });
+
+    return () => { active = false; };
+  }, [authLoading, returnTo]);
+
+  if (authLoading || checking) {
+    return (
+      <EmployeePage headerTitle="" back={() => router.back()} backType="previous">
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 80 }}>
+          <ActivityIndicator color={employeePalette.goldDark} />
+        </View>
+      </EmployeePage>
+    );
+  }
+
+  if (!allowed) {
+    return (
+      <EmployeePage headerTitle="" back={() => router.back()} backType="previous">
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 80 }}>
+          <ActivityIndicator color={employeePalette.goldDark} />
+        </View>
+      </EmployeePage>
+    );
+  }
+
+  return <>{children}</>;
 }
 
 export function MeetClientScreen() {
@@ -3332,7 +3909,10 @@ export function ShowingClientScreen() {
   const timelineFailed = historyFailed && recentFailed;
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [projectPickerVisible, setProjectPickerVisible] = useState(false);
-  const [unitCode, setUnitCode] = useState("");
+  const [selectedLotId, setSelectedLotId] = useState("");
+  const [lotPickerVisible, setLotPickerVisible] = useState(false);
+  const [lotOptions, setLotOptions] = useState<Array<{ id: string; code: string }>>([]);
+  const [lotsLoading, setLotsLoading] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -3340,6 +3920,7 @@ export function ShowingClientScreen() {
   const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const selectedProject = projectOptions.find((project) => project.id === selectedProjectId);
+  const selectedLot = lotOptions.find((lot) => lot.id === selectedLotId);
   const currentLocationText = currentLocation ? currentLocationAddress || "Đã lấy vị trí hiện tại" : "Bấm để lấy vị trí hiện tại";
 
   useEffect(() => {
@@ -3347,6 +3928,34 @@ export function ShowingClientScreen() {
       setSelectedProjectId(projectOptions[0].id);
     }
   }, [projectOptions, selectedProjectId]);
+
+  useEffect(() => {
+    setSelectedLotId("");
+    setLotOptions([]);
+
+    if (!selectedProjectId) return;
+
+    let cancelled = false;
+    setLotsLoading(true);
+
+    employeeApi.inventoryMap(selectedProjectId)
+      .then((response) => {
+        if (cancelled) return;
+        const lots = apiList(response?.data).map((lot) => ({
+          id: apiText(lot.id ?? lot.lot_id, ""),
+          code: apiText(lot.code ?? lot.lot_code ?? lot.lotCode, "—")
+        })).filter((lot) => lot.id);
+        setLotOptions(lots.sort((a, b) => a.code.localeCompare(b.code, "vi")));
+      })
+      .catch(() => {
+        if (!cancelled) setLotOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLotsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedProjectId]);
 
   async function captureSiteTourPhoto() {
     try {
@@ -3412,15 +4021,15 @@ export function ShowingClientScreen() {
   }
 
   async function submitSiteTour() {
-    const normalizedUnitCode = unitCode.trim();
+    const lotCode = selectedLot?.code ?? "";
     const normalizedCustomerName = customerName.trim();
 
     if (!selectedProjectId) {
       notifyError(new Error("Vui lòng chọn khu đất."));
       return;
     }
-    if (!normalizedUnitCode) {
-      notifyError(new Error("Vui lòng nhập mã lô/căn hộ."));
+    if (!lotCode) {
+      notifyError(new Error("Vui lòng chọn mã lô/căn hộ."));
       return;
     }
     if (!normalizedCustomerName) {
@@ -3452,7 +4061,7 @@ export function ShowingClientScreen() {
         latitude: String(siteTourLocation.latitude),
         longitude: String(siteTourLocation.longitude),
         project_id: selectedProjectId,
-        unit_code: normalizedUnitCode
+        unit_code: lotCode
       });
       notifySuccess({ message: "Check-in dẫn khách thành công." });
       router.back();
@@ -3501,12 +4110,19 @@ export function ShowingClientScreen() {
             value={selectedProject?.name ?? "Chọn khu đất..."}
           />
         </Pressable>
-        <ShowingField
-          label="MÃ LÔ/CĂN HỘ"
-          onChangeText={setUnitCode}
-          placeholder="Vd: A10, Tòa S2.01"
-          value={unitCode}
-        />
+        <Pressable
+          accessibilityRole="button"
+          disabled={!selectedProjectId || lotsLoading || lotOptions.length === 0}
+          onPress={() => setLotPickerVisible(true)}
+          style={({ pressed }) => pressed && styles.pressed}
+        >
+          <ShowingField
+            dropdown
+            label="MÃ LÔ/CĂN HỘ"
+            muted={!selectedLot}
+            value={lotsLoading ? "Đang tải dữ liệu lô..." : selectedLot?.code ?? (selectedProjectId ? "Chọn lô/căn hộ..." : "Chọn khu đất trước")}
+          />
+        </Pressable>
         <ShowingField
           label="TÊN KHÁCH HÀNG"
           onChangeText={setCustomerName}
@@ -3524,6 +4140,44 @@ export function ShowingClientScreen() {
           setProjectPickerVisible(false);
         }}
       />
+      <Modal animationType="fade" transparent visible={lotPickerVisible} onRequestClose={() => setLotPickerVisible(false)}>
+        <Pressable style={styles.meetProjectModalBackdrop} onPress={() => setLotPickerVisible(false)}>
+          <Pressable style={styles.meetProjectModal} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.meetProjectModalHeader}>
+              <Text style={styles.meetProjectModalTitle}>Chọn lô/căn hộ</Text>
+              <Pressable accessibilityRole="button" onPress={() => setLotPickerVisible(false)} style={styles.meetProjectModalClose}>
+                <Ionicons color={employeePalette.text} name="close" size={20} />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.meetProjectModalList}>
+              {lotOptions.length === 0 && (
+                <Text style={{ color: employeePalette.muted, textAlign: "center", paddingVertical: 16 }}>
+                  {lotsLoading ? "Đang tải..." : "Không có lô/căn hộ nào."}
+                </Text>
+              )}
+              {lotOptions.map((lot) => {
+                const active = lot.id === selectedLotId;
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={lot.id}
+                    onPress={() => {
+                      setSelectedLotId(lot.id);
+                      setLotPickerVisible(false);
+                    }}
+                    style={[styles.meetProjectModalOption, active && styles.meetProjectModalOptionActive]}
+                  >
+                    <Text style={[styles.meetProjectModalOptionText, active && styles.meetProjectModalOptionTextActive]}>
+                      {lot.code}
+                    </Text>
+                    {active ? <Ionicons color={employeePalette.goldDark} name="checkmark" size={20} /> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <View style={styles.showingPhotoHeader}>
         <EmployeeSectionTitle title="Minh chứng Check-in" />
         <EmployeeBadge label="BẮT BUỘC" />
@@ -5309,9 +5963,12 @@ function LeaveApprovalRequestsScreen() {
         </ScrollView>
 
         {failed ? (
-          <Text style={styles.leaveStateText}>Không thể tải dữ liệu nghỉ phép. Đang hiển thị dữ liệu mẫu để kiểm giao diện.</Text>
+          <Text style={styles.leaveStateText}>Không thể tải dữ liệu nghỉ phép. Vui lòng thử lại.</Text>
         ) : null}
         {loading ? <Text style={styles.leaveStateText}>Đang tải danh sách nghỉ phép...</Text> : null}
+        {!loading && !failed && filteredRows.length === 0 ? (
+          <Text style={styles.leaveStateText}>Chưa có yêu cầu nghỉ phép nào.</Text>
+        ) : null}
 
         <View style={styles.leaveList}>
           {filteredRows.map((row) => (
@@ -5319,6 +5976,7 @@ function LeaveApprovalRequestsScreen() {
               key={row.id}
               onChanged={() => setRefreshKey((value) => value + 1)}
               request={row}
+              collapsibleDetails={true}
             />
           ))}
         </View>
@@ -5555,6 +6213,7 @@ function EmployeeLeaveHistoryCard({
   request: EmployeeLeaveHistoryRow;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const isPending = request.status === "pending";
   const isRejected = request.status === "rejected";
   const isCancelled = request.status === "cancelled";
@@ -5596,22 +6255,27 @@ function EmployeeLeaveHistoryCard({
         </View>
       </View>
 
-      <View style={styles.leaveDetailBox}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setDetailsExpanded((value) => !value)}
+        style={({ pressed }) => [styles.leaveDetailBox, styles.leaveDetailBoxPressable, pressed && styles.pressed]}
+      >
         <View style={styles.leaveDetailRow}>
           <Ionicons name="time-outline" size={16} color="#950100" />
-          <Text numberOfLines={1} style={styles.leaveDateText}>{request.dateRange}</Text>
+          <Text numberOfLines={detailsExpanded ? undefined : 1} style={styles.leaveDateText}>{request.dateRange}</Text>
+          <Ionicons name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color="#8f706b" />
         </View>
         <View style={styles.leaveDetailRow}>
           <Ionicons name="menu-outline" size={16} color="#5b403c" />
-          <Text numberOfLines={2} style={styles.leaveReasonText}>{request.reason}</Text>
+          <Text numberOfLines={detailsExpanded ? undefined : 2} style={styles.leaveReasonText}>{request.reason}</Text>
         </View>
         {request.rejectionReason ? (
           <View style={styles.leaveDetailRow}>
             <Ionicons name="alert-circle-outline" size={16} color="#93000a" />
-            <Text numberOfLines={2} style={styles.leaveReasonText}>{request.rejectionReason}</Text>
+            <Text numberOfLines={detailsExpanded ? undefined : 2} style={styles.leaveReasonText}>{request.rejectionReason}</Text>
           </View>
         ) : null}
-      </View>
+      </Pressable>
 
       {isPending ? (
         <Pressable
@@ -5691,66 +6355,6 @@ const leaveFilterTabs: { label: string; value: LeaveStatusFilter }[] = [
   { label: "Từ chối", value: "rejected" }
 ];
 
-const fallbackLeaveRows: LeaveRequestCardData[] = [
-  {
-    id: "leave-nguyen-van-a",
-    name: "Nguyễn Văn A",
-    department: "Phòng Marketing",
-    dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
-    reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
-    status: "pending",
-    avatar: leaveImages.nguyenVanA
-  },
-  {
-    id: "leave-tran-thi-b",
-    name: "Trần Thị B",
-    department: "Phòng Kinh doanh",
-    dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
-    reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
-    status: "approved",
-    avatar: leaveImages.tranThiB
-  },
-  {
-    id: "leave-le-van-c",
-    name: "Lê Văn C",
-    department: "Phòng IT",
-    dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
-    reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
-    status: "rejected",
-    avatar: leaveImages.leVanC
-  }
-];
-
-const fallbackTransferRows: LeaveRequestCardData[] = [
-  {
-    id: "transfer-nguyen-van-a",
-    name: "Nguyễn Văn A",
-    department: "Phòng Marketing",
-    dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
-    reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
-    status: "pending",
-    avatar: leaveImages.nguyenVanA
-  },
-  {
-    id: "transfer-tran-thi-b",
-    name: "Trần Thị B",
-    department: "Phòng Kinh doanh",
-    dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
-    reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
-    status: "approved",
-    avatar: leaveImages.tranThiB
-  },
-  {
-    id: "transfer-le-van-c",
-    name: "Lê Văn C",
-    department: "Phòng IT",
-    dateRange: "15/10/2023 - 17/10/2023 (3 ngày)",
-    reason: "Nghỉ ốm theo chỉ định của bác sĩ...",
-    status: "rejected",
-    avatar: leaveImages.leVanC
-  }
-];
-
 type DepartmentOption = {
   label: string;
   value: string;
@@ -5824,9 +6428,11 @@ function normalizeLeaveStatus(status: unknown): LeaveRequestCardData["status"] {
 }
 
 function formatLeaveDateRange(item: ApiObject) {
-  const from = apiText(item.start_date ?? item.from_date ?? item.startDate, "15/10/2023");
-  const to = apiText(item.end_date ?? item.to_date ?? item.endDate, "17/10/2023");
-  const days = apiNumber(item.total_days ?? item.days ?? item.duration_days, 3);
+  const from = apiText(item.start_date ?? item.from_date ?? item.startDate, "");
+  const to = apiText(item.end_date ?? item.to_date ?? item.endDate, "");
+  const days = apiNumber(item.number_of_days ?? item.total_days ?? item.days ?? item.duration_days, 0);
+  if (!from && !to) return "";
+  if (!to) return `${formatDisplayDate(from)} (${days} ngày)`;
   return `${formatDisplayDate(from)} - ${formatDisplayDate(to)} (${days} ngày)`;
 }
 
@@ -5853,45 +6459,43 @@ function formatTransferRequestDate(item: ApiObject) {
 
 function leaveRowsFromApi(data: unknown): LeaveRequestCardData[] {
   const rows = apiList(data);
-  if (rows.length === 0) return fallbackLeaveRows;
+  if (rows.length === 0) return [];
 
   return rows.map((item, index) => {
-    const fallback = fallbackLeaveRows[index % fallbackLeaveRows.length];
     const status = normalizeLeaveStatus(item.status ?? item.status_label);
     return {
-      id: apiText(item.id, fallback.id),
-      name: apiText(item.employee_name ?? item.user_name ?? item.name ?? item.requester_name, fallback.name),
-      department: apiText(item.department_name ?? item.department ?? item.employee_department, fallback.department),
+      id: apiText(item.id, `leave-${index}`),
+      name: apiText(item.employee_name ?? item.user_name ?? item.name ?? item.requester_name, ""),
+      department: apiText(item.department_name ?? item.department ?? item.employee_department, ""),
       dateRange: formatLeaveDateRange(item),
-      reason: apiText(item.reason ?? item.detail ?? item.note, fallback.reason),
+      reason: apiText(item.reason ?? item.detail ?? item.note, ""),
       status,
-      avatar: fallback.avatar
+      avatar: { uri: "" }
     };
   });
 }
 
-function transferRowsFromApi(data: unknown, useFallback = false): LeaveRequestCardData[] {
+function transferRowsFromApi(data: unknown): LeaveRequestCardData[] {
   const rows = apiList(data);
-  if (rows.length === 0) return useFallback ? fallbackTransferRows : [];
+  if (rows.length === 0) return [];
 
   return rows.map((item, index) => {
-    const fallback = fallbackTransferRows[index % fallbackTransferRows.length];
     const status = normalizeLeaveStatus(item.status ?? item.status_label);
     const fromDepartment = apiText(item.from_department ?? item.current_department ?? item.old_department, "");
     const toDepartment = apiText(item.to_department ?? item.target_department ?? item.new_department, "");
     const routeText = fromDepartment && toDepartment
       ? `${fromDepartment} → ${toDepartment}`
-      : apiText(item.target_department ?? item.to_department ?? item.new_department, fallback.department);
+      : apiText(item.target_department ?? item.to_department ?? item.new_department, "");
     const detailText = apiText(item.reason ?? item.detail ?? item.note, "");
 
     return {
-      id: apiText(item.id, fallback.id),
-      name: apiText(item.employee_name ?? item.user_name ?? item.name ?? item.requester_name, fallback.name),
-      department: apiText(item.department_name ?? item.department ?? item.current_department ?? item.from_department, fallback.department),
+      id: apiText(item.id, `transfer-${index}`),
+      name: apiText(item.employee_name ?? item.user_name ?? item.name ?? item.requester_name, ""),
+      department: apiText(item.department_name ?? item.department ?? item.current_department ?? item.from_department, ""),
       dateRange: formatTransferRequestDate(item),
       reason: detailText ? `${routeText} · ${detailText}` : routeText,
       status,
-      avatar: fallback.avatar
+      avatar: { uri: "" }
     };
   });
 }
@@ -6091,7 +6695,7 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const { data, failed, loading } = useEmployeeApiData(() => employeeApi.departmentTransfers({ per_page: 50 }), [refreshKey]);
   const [filter, setFilter] = useState<LeaveStatusFilter>("all");
-  const rows = transferRowsFromApi(data, failed);
+  const rows = transferRowsFromApi(data);
   const filteredRows = filter === "all" ? rows : rows.filter((row) => row.status === filter);
 
   return (
@@ -6133,7 +6737,7 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
         </ScrollView>
 
         {failed ? (
-          <Text style={styles.leaveStateText}>Không thể tải dữ liệu chuyển phòng ban. Đang hiển thị dữ liệu mẫu để kiểm giao diện.</Text>
+          <Text style={styles.leaveStateText}>Không thể tải dữ liệu chuyển phòng ban. Vui lòng thử lại.</Text>
         ) : null}
         {loading ? <Text style={styles.leaveStateText}>Đang tải danh sách chuyển phòng ban...</Text> : null}
         {!loading && filteredRows.length === 0 ? (
@@ -6147,6 +6751,7 @@ function DepartmentTransferReviewScreen({ onBack }: { onBack: () => void }) {
               onChanged={() => setRefreshKey((value) => value + 1)}
               request={row}
               requestType="transfer"
+              collapsibleDetails={true}
             />
           ))}
         </View>
@@ -16772,6 +17377,57 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 11
   },
+  newsRichPreviewButton: {
+    backgroundColor: "#ffffff",
+    borderColor: "rgba(227, 190, 184, 0.7)",
+    borderRadius: 10,
+    borderWidth: 1,
+    minHeight: 112,
+    paddingHorizontal: 14,
+    paddingVertical: 11
+  },
+  richModalSafe: {
+    backgroundColor: "#ffffff",
+    flex: 1
+  },
+  richModalHeader: {
+    alignItems: "center",
+    borderBottomColor: "rgba(227,190,184,0.5)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12
+  },
+  richModalClose: {
+    padding: 4
+  },
+  richModalTitle: {
+    color: employeePalette.text,
+    fontFamily: appFonts.semiBold,
+    fontSize: 16
+  },
+  richModalDone: {
+    padding: 4
+  },
+  richModalDoneText: {
+    color: employeePalette.red,
+    fontFamily: appFonts.semiBold,
+    fontSize: 15
+  },
+  richToolbar: {
+    backgroundColor: "#fdf5f4",
+    borderBottomColor: "rgba(227,190,184,0.5)",
+    borderBottomWidth: StyleSheet.hairlineWidth
+  },
+  richEditorScroll: {
+    flex: 1
+  },
+  richEditor: {
+    flex: 1,
+    minHeight: 400
+  },
+
   newsCreateImagePreview: {
     borderRadius: 10,
     height: 150,
@@ -16793,6 +17449,10 @@ const styles = StyleSheet.create({
     right: 10,
     top: 10,
     width: 28
+  },
+  newsCreateAttachmentsList: {
+    gap: 8,
+    marginTop: 8
   },
   newsCreateAttachmentPreview: {
     alignItems: "center",
@@ -17536,5 +18196,138 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.84
+  },
+  mandatoryCourseList: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 32,
+    gap: 16
+  },
+  mandatoryEmptyWrap: {
+    alignItems: "center",
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    gap: 12
+  },
+  mandatoryEmptyTitle: {
+    color: employeePalette.text,
+    fontFamily: appFonts.semiBold,
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    textAlign: "center"
+  },
+  mandatoryEmptyDesc: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center"
+  },
+  mandatoryContinueBtn: {
+    backgroundColor: employeePalette.green,
+    borderRadius: 12,
+    marginTop: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 14
+  },
+  mandatoryContinueBtnText: {
+    color: "#ffffff",
+    fontFamily: appFonts.semiBold,
+    fontSize: 15,
+    fontWeight: "700",
+    textAlign: "center"
+  },
+  mandatoryCourseCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e1e3e4",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2
+  },
+  mandatoryCourseThumbWrap: {
+    height: 120,
+    position: "relative",
+    backgroundColor: "#2a2f36"
+  },
+  mandatoryCourseThumb: {
+    height: "100%",
+    width: "100%",
+    objectFit: "cover"
+  },
+  mandatoryCourseThumbPlaceholder: {
+    alignItems: "center",
+    backgroundColor: employeePalette.goldDark,
+    flex: 1,
+    justifyContent: "center"
+  },
+  mandatoryBadge: {
+    backgroundColor: "#dc3545",
+    borderRadius: 6,
+    bottom: 8,
+    left: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    position: "absolute"
+  },
+  mandatoryBadgeText: {
+    color: "#ffffff",
+    fontFamily: appFonts.bold,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1
+  },
+  mandatoryCourseBody: {
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 14
+  },
+  mandatoryCourseTitle: {
+    color: employeePalette.text,
+    fontFamily: appFonts.semiBold,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22
+  },
+  mandatoryCourseDesc: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 13,
+    lineHeight: 19
+  },
+  mandatoryCourseMeta: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    paddingTop: 2
+  },
+  mandatoryCourseMetaText: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.regular,
+    fontSize: 12,
+    lineHeight: 16
+  },
+  mandatoryProgressHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4
+  },
+  mandatoryProgressLabel: {
+    color: employeePalette.muted,
+    fontFamily: appFonts.bold,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1
+  },
+  mandatoryProgressPercent: {
+    color: employeePalette.text,
+    fontFamily: appFonts.bold,
+    fontSize: 12,
+    fontWeight: "800"
   }
 });

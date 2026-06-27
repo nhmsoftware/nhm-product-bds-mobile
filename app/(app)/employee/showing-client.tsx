@@ -1,1 +1,9 @@
-export { ShowingClientScreen as default } from "@/components/EmployeeScreens";
+import { MandatoryCourseGate, ShowingClientScreen } from "@/components/EmployeeScreens";
+
+export default function ShowingClientRoute() {
+  return (
+    <MandatoryCourseGate returnTo="/employee/showing-client">
+      <ShowingClientScreen />
+    </MandatoryCourseGate>
+  );
+}

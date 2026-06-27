@@ -46,6 +46,28 @@ function handleUnauthorized() {
   });
 }
 
+type OnboardingHandler = () => void | Promise<void>;
+
+let onboardingHandler: OnboardingHandler | null = null;
+let onboardingHandling = false;
+
+export function setOnboardingHandler(handler: OnboardingHandler | null) {
+  onboardingHandler = handler;
+}
+
+function handleOnboardingRequired() {
+  if (!onboardingHandler || onboardingHandling) {
+    return;
+  }
+
+  onboardingHandling = true;
+  Promise.resolve(onboardingHandler()).finally(() => {
+    setTimeout(() => {
+      onboardingHandling = false;
+    }, 1000);
+  });
+}
+
 export const apiClient = axios.create({
   baseURL: API_URL,
   timeout: 15000,
@@ -84,6 +106,13 @@ apiClient.interceptors.response.use(
 
       if (status === 401) {
         handleUnauthorized();
+      }
+
+      if (status === 403) {
+        const msg = (error.response.data?.message || "").toLowerCase();
+        if (msg.includes("onboarding")) {
+          handleOnboardingRequired();
+        }
       }
 
       throw new ApiRequestError(message, status, error.response.data?.errors);

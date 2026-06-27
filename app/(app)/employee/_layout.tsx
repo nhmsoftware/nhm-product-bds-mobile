@@ -13,6 +13,7 @@ export default function EmployeeLayout() {
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="required-learning" />
+        <Stack.Screen name="mandatory-courses" />
         <Stack.Screen name="lesson-detail" />
         <Stack.Screen name="quiz" />
         <Stack.Screen name="quiz-result" />
@@ -34,6 +35,7 @@ export default function EmployeeLayout() {
         <Stack.Screen name="lot-detail" />
         <Stack.Screen name="planning-check" />
         <Stack.Screen name="notifications" />
+        <Stack.Screen name="news-feed" />
         <Stack.Screen name="comments" />
         <Stack.Screen name="manager-profile" />
       </Stack>

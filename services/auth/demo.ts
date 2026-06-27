@@ -1,7 +1,7 @@
 import { normalizeAccessRole } from "@/services/auth/roles";
 import type { AppAccessRole, AuthRole, AuthSession } from "@/services/auth/types";
 
-export const DEMO_AUTH_ENABLED = false; // true;
+export const DEMO_AUTH_ENABLED = true; // true;
 
 export type DemoLoginRole = AppAccessRole | "candidate" | "employee2" | "manager" | "director" | "ceo" | "super_admin";
 

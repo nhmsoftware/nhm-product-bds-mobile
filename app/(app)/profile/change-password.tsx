@@ -8,6 +8,7 @@ import { PageTitle } from "@/components/PageTitle";
 import { PasswordField } from "@/components/PasswordField";
 import { Screen } from "@/components/Screen";
 import { notifyError, notifySuccess } from "@/libs/notify";
+import { validatePasswordStrength, getPasswordErrorMessage } from "@/libs/password-validation";
 import { authApi } from "@/services/auth/api";
 import { useAuth } from "@/services/auth/store";
 
@@ -26,8 +27,9 @@ export default function ChangePasswordScreen() {
       notifyError("Vui lòng nhập đầy đủ mật khẩu cũ, mật khẩu mới và xác nhận mật khẩu.");
       return;
     }
-    if (newPassword.length < 8) {
-      notifyError("Mật khẩu mới phải chứa ít nhất 8 ký tự, bao gồm số và ký tự đặc biệt.");
+    const passwordError = validatePasswordStrength(newPassword);
+    if (passwordError) {
+      notifyError(getPasswordErrorMessage(passwordError));
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -77,7 +79,7 @@ export default function ChangePasswordScreen() {
             importantForAutofill="no"
             label="Mật khẩu mới *"
             onChangeText={setNewPassword}
-            placeholder="Tối thiểu 6 ký tự bảo mật"
+            placeholder="Tối thiểu 8 ký tự, có số và ký tự đặc biệt"
             textContentType="none"
             value={newPassword}
           />

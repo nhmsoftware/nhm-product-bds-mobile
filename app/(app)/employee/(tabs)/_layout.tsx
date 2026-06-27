@@ -1,60 +1,43 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, Tabs, usePathname } from "expo-router";
-import { useRef } from "react";
+import { router, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Path, Svg } from "react-native-svg";
 
 import { employeePalette } from "@/libs/employee-theme";
 import { appFonts } from "@/libs/typography";
-import { canUseDemoLearning } from "@/services/auth/demo";
-import { useAuth } from "@/services/auth/store";
-import { employeeApi } from "@/services/employee/api";
+
+/** Icon khu đất — hình bản đồ vị trí + đất nền */
+function LandAreaTabIcon({ color, size = 24 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Khung đất / lô */}
+      <Path
+        d="M3 20L7 4H17L21 20H3Z"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+        fill="none"
+      />
+      {/* Đường phân chia lô */}
+      <Path
+        d="M3 13H21M10 4L8 20M14 4L16 20"
+        stroke={color}
+        strokeWidth={1.4}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
 
 export default function EmployeeTabsLayout() {
-  const { session } = useAuth();
-  const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const checkingLearningAccess = useRef(false);
   const bottomInset = Math.max(insets.bottom, 10);
-  const learningReturnTo = pathname && pathname !== "/employee/learning" ? pathname : "/employee";
-
-  function openRequiredLearning() {
-    router.push({
-      pathname: "/employee/required-learning",
-      params: { returnTo: learningReturnTo }
-    });
-  }
-
-  async function openLearningTab() {
-    if (canUseDemoLearning(session)) {
-      router.navigate("/employee/learning");
-      return;
-    }
-
-    if (checkingLearningAccess.current) {
-      return;
-    }
-
-    checkingLearningAccess.current = true;
-    try {
-      const access = await employeeApi.learningAccess();
-
-      if (access.mandatoryLearningCompleted) {
-        router.navigate("/employee/learning");
-        return;
-      }
-
-      openRequiredLearning();
-    } catch {
-      openRequiredLearning();
-    } finally {
-      checkingLearningAccess.current = false;
-    }
-  }
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: employeePalette.red,
         tabBarInactiveTintColor: "#94a3b8",
         tabBarStyle: {
@@ -87,12 +70,6 @@ export default function EmployeeTabsLayout() {
       />
       <Tabs.Screen
         name="learning"
-        listeners={{
-          tabPress: (event) => {
-            event.preventDefault();
-            void openLearningTab();
-          }
-        }}
         options={{
           title: "Học tập",
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="school-outline" size={size} />
@@ -108,8 +85,8 @@ export default function EmployeeTabsLayout() {
       <Tabs.Screen
         name="news"
         options={{
-          title: "Điểm đến",
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="calendar-outline" size={size} />
+          title: "Khu đất",
+          tabBarIcon: ({ color, size }) => <LandAreaTabIcon color={color} size={size} />
         }}
       />
       <Tabs.Screen

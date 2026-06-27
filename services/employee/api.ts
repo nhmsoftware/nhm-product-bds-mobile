@@ -132,6 +132,7 @@ export type CreateInternalNewsInput = {
 
 export type UpdateInternalNewsInput = CreateInternalNewsInput & {
   thumbnail_url?: string;
+  keep_attachments?: string;
 };
 
 export type CreateDepartmentTransferInput = {
@@ -236,18 +237,24 @@ export const employeeApi = {
     form.append("content", input.content.trim());
 
     if (input.thumbnail) {
-      form.append("thumbnail", input.thumbnail as unknown as Blob);
+      form.append("thumbnail", {
+        name: input.thumbnail.name,
+        type: input.thumbnail.type,
+        uri: input.thumbnail.uri
+      } as unknown as Blob);
     }
 
     input.attachments?.forEach((attachment) => {
-      form.append("attachments[]", attachment as unknown as Blob);
+      form.append("attachments[]", {
+        name: attachment.name,
+        type: attachment.type,
+        uri: attachment.uri
+      } as unknown as Blob);
     });
 
     return apiClient
       .post<ApiResponse<JsonRecord>>("/api/v1/news/internal", form, {
-        headers: {
-          "Content-Type": "multipart/form-data"
-        }
+        headers: { "Content-Type": "multipart/form-data" }
       })
       .then((response) => response.data);
   },
@@ -265,20 +272,30 @@ export const employeeApi = {
     form.append("content", input.content.trim());
 
     if (input.thumbnail) {
-      form.append("thumbnail", input.thumbnail as unknown as Blob);
+      form.append("thumbnail", {
+        name: input.thumbnail.name,
+        type: input.thumbnail.type,
+        uri: input.thumbnail.uri
+      } as unknown as Blob);
     } else if (input.thumbnail_url !== undefined) {
       form.append("thumbnail_url", input.thumbnail_url);
     }
 
+    if (input.keep_attachments !== undefined) {
+      form.append("keep_attachments", input.keep_attachments);
+    }
+
     input.attachments?.forEach((attachment) => {
-      form.append("attachments[]", attachment as unknown as Blob);
+      form.append("attachments[]", {
+        name: attachment.name,
+        type: attachment.type,
+        uri: attachment.uri
+      } as unknown as Blob);
     });
 
     return apiClient
       .post<ApiResponse<JsonRecord>>(`/api/v1/news/internal/${id}`, form, {
-        headers: {
-          "Content-Type": "multipart/form-data"
-        }
+        headers: { "Content-Type": "multipart/form-data" }
       })
       .then((response) => response.data);
   },

@@ -329,7 +329,9 @@ function subscribeRealtime(userId: string, setUnreadCount: NotificationState["se
   let socket: Socket | null = io(REALTIME_URL, {
     transports: ["websocket"],
     reconnection: true,
-    reconnectionAttempts: Infinity,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 30000,
     timeout: 10000
   });
   activeRealtimeSocket = socket;
@@ -423,6 +425,12 @@ function subscribeRealtime(userId: string, setUnreadCount: NotificationState["se
   socket.on("connect_error", (error) => {
     appLogger.warn("notifications.socket", "Realtime notification socket connect failed.", {
       message: error.message,
+      realtimeUrl: REALTIME_URL
+    });
+  });
+
+  socket.on("reconnect_failed", () => {
+    appLogger.warn("notifications.socket", "Realtime socket đã hết số lần thử kết nối lại.", {
       realtimeUrl: REALTIME_URL
     });
   });

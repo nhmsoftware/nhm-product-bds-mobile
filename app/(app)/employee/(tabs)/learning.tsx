@@ -1,7 +1,6 @@
-import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { LearningHomeScreen } from "@/components/EmployeeScreens";
+import { LearningHomeScreen, MandatoryCourseListScreen } from "@/components/EmployeeScreens";
 import { LoadingState } from "@/components/LoadingState";
 import { Screen } from "@/components/Screen";
 import { canUseDemoLearning } from "@/services/auth/demo";
@@ -12,17 +11,14 @@ export default function EmployeeLearningRoute() {
   const { session, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
-  const openedRequiredLearning = useRef(false);
 
   useEffect(() => {
-    if (authLoading) {
-      return undefined;
-    }
+    if (authLoading) return;
 
     if (canUseDemoLearning(session)) {
       setAllowed(true);
       setLoading(false);
-      return undefined;
+      return;
     }
 
     let mounted = true;
@@ -31,30 +27,14 @@ export default function EmployeeLearningRoute() {
     employeeApi
       .learningAccess()
       .then((result) => {
-        if (mounted) {
-          setAllowed(result.mandatoryLearningCompleted);
-        }
+        if (mounted) setAllowed(result.mandatoryLearningCompleted);
       })
       .finally(() => {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       });
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [authLoading, session]);
-
-  useEffect(() => {
-    if (authLoading || loading || allowed || openedRequiredLearning.current) return;
-
-    openedRequiredLearning.current = true;
-    router.replace({
-      pathname: "/employee/required-learning",
-      params: { returnTo: "/employee" }
-    });
-  }, [allowed, authLoading, loading]);
 
   if (authLoading || loading) {
     return (
@@ -65,11 +45,7 @@ export default function EmployeeLearningRoute() {
   }
 
   if (!allowed) {
-    return (
-      <Screen edges={["top", "left", "right"]} scroll={false}>
-        <LoadingState />
-      </Screen>
-    );
+    return <MandatoryCourseListScreen />;
   }
 
   return <LearningHomeScreen />;

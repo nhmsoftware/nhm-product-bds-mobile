@@ -15,6 +15,7 @@ import { ApiRequestError } from "@/libs/api";
 import { employeePalette } from "@/libs/employee-theme";
 import { useI18n } from "@/libs/i18n";
 import { notifyError, notifySuccess } from "@/libs/notify";
+import { validatePasswordStrength, getPasswordErrorMessage } from "@/libs/password-validation";
 import { appFonts } from "@/libs/typography";
 import { authApi } from "@/services/auth/api";
 import { Pressable } from "@/components/SafePressable";
@@ -139,6 +140,14 @@ export default function RegisterScreen() {
     if (password !== confirmPassword) {
       setFieldErrors({
         confirmPassword: "Mật khẩu xác nhận không khớp."
+      });
+      return;
+    }
+
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) {
+      setFieldErrors({
+        password: getPasswordErrorMessage(passwordError)
       });
       return;
     }

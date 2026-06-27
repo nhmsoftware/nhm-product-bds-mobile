@@ -385,8 +385,7 @@ export default function EmployeeCheckInScreen() {
           ? apiList(siteToursResult.value.data).map(mapRecentSiteTour)
           : [];
         const rows = [...meetingRows, ...siteTourRows]
-          .sort((left, right) => right.createdAtMs - left.createdAtMs)
-          .slice(0, 5);
+          .sort((left, right) => right.createdAtMs - left.createdAtMs);
 
         if (meetingsResult.status === "rejected") {
           appLogger.warn("employee.customerMeetings.recent", "Không thể tải hoạt động gặp khách gần đây.", { error: meetingsResult.reason });
