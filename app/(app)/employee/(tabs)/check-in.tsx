@@ -309,14 +309,6 @@ function calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2:
   return Math.round(earthRadiusMeters * angle);
 }
 
-function coordinateToApiString(value: number) {
-  if (!Number.isFinite(value)) {
-    throw new Error("Không thể xác định vị trí hiện tại.");
-  }
-
-  return value.toString();
-}
-
 function parseCoordinate(value?: number | string | null) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
@@ -430,8 +422,8 @@ export default function EmployeeCheckInScreen() {
 
       return {
         device_name: `${Platform.OS} ${Platform.Version}`,
-        latitude: coordinateToApiString(position.coords.latitude),
-        longitude: coordinateToApiString(position.coords.longitude),
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
         method: "gps"
       };
     } catch (error) {

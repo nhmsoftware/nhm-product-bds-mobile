@@ -86,7 +86,8 @@ function normalizeCourseQuiz(course: MandatoryLearningCourse): MandatoryLearning
     lastScore: numberValue(rawQuiz?.lastScore ?? rawQuiz?.last_score),
     lessonId: textValue(rawQuiz?.lessonId ?? rawQuiz?.lesson_id ?? looseCourse.quizLessonId ?? looseCourse.quiz_lesson_id) ?? lastLessonId(course),
     passingScore: numberValue(rawQuiz?.passingScore ?? rawQuiz?.passing_score),
-    status: quizStatus
+    status: quizStatus,
+    hasEssay: booleanValue(rawQuiz?.hasEssay ?? rawQuiz?.has_essay),
   };
 }
 

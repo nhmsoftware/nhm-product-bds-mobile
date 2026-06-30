@@ -4,51 +4,33 @@ import { translate } from "@/libs/i18n";
 import { authApi } from "@/services/auth/api";
 import type { CustomerProfile, UpdateProfileInput } from "@/services/profile/types";
 
-let sampleProfile: CustomerProfile = {
-  id: "demo-user",
-  cccd: null,
-  fullName: "Nguyễn Minh",
-  email: "demo@nhmbds.local",
-  phone: "0901 234 567",
-  address: "TP. Hồ Chí Minh",
-  avatar: null,
-  preferredCity: "TP. Hồ Chí Minh",
-  budgetLabel: "5 - 8 tỷ",
-  demand: "buy"
-};
-
 function createResponse<T>(data: T, message = translate("common.success")): ApiResponse<T> {
   return { message, data };
 }
 
 export const profileApi = {
   async getProfile() {
-    try {
-      const response = await authApi.me();
-      const user = response.data;
-      const address = user.address || "Chưa cập nhật";
+    const response = await authApi.me();
+    const user = response.data;
+    const address = user.address || "Chưa cập nhật";
 
-      sampleProfile = {
-        ...sampleProfile,
-        id: user.id,
-        cccd: user.cccd ?? null,
-        fullName: user.fullName || user.email,
-        email: user.email,
-        phone: user.phone || "",
-        address,
-        avatar: user.avatar ?? null,
-        preferredCity: address
-      };
+    const profile: CustomerProfile = {
+      id: user.id,
+      cccd: user.cccd ?? null,
+      fullName: user.fullName || user.email,
+      email: user.email,
+      phone: user.phone || "",
+      address,
+      avatar: user.avatar ?? null,
+      preferredCity: address,
+      budgetLabel: "",
+      demand: "buy"
+    };
 
-      return {
-        ...response,
-        data: sampleProfile
-      };
-    } catch {
-      // Fallback mock keeps customer profile usable before backend data is complete.
-    }
-
-    return createResponse(sampleProfile);
+    return {
+      ...response,
+      data: profile
+    };
   },
 
   async updateProfile(input: UpdateProfileInput) {
@@ -68,17 +50,18 @@ export const profileApi = {
     });
 
     const address = response.data.address || input.address || "Chưa cập nhật";
-    sampleProfile = {
-      ...sampleProfile,
+
+    const profile: CustomerProfile = {
       id: response.data.id,
-      cccd: response.data.cccd ?? sampleProfile.cccd ?? null,
+      cccd: response.data.cccd ?? null,
       fullName: response.data.name || input.fullName,
       email: response.data.email,
       phone: response.data.phone || input.phone,
       address,
-      avatar: response.data.avatar ?? sampleProfile.avatar ?? null,
+      avatar: response.data.avatar ?? null,
       preferredCity: address
     };
-    return createResponse(sampleProfile, response.message || translate("notifications.profileUpdated"));
+
+    return createResponse(profile, response.message || translate("notifications.profileUpdated"));
   }
 };

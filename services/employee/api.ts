@@ -45,8 +45,8 @@ export type AttendanceTodayStatus = {
 
 export type AttendancePunchInput = {
   method: "gps" | "wifi";
-  latitude?: string;
-  longitude?: string;
+  latitude?: number;
+  longitude?: number;
   wifi_ssid?: string;
   device_name?: string;
 };

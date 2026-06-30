@@ -12,6 +12,7 @@ import {
 import { useI18n } from "@/libs/i18n";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { validatePasswordStrength, getPasswordErrorMessage } from "@/libs/password-validation";
+import { isValidOtp } from "@/libs/validation";
 import { authApi } from "@/services/auth/api";
 
 export default function ForgotPasswordScreen() {
@@ -34,6 +35,11 @@ export default function ForgotPasswordScreen() {
   }
 
   async function handleSubmit() {
+    if (!isValidOtp(code)) {
+      notifyError(new Error("Mã OTP phải gồm đúng 6 chữ số."));
+      return;
+    }
+
     if (password !== confirmPassword) {
       notifyError(new Error(t("validation.passwordMismatch")));
       return;

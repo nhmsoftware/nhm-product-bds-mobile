@@ -12,6 +12,7 @@ import { TextField } from "@/components/TextField";
 import { useI18n } from "@/libs/i18n";
 import { useAppTheme } from "@/libs/layout-mode";
 import { notifyError, notifySuccess } from "@/libs/notify";
+import { isValidVietnamesePhone, isValidEmail } from "@/libs/validation";
 import { profileApi } from "@/services/profile/api";
 import type { CustomerProfile } from "@/services/profile/types";
 
@@ -50,6 +51,16 @@ function EditProfileContent() {
   }, [t]);
 
   async function handleSubmit() {
+    if (!isValidVietnamesePhone(phone)) {
+      notifyError(new Error("Số điện thoại không hợp lệ."));
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      notifyError(new Error("Email không hợp lệ."));
+      return;
+    }
+
     setSubmitting(true);
     try {
       const response = await profileApi.updateProfile({

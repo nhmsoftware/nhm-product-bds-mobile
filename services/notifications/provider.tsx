@@ -335,8 +335,13 @@ function subscribeRealtime(userId: string, setUnreadCount: NotificationState["se
     timeout: 10000
   });
   activeRealtimeSocket = socket;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   socket.on("connect", () => {
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
     socket?.emit("user:join", { userId });
     socket?.emit("join", `user.${userId}`);
     socket?.emit("join", `user:${userId}`);
@@ -429,13 +434,25 @@ function subscribeRealtime(userId: string, setUnreadCount: NotificationState["se
     });
   });
 
-  socket.on("reconnect_failed", () => {
-    appLogger.warn("notifications.socket", "Realtime socket đã hết số lần thử kết nối lại.", {
+  socket.io.on("reconnect_failed", () => {
+    appLogger.warn("notifications.socket", "Realtime socket đã hết số lần thử kết nối lại. Sẽ thử lại sau 60s.", {
       realtimeUrl: REALTIME_URL
     });
+
+    retryTimer = setTimeout(() => {
+      if (socket?.disconnected) {
+        appLogger.info("notifications.socket", "Đang thử kết nối lại realtime socket...");
+        socket.connect();
+      }
+    }, 60_000);
   });
 
   return () => {
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    socket?.io.removeAllListeners("reconnect_failed");
     socket?.removeAllListeners();
     socket?.disconnect();
     if (activeRealtimeSocket === socket) {

@@ -16,6 +16,7 @@ import { employeePalette } from "@/libs/employee-theme";
 import { useI18n } from "@/libs/i18n";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { validatePasswordStrength, getPasswordErrorMessage } from "@/libs/password-validation";
+import { isValidVietnamesePhone, isValidEmail } from "@/libs/validation";
 import { appFonts } from "@/libs/typography";
 import { authApi } from "@/services/auth/api";
 import { Pressable } from "@/components/SafePressable";
@@ -137,6 +138,17 @@ export default function RegisterScreen() {
 
   async function handleRegister() {
     setFieldErrors({});
+
+    if (!isValidVietnamesePhone(phone)) {
+      setFieldErrors({ phone: "Số điện thoại không hợp lệ." });
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setFieldErrors({ email: "Email không hợp lệ." });
+      return;
+    }
+
     if (password !== confirmPassword) {
       setFieldErrors({
         confirmPassword: "Mật khẩu xác nhận không khớp."
