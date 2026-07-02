@@ -42,29 +42,18 @@ import { RichText, Toolbar, DEFAULT_TOOLBAR_ITEMS, useEditorBridge, useBridgeSta
 import RenderHtml from "react-native-render-html";
 import { styles } from "@/components/employee/utils/styles";
 import { useEmployeeApiData } from "./hooks/useEmployeeApiData";
-import { apiText } from "./utils/apiNormalizers";
+import { apiList, apiText, apiNumber } from "./utils/apiNormalizers";
+import { LeaveRequestCard, type LeaveRequestCardData } from "./LeaveRequestsScreen";
 import { leaveFilterTabs } from "./utils/constants";
 import type { DepartmentOption, LeaveStatusFilter } from "./utils/constants";
 import { backWithProfileSource } from "./utils/navigation";
-import { formatPersonalDateDisplay, parsePersonalDate } from "./utils/sharedHelpers";
+import { formatPersonalDateDisplay, parsePersonalDate, personalCalendarCells } from "./utils/sharedHelpers";
 
-import { apiList } from "./utils/apiNormalizers";
 import type { ApiObject } from "./utils/apiNormalizers";
 import { fallbackDepartmentOptions, hiddenTransferDepartmentNames } from "./utils/constants";
 import { formatPersonalDateValue } from "./utils/sharedHelpers";
 
 // ---- Local helpers ----
-
-type LeaveRequestCardData = {
-  dateRange: string;
-  department: string;
-  id: string;
-  note: string;
-  reason: string;
-  status: "approved" | "pending" | "rejected" | "cancelled";
-  title: string;
-  type: string;
-};
 
 function PersonalDatePickerModal({
   onClose,
@@ -227,7 +216,7 @@ export function TransferRequestsScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
   const { session } = useAuth();
-  const canApproveDepartmentTransfers = isDepartmentTransferApproverRole(session?.user.role);
+  const canApproveDepartmentTransfers = isDepartmentTransferApproverRole(session?.user.role, session?.user.permissions);
 
   if (!canApproveDepartmentTransfers) {
     return <DepartmentTransferCreateScreen onBack={handleBack} />;
@@ -813,6 +802,7 @@ function transferRowsFromApi(data: unknown): LeaveRequestCardData[] {
       ? `${fromDepartment} → ${toDepartment}`
       : apiText(item.target_department ?? item.to_department ?? item.new_department, "");
     const detailText = apiText(item.reason ?? item.detail ?? item.note, "");
+    const currentStep = apiNumber(item.approval_step ?? item.approvalStep, 1);
 
     return {
       id: apiText(item.id, `transfer-${index}`),
@@ -821,7 +811,16 @@ function transferRowsFromApi(data: unknown): LeaveRequestCardData[] {
       dateRange: formatTransferRequestDate(item),
       reason: detailText ? `${routeText} · ${detailText}` : routeText,
       status,
-      avatar: { uri: "" }
+      avatar: { uri: "" },
+      transferApproval: status === "pending" ? {
+        currentStep,
+        currentManagerName: apiText(item.current_manager_name, undefined),
+        currentManagerApprovedAt: apiText(item.current_manager_approved_at, undefined),
+        targetManagerName: apiText(item.target_manager_name, undefined),
+        targetManagerApprovedAt: apiText(item.target_manager_approved_at, undefined),
+        directorName: apiText(item.director_name, undefined),
+        directorApprovedAt: apiText(item.director_approved_at, undefined),
+      } : undefined,
     };
   });
 }

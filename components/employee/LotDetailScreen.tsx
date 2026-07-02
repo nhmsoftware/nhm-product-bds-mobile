@@ -1,51 +1,37 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
-import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
-import { VideoView, useVideoPlayer } from "expo-video";
-import { router, useFocusEffect, useLocalSearchParams, type Href } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useLocalSearchParams } from "expo-router";
+import { useEffect, useState, type ComponentProps } from "react";
 import {
-  ActivityIndicator, AppState, Alert, BackHandler, Clipboard, Image, Linking, Modal,
-  KeyboardAvoidingView, Platform, Pressable as RNPressable, RefreshControl, ScrollView, Share,
-  StyleSheet, Text, TextInput, useWindowDimensions,
-  type GestureResponderEvent, type ImageSourcePropType, type LayoutChangeEvent,
-  type NativeScrollEvent, type NativeSyntheticEvent, type TextLayoutEventData, View
+  ActivityIndicator,
+  Image,
+  Linking,
+  Modal,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+  type ImageSourcePropType,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
-import QRCode from "react-native-qrcode-svg";
-import { Path, Svg, SvgUri } from "react-native-svg";
-import {
-  EMPLOYEE_HEADER_HEIGHT, EmployeeAvatarButton, EmployeeBadge, EmployeeButton, EmployeeCard,
-  EmployeeInputPreview, EmployeeListRow, EmployeeMetric, EmployeeNotificationButton,
-  EmployeePage, EmployeeSectionTitle
-} from "@/components/EmployeeUI";
 import { employeePalette } from "@/libs/employee-theme";
-import { API_URL, STORAGE_KEYS } from "@/libs/env";
-import { useI18n } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
-import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
-import { ApiRequestError } from "@/libs/api";
-import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole } from "@/services/auth/roles";
-import { useAuth } from "@/services/auth/store";
-import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
-import { useNotificationState, useRealtimeEvent, useRealtimeRoom } from "@/services/notifications/provider";
-import type { LearningLessonAttachment, LearningLessonDetail, LearningLessonProgressUpdate, MandatoryLearningCourse, MandatoryLearningLesson, MandatoryLearningQuiz } from "@/services/employee/types";
-import WebView from "react-native-webview";
-import { RichText, Toolbar, DEFAULT_TOOLBAR_ITEMS, useEditorBridge, useBridgeState, ImageBridge, TenTapStartKit } from "@10play/tentap-editor";
 import RenderHtml from "react-native-render-html";
 import { styles } from "@/components/employee/utils/styles";
 import { useEmployeeApiData } from "./hooks/useEmployeeApiData";
-import { apiBoolean, apiText, directionUrlFromRecord, isApiObject } from "./utils/apiNormalizers";
+import { apiBoolean, apiText, directionUrlFromRecord, isApiObject, type ApiObject } from "./utils/apiNormalizers";
 import { inventoryImages } from "./utils/constants";
-import { formatSquareMeters, formatUnitPricePerSquareMeter, formatVietnamRealEstatePrice } from "./utils/formatters";
-import { inventoryLotStatusLabel, lotImageUris, normalizeInventoryLotStatus } from "./utils/inventoryLotUtils";
+import { formatSquareMeters, formatFullPriceVnd, formatFullUnitPriceVnd } from "./utils/formatters";
+import { inventoryLotStatusLabel, lotImageUris, normalizeInventoryLotStatus, LotStatus, LotDepositRequestStatus, LotStatusLabel, LotActionButtonText } from "./utils/inventoryLotUtils";
 import { back } from "./utils/navigation";
 export function LotDetailScreen() {
   const params = useLocalSearchParams<{ lotId?: string }>();
@@ -56,17 +42,64 @@ export function LotDetailScreen() {
   const [depositSubmitting, setDepositSubmitting] = useState(false);
   const [lotHeroWidth, setLotHeroWidth] = useState(0);
   const [lotImageIndex, setLotImageIndex] = useState(0);
+  const [fullscreenImageVisible, setFullscreenImageVisible] = useState(false);
+  const [fullscreenImageIndex, setFullscreenImageIndex] = useState(0);
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [lockModalVisible, setLockModalVisible] = useState(false);
+  const [lockReason, setLockReason] = useState("");
+  const { width: windowWidth } = useWindowDimensions();
   const { data } = useEmployeeApiData(
     () => lotId ? employeeApi.lotDetail(lotId) : Promise.resolve({ data: {} }),
     [lotId, lotRefreshKey]
   );
   const lot = isApiObject(data) ? data : {};
+
+  const activeLockRequest = isApiObject(lot.active_lock_request) ? lot.active_lock_request : null;
+  const expiresAtStr = activeLockRequest ? apiText(activeLockRequest.expires_at) : null;
+
+  useEffect(() => {
+    if (!expiresAtStr) {
+      setTimeLeft(0);
+      return;
+    }
+
+    const calculateTimeLeft = () => {
+      const difference = +new Date(expiresAtStr) - +new Date();
+      return difference > 0 ? Math.floor(difference / 1000) : 0;
+    };
+
+    setTimeLeft(calculateTimeLeft());
+
+    const intervalId = setInterval(() => {
+      const remaining = calculateTimeLeft();
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(intervalId);
+        setLotRefreshKey((value) => value + 1);
+      }
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [expiresAtStr]);
+
+  const formatDigitalTime = (seconds: number) => {
+    if (seconds <= 0) return "00:00";
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    if (hours > 0) {
+      return `${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
+    }
+    return `${pad(minutes)}:${pad(secs)}`;
+  };
   const lotName = apiText(lot.code ?? lot.name ?? lot.title, "Chưa thiết lập");
   const lotAreaObj = isApiObject(lot.area) ? lot.area : null;
   const lotArea = apiText(lot.area_name ?? lotAreaObj?.name ?? lot.location, "");
-  const totalPrice = formatVietnamRealEstatePrice(lot.total_price ?? lot.price ?? lot.sale_price);
+  const totalPrice = formatFullPriceVnd(lot.total_price ?? lot.price ?? lot.sale_price);
   const lotStatus = normalizeInventoryLotStatus(lot.status);
-  const lotUnitPrice = formatUnitPricePerSquareMeter(lot.unit_price ?? lot.unitPrice, "Chưa thiết lập");
+  const lotUnitPrice = formatFullUnitPriceVnd(lot.unit_price ?? lot.unitPrice, "Chưa thiết lập");
   const lotAreaSize = formatSquareMeters(lot.area_size ?? lot.areaSize ?? lot.square_meters, "Chưa thiết lập");
   const rawFrontage = lot.frontage !== null && lot.frontage !== undefined && lot.frontage !== "" ? `${lot.frontage}m` : "";
   const lotFrontage = (lot.is_corner === true || lot.is_corner === 1 || lot.is_corner === "1")
@@ -77,10 +110,79 @@ export function LotDetailScreen() {
   const lotIsDepositedByOther = apiBoolean(lot.is_deposit_by_other ?? lot.isDepositByOther);
   const lotCanLock = apiBoolean(lot.can_lock ?? lot.canLock, false);
   const lotCanDeposit = apiBoolean(lot.can_deposit ?? lot.canDeposit, !lotIsLockedByOther && !lotIsDepositedByOther);
-  const lotIsLocked = apiBoolean(lot.is_locked) || lotStatus === "held";
-  const lotDetailStatusText = lotIsLocked ? "ĐÃ LOCK" : inventoryLotStatusLabel(lotStatus, lot.is_locked);
-  const lotLockButtonText = lockSubmitting ? "ĐANG GỬI" : lotIsLocked ? "ĐÃ LOCK" : "LOCK";
-  const lotDepositButtonText = depositSubmitting ? "ĐANG GỬI" : lotIsDepositedByOther ? "ĐÃ CỌC" : "CỌC";
+  const lotIsLocked = apiBoolean(lot.is_locked) || lotStatus === LotStatus.HELD;
+  
+  const activeDepositRequest = (lot.active_deposit_request || lot.activeDepositRequest) as ApiObject | null;
+  const isMyDeposit = activeDepositRequest && (activeDepositRequest.is_mine || activeDepositRequest.isMine);
+
+  let lotDetailStatusText: LotStatusLabel | string = "";
+  if (lotStatus === LotStatus.SOLD) {
+    lotDetailStatusText = LotStatusLabel.SOLD;
+  } else if (activeDepositRequest) {
+    const depStatus = Number(activeDepositRequest.status);
+    if (depStatus === LotDepositRequestStatus.PENDING) {
+      lotDetailStatusText = LotStatusLabel.DEPOSIT_PENDING;
+    } else if (depStatus === LotDepositRequestStatus.APPROVED) {
+      lotDetailStatusText = LotStatusLabel.DEPOSIT_APPROVED;
+    } else if (depStatus === LotDepositRequestStatus.COMPLETED) {
+      lotDetailStatusText = LotStatusLabel.DEPOSIT_COMPLETED;
+    } else {
+      lotDetailStatusText = LotStatusLabel.LOCKED;
+    }
+  } else {
+    lotDetailStatusText = lotIsLocked ? LotStatusLabel.LOCKED : inventoryLotStatusLabel(lotStatus, lot.is_locked);
+  }
+
+  let statusBg = "#dcfce7";
+  let statusBorder = "#bbf7d0";
+  let statusText = "#15803d";
+
+  if (lotStatus === LotStatus.SOLD || lotDetailStatusText === LotStatusLabel.SOLD || lotDetailStatusText === LotStatusLabel.DEPOSIT_COMPLETED) {
+    statusBg = "#fee2e2";
+    statusBorder = "#fecaca";
+    statusText = "#b91c1c";
+  } else if (lotDetailStatusText === LotStatusLabel.DEPOSIT_PENDING) {
+    statusBg = "#e0f2fe";
+    statusBorder = "#bae6fd";
+    statusText = "#0369a1";
+  } else if (lotDetailStatusText === LotStatusLabel.DEPOSIT_APPROVED) {
+    statusBg = "#f3e8ff";
+    statusBorder = "#e9d5ff";
+    statusText = "#7e22ce";
+  } else if (lotDetailStatusText === LotStatusLabel.LOCKED || lotDetailStatusText === LotStatusLabel.LOCKED_BY_ADMIN) {
+    statusBg = "#fef3c7";
+    statusBorder = "#fde68a";
+    statusText = "#b45309";
+  } else if (lotStatus === LotStatus.UNAVAILABLE || lotDetailStatusText === LotStatusLabel.UNAVAILABLE) {
+    statusBg = "#f3f4f6";
+    statusBorder = "#e5e7eb";
+    statusText = "#374151";
+  }
+
+  const lotLockButtonText = lockSubmitting ? LotActionButtonText.LOCKING : lotIsLocked ? LotActionButtonText.LOCKED : LotActionButtonText.LOCK;
+
+  let lotDepositButtonText = LotActionButtonText.DEPOSIT;
+  if (depositSubmitting) {
+    lotDepositButtonText = LotActionButtonText.DEPOSITING;
+  } else if (activeDepositRequest) {
+    const depStatus = Number(activeDepositRequest.status);
+    if (isMyDeposit) {
+      if (depStatus === LotDepositRequestStatus.PENDING) {
+        lotDepositButtonText = LotActionButtonText.DEPOSIT_PENDING;
+      } else if (depStatus === LotDepositRequestStatus.APPROVED) {
+        lotDepositButtonText = LotActionButtonText.DEPOSIT_APPROVED;
+      } else if (depStatus === LotDepositRequestStatus.COMPLETED) {
+        lotDepositButtonText = LotActionButtonText.DEPOSIT_COMPLETED;
+      } else {
+        lotDepositButtonText = LotActionButtonText.DEPOSITED;
+      }
+    } else {
+      lotDepositButtonText = LotActionButtonText.DEPOSITED;
+    }
+  } else if (lotIsDepositedByOther) {
+    lotDepositButtonText = LotActionButtonText.DEPOSITED;
+  }
+
   const lotImages = lotImageUris(lot);
   const lotImageSlides: ImageSourcePropType[] = lotImages.length > 0
     ? lotImages.map((uri) => ({ uri }))
@@ -132,8 +234,9 @@ export function LotDetailScreen() {
   async function requestLock() {
     if (!lotId) return;
     setLockSubmitting(true);
+    setLockModalVisible(false);
     try {
-      const response = await employeeApi.requestLotLock(lotId, { reason: "Khách hẹn cọc ngày mai." });
+      const response = await employeeApi.requestLotLock(lotId, { reason: lockReason.trim() });
       notifySuccess({ message: response.message || "Yêu cầu lock lô thành công." });
       setLotRefreshKey((value) => value + 1);
     } catch (error) {
@@ -195,11 +298,16 @@ export function LotDetailScreen() {
             style={styles.lotDetailHeroCarousel}
           >
             {lotImageSlides.map((source, index) => (
-              <Image
+              <Pressable
                 key={lotImages[index] ?? `fallback-${index}`}
-                source={source}
-                style={[styles.lotDetailHeroImage, { width: lotHeroWidth || "100%" }]}
-              />
+                onPress={() => {
+                  setFullscreenImageIndex(index);
+                  setFullscreenImageVisible(true);
+                }}
+                style={{ width: lotHeroWidth || "100%" }}
+              >
+                <Image source={source} style={[styles.lotDetailHeroImage, { width: "100%" }]} />
+              </Pressable>
             ))}
           </ScrollView>
           <View style={styles.lotDetailHeroActions}>
@@ -230,9 +338,10 @@ export function LotDetailScreen() {
                 <Text style={styles.lotDetailLocationText}>{lotArea}</Text>
               </View>
             </View>
-            <View style={styles.lotDetailStatusPill}>
-              <Text style={styles.lotDetailStatusText}>{lotDetailStatusText}</Text>
+            <View style={[styles.lotDetailStatusPill, { backgroundColor: statusBg, borderColor: statusBorder }]}>
+              <Text style={[styles.lotDetailStatusText, { color: statusText }]}>{lotDetailStatusText}</Text>
             </View>
+
           </View>
 
           <View style={styles.lotDetailPriceCard}>
@@ -247,6 +356,33 @@ export function LotDetailScreen() {
             </View>
           </View>
 
+          {activeLockRequest && timeLeft > 0 && (
+            <View style={localStyles.lockTimerCard}>
+              <View style={localStyles.lockTimerHeader}>
+                <Ionicons 
+                  name="time-outline" 
+                  size={22} 
+                  color={activeLockRequest.is_mine ? "#16a34a" : "#ca8a04"} 
+                />
+                <Text style={localStyles.lockTimerTitle}>
+                  {activeLockRequest.is_mine ? "Bạn đang giữ chỗ lô này" : "Lô đất đang được giữ chỗ"}
+                </Text>
+              </View>
+              <Text style={localStyles.lockTimerText}>
+                {activeLockRequest.is_mine 
+                  ? "Thời gian giữ chỗ còn lại của bạn:" 
+                  : `Được giữ chỗ bởi: ${activeLockRequest.user_name || "Nhân viên khác"}`
+                }
+              </Text>
+              <Text style={[
+                localStyles.lockTimerCountdown,
+                activeLockRequest.is_mine ? localStyles.lockTimerCountdownMine : localStyles.lockTimerCountdownOther
+              ]}>
+                {formatDigitalTime(timeLeft)}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.lotDetailStatsGrid}>
             <LotStat icon="resize-outline" label="DIỆN TÍCH" value={lotAreaSize} />
             <LotStat icon="analytics-outline" label="MẶT TIỀN" value={lotFrontage} />
@@ -256,7 +392,37 @@ export function LotDetailScreen() {
 
           <View style={styles.lotDetailDescriptionSection}>
             <Text style={styles.lotDetailSectionTitle}>Mô tả chi tiết</Text>
-            <Text style={styles.lotDetailDescription}>{lotDescription}</Text>
+            {lotDescription && lotDescription.trim() ? (
+              <RenderHtml
+                contentWidth={windowWidth - 48}
+                source={{ html: lotDescription }}
+                tagsStyles={{
+                  p: {
+                    color: employeePalette.muted,
+                    fontFamily: appFonts.regular,
+                    fontSize: 18,
+                    lineHeight: 30.6,
+                    marginVertical: 4,
+                  },
+                  span: {
+                    color: employeePalette.muted,
+                    fontFamily: appFonts.regular,
+                    fontSize: 18,
+                    lineHeight: 30.6,
+                  },
+                  strong: {
+                    fontFamily: appFonts.bold,
+                  },
+                  img: {
+                    maxWidth: "100%",
+                    borderRadius: 8,
+                    marginVertical: 6,
+                  }
+                }}
+              />
+            ) : (
+              <Text style={styles.lotDetailDescription}>Chưa thiết lập.</Text>
+            )}
           </View>
 
           <Text style={styles.lotDetailNote}>
@@ -269,7 +435,10 @@ export function LotDetailScreen() {
         <Pressable
           accessibilityRole="button"
           disabled={lockSubmitting || lotIsLocked || !lotCanLock}
-          onPress={requestLock}
+          onPress={() => {
+            setLockReason("");
+            setLockModalVisible(true);
+          }}
           style={[
             styles.lotDetailActionButton,
             styles.lotDetailLockButton,
@@ -296,6 +465,93 @@ export function LotDetailScreen() {
           <Text style={styles.lotDetailDepositText}>{lotDepositButtonText}</Text>
         </Pressable>
       </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setLockModalVisible(false)}
+        transparent
+        visible={lockModalVisible}
+      >
+        <Pressable onPress={() => setLockModalVisible(false)} style={styles.modalBackdrop}>
+          <Pressable onPress={(e) => e.stopPropagation()} style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Nhập lý do lock lô</Text>
+            <Text style={styles.modalSubtitle}>Vui lòng nhập lý do giữ chỗ/lock lô đất này:</Text>
+            <TextInput
+              multiline
+              onChangeText={setLockReason}
+              placeholder="Nhập lý do lock (ví dụ: Khách đang cân nhắc, hẹn cọc ngày mai...)"
+              placeholderTextColor="#9ca3af"
+              style={styles.modalInput}
+              value={lockReason}
+            />
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setLockModalVisible(false)} style={[styles.modalBtn, styles.modalCancelBtn]}>
+                <Text style={styles.modalBtnTextCancel}>Hủy</Text>
+              </Pressable>
+              <Pressable
+                disabled={lockSubmitting}
+                onPress={requestLock}
+                style={[styles.modalBtn, { backgroundColor: "#1e8e3e" }]}
+              >
+                {lockSubmitting ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={[styles.modalBtnTextConfirm, { color: "#ffffff" }]}>Lock lô</Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {fullscreenImageVisible && (
+        <Modal
+          animationType="fade"
+          onRequestClose={() => setFullscreenImageVisible(false)}
+          transparent
+          visible={fullscreenImageVisible}
+        >
+          <View style={localStyles.fullscreenContainer}>
+            <View style={localStyles.fullscreenHeader}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setFullscreenImageVisible(false)}
+                style={localStyles.fullscreenCloseButton}
+              >
+                <Ionicons name="close" size={28} color="#ffffff" />
+              </Pressable>
+              <Text style={localStyles.fullscreenCounter}>
+                {lotImages.length > 0 ? `${fullscreenImageIndex + 1}/${lotImages.length}` : ""}
+              </Text>
+            </View>
+            <ScrollView
+              bounces={false}
+              contentOffset={{ x: fullscreenImageIndex * windowWidth, y: 0 }}
+              decelerationRate="fast"
+              horizontal
+              onMomentumScrollEnd={(event) => {
+                const width = event.nativeEvent.layoutMeasurement.width;
+                if (!width) return;
+                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+                setFullscreenImageIndex(Math.min(Math.max(nextIndex, 0), lotImageSlides.length - 1));
+              }}
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              style={localStyles.fullscreenScrollView}
+            >
+              {lotImageSlides.map((source, index) => (
+                <View key={`full-${index}`} style={{ width: windowWidth }}>
+                  <Image
+                    source={source}
+                    style={localStyles.fullscreenImage}
+                    resizeMode="contain"
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -309,4 +565,83 @@ function LotStat({ icon, label, value }: { icon: ComponentProps<typeof Ionicons>
     </View>
   );
 }
+
+const localStyles = StyleSheet.create({
+  lockTimerCard: {
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 12,
+    padding: 16,
+    marginVertical: 12,
+    alignItems: "center",
+    shadowColor: "#d97706",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  lockTimerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  lockTimerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#78350f",
+    marginLeft: 6,
+    fontFamily: appFonts.bold,
+  },
+  lockTimerText: {
+    fontSize: 13,
+    color: "#b45309",
+    marginBottom: 8,
+    textAlign: "center",
+    fontFamily: appFonts.regular,
+  },
+  lockTimerCountdown: {
+    fontSize: 28,
+    fontWeight: "800",
+    fontFamily: appFonts.bold || "System",
+    letterSpacing: 2,
+  },
+  lockTimerCountdownMine: {
+    color: "#16a34a",
+  },
+  lockTimerCountdownOther: {
+    color: "#ca8a04",
+  },
+  fullscreenContainer: {
+    backgroundColor: "rgba(0,0,0,0.95)",
+    flex: 1,
+  },
+  fullscreenHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 50,
+  },
+  fullscreenCloseButton: {
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  fullscreenCounter: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontFamily: appFonts.semiBold,
+    fontWeight: "600",
+  },
+  fullscreenScrollView: {
+    flex: 1,
+  },
+  fullscreenImage: {
+    height: "100%",
+    resizeMode: "contain",
+    width: "100%",
+  },
+});
+
 

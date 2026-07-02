@@ -84,11 +84,11 @@ function CustomerProfileContent() {
       </Card>
 
       <Card style={styles.infoCard}>
-        <InfoRow icon="person-outline" label="Họ và tên" value={profile.fullName} />
+        <InfoRow icon="person-outline" label="Họ và tên" value={profile.fullName} isFirst />
         <InfoRow icon="call-outline" label="Số điện thoại" value={profile.phone} />
         <InfoRow icon="mail-outline" label="Email" value={profile.email} />
-        <InfoRow icon="location-outline" label="Địa chỉ" value={profile.address} />
-        {profile.cccd ? <InfoRow icon="card-outline" label="Số CCCD" value={profile.cccd} /> : null}
+        <InfoRow icon="location-outline" label="Địa chỉ" value={profile.address} isLast={!profile.cccd} />
+        {profile.cccd ? <InfoRow icon="card-outline" label="Số CCCD" value={profile.cccd} isLast /> : null}
       </Card>
 
       <View style={styles.actions}>
@@ -99,9 +99,21 @@ function CustomerProfileContent() {
   );
 }
 
-function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value?: string | null }) {
+function InfoRow({
+  icon,
+  label,
+  value,
+  isFirst = false,
+  isLast = false
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value?: string | null;
+  isFirst?: boolean;
+  isLast?: boolean;
+}) {
   return (
-    <View style={styles.infoRow}>
+    <View style={[styles.infoRow, isFirst && styles.infoRowFirst, isLast && styles.infoRowLast]}>
       <View style={styles.infoIcon}>
         <Ionicons color="#6a0100" name={icon} size={18} />
       </View>
@@ -176,7 +188,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     height: 36,
     justifyContent: "center",
-    width: 36
+    width: 36,
+    marginTop: 2
   },
   infoLabel: {
     color: "#6b7280",
@@ -185,16 +198,23 @@ const styles = StyleSheet.create({
     lineHeight: 16
   },
   infoRow: {
-    alignItems: "center",
+    alignItems: "flex-start",
     borderBottomColor: "#f3f4f6",
     borderBottomWidth: 1,
     flexDirection: "row",
     gap: 12,
     paddingVertical: 12
   },
+  infoRowFirst: {
+    paddingTop: 0
+  },
+  infoRowLast: {
+    borderBottomWidth: 0,
+    paddingBottom: 0
+  },
   infoText: {
     flex: 1,
-    gap: 2
+    gap: 4
   },
   infoValue: {
     color: "#191c1d",

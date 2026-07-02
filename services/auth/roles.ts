@@ -11,7 +11,14 @@ const roleHomeHref: Record<AppAccessRole, RoleHomeHref> = {
 export function normalizeAccessRole(role?: AuthRole | null): AppAccessRole | null {
   const normalized = typeof role === "string" ? role.toLowerCase() : role;
 
-  if (normalized === "customer" || normalized === "buyer" || normalized === "6" || normalized === 6) {
+  if (
+    normalized === "customer" ||
+    normalized === "buyer" ||
+    normalized === "6" ||
+    normalized === 6 ||
+    normalized === "99" ||
+    normalized === 99
+  ) {
     return "customer";
   }
 
@@ -21,10 +28,14 @@ export function normalizeAccessRole(role?: AuthRole | null): AppAccessRole | nul
     normalized === "director" ||
     normalized === "ceo" ||
     normalized === "super_admin" ||
-    // Legacy role names kept for old local sessions/test data.
     normalized === "agent" ||
     normalized === "broker" ||
     normalized === "admin" ||
+    normalized === "tp_kd" ||
+    normalized === "gdkd" ||
+    normalized === "gdcn" ||
+    normalized === "hr_manager" ||
+    normalized === "ctv" ||
     normalized === "1" ||
     normalized === "2" ||
     normalized === "3" ||
@@ -44,13 +55,32 @@ export function normalizeAccessRole(role?: AuthRole | null): AppAccessRole | nul
 
 export function canAccessRole(
   role: AuthRole | null | undefined,
-  allowedRoles: AppAccessRole[]
+  allowedRoles: AppAccessRole[],
+  permissions?: string[]
 ) {
   const normalizedRole = normalizeAccessRole(role);
+  if (normalizedRole === "customer") {
+    return allowedRoles.includes("customer");
+  }
+
+  if (permissions) {
+    const isSuperAdmin = permissions.includes("manage_all");
+    if (!isSuperAdmin && !permissions.includes("access_mobile")) {
+      return false;
+    }
+  }
   return normalizedRole !== null && allowedRoles.includes(normalizedRole);
 }
 
-export function isManagerAccessRole(role?: AuthRole | null) {
+export function isManagerAccessRole(role?: AuthRole | null, permissions?: string[]) {
+  if (permissions) {
+    if (permissions.includes("manage_all") || permissions.includes("manage_all_mobile")) {
+      return true;
+    }
+    if (permissions.includes("mobile_approve_leave")) {
+      return true;
+    }
+  }
   const normalized = typeof role === "string" ? role.toLowerCase() : role;
 
   return (
@@ -59,6 +89,10 @@ export function isManagerAccessRole(role?: AuthRole | null) {
     normalized === "ceo" ||
     normalized === "super_admin" ||
     normalized === "admin" ||
+    normalized === "tp_kd" ||
+    normalized === "gdkd" ||
+    normalized === "gdcn" ||
+    normalized === "hr_manager" ||
     normalized === "2" ||
     normalized === "3" ||
     normalized === "4" ||
@@ -73,10 +107,23 @@ export function isManagerAccessRole(role?: AuthRole | null) {
 export function isBaseEmployeeRole(role?: AuthRole | null) {
   const normalized = typeof role === "string" ? role.toLowerCase() : role;
 
-  return normalized === "employee" || normalized === "1" || normalized === 1;
+  return (
+    normalized === "employee" ||
+    normalized === "ctv" ||
+    normalized === "1" ||
+    normalized === 1
+  );
 }
 
-export function isDepartmentTransferApproverRole(role?: AuthRole | null) {
+export function isDepartmentTransferApproverRole(role?: AuthRole | null, permissions?: string[]) {
+  if (permissions) {
+    if (permissions.includes("manage_all") || permissions.includes("manage_all_mobile")) {
+      return true;
+    }
+    if (permissions.includes("mobile_approve_transfer")) {
+      return true;
+    }
+  }
   const normalized = typeof role === "string" ? role.toLowerCase() : role;
 
   return (
@@ -84,6 +131,8 @@ export function isDepartmentTransferApproverRole(role?: AuthRole | null) {
     normalized === "ceo" ||
     normalized === "super_admin" ||
     normalized === "admin" ||
+    normalized === "gdkd" ||
+    normalized === "gdcn" ||
     normalized === "3" ||
     normalized === "4" ||
     normalized === "5" ||
@@ -107,7 +156,15 @@ export function isExecutiveAdminRole(role?: AuthRole | null) {
   );
 }
 
-export function isRecruitmentApproverRole(role?: AuthRole | null) {
+export function isRecruitmentApproverRole(role?: AuthRole | null, permissions?: string[]) {
+  if (permissions) {
+    if (permissions.includes("manage_all") || permissions.includes("manage_all_mobile")) {
+      return true;
+    }
+    if (permissions.includes("mobile_approve_recruitment")) {
+      return true;
+    }
+  }
   const normalized = typeof role === "string" ? role.toLowerCase() : role;
 
   return (
@@ -115,6 +172,8 @@ export function isRecruitmentApproverRole(role?: AuthRole | null) {
     normalized === "ceo" ||
     normalized === "super_admin" ||
     normalized === "admin" ||
+    normalized === "gdkd" ||
+    normalized === "gdcn" ||
     normalized === "3" ||
     normalized === "4" ||
     normalized === "5" ||
@@ -124,13 +183,35 @@ export function isRecruitmentApproverRole(role?: AuthRole | null) {
   );
 }
 
-export function getHomeHrefForRole(role?: AuthRole | null): RoleHomeHref {
+export function hasEmployeeListAccess(role?: AuthRole | null, permissions?: string[]) {
+  if (permissions) {
+    if (permissions.includes("manage_all") || permissions.includes("manage_all_mobile")) {
+      return true;
+    }
+    if (permissions.includes("mobile_employee_list")) {
+      return true;
+    }
+  }
+  return isManagerAccessRole(role, permissions);
+}
+
+export function getHomeHrefForRole(role?: AuthRole | null, permissions?: string[]): RoleHomeHref {
   const normalizedRole = normalizeAccessRole(role);
+  if (normalizedRole === "customer") {
+    return "/(app)/(tabs)";
+  }
+
+  if (permissions) {
+    const isSuperAdmin = permissions.includes("manage_all");
+    if (!isSuperAdmin && !permissions.includes("access_mobile")) {
+      return "/(app)/forbidden";
+    }
+  }
   return normalizedRole ? roleHomeHref[normalizedRole] : "/(app)/forbidden";
 }
 
 export function getHomeHrefForSession(session?: AuthSession | null): RoleHomeHref {
-  return getHomeHrefForRole(session?.user.role);
+  return getHomeHrefForRole(session?.user.role, session?.user.permissions);
 }
 
 export function getRoleLabel(role?: AuthRole | null, language?: Language) {

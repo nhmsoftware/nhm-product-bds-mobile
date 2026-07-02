@@ -2,7 +2,7 @@
   "expo": {
     "name": "KHỞI NGUYÊN LAND",
     "slug": "khoi-nguyen-land",
-    "version": "0.1.6",
+    "version": "0.1.7",
     "icon": "./assets/images/icons/app-icon.png",
     "orientation": "portrait",
     "scheme": "BDS",
@@ -11,7 +11,7 @@
     "ios": {
       "icon": "./assets/images/icons/app-icon.png",
       "bundleIdentifier": "com.duongkhongkich.nhmBDSapp",
-      "buildNumber": "3",
+      "buildNumber": "1",
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Ứng dụng cần quyền vị trí để xác nhận chấm công tại văn phòng.",

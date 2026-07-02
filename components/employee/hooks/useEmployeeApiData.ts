@@ -8,12 +8,14 @@ export function useEmployeeApiData<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [error, setError] = useState<any>(null);
 
   useEffect(() => {
     let mounted = true;
 
     setLoading(true);
     setFailed(false);
+    setError(null);
 
     loader()
       .then((response) => {
@@ -21,10 +23,11 @@ export function useEmployeeApiData<T>(
           setData(response.data);
         }
       })
-      .catch((error) => {
+      .catch((err) => {
         if (mounted) {
           setFailed(true);
-          appLogger.warn("employee.api", "Không thể tải dữ liệu employee.", { error });
+          setError(err);
+          appLogger.warn("employee.api", "Không thể tải dữ liệu employee.", { error: err });
         }
       })
       .finally(() => {
@@ -40,5 +43,6 @@ export function useEmployeeApiData<T>(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  return { data, loading, failed };
+  return { data, loading, failed, error };
 }
+

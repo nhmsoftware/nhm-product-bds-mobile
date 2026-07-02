@@ -47,7 +47,7 @@ import type { ApiObject } from "./utils/apiNormalizers";
 import { formatScoreParam } from "./utils/formatters";
 import { backToCheckInHistory } from "./utils/navigation";
 import { normalizeLessonCourseQuizStatus, quizResultStatus } from "./utils/sharedHelpers";
-export function MandatoryCourseListScreen({ onBack }: { onBack?: () => void }) {
+export function MandatoryCourseListScreen({ onBack, onComplete }: { onBack?: () => void; onComplete?: () => void }) {
   const { data, loading, failed } = useEmployeeApiData(() => employeeApi.courses(), []);
   const [thumbnailFailed, setThumbnailFailed] = useState<Record<string, boolean>>({});
 
@@ -62,7 +62,7 @@ export function MandatoryCourseListScreen({ onBack }: { onBack?: () => void }) {
       const courseProgress = isApiObject(course.progress) ? course.progress : {};
       const status = apiText(courseProgress.status, "").toLowerCase();
       const percent = apiNumber(courseProgress.percent, 0);
-      const isCompleted = status === "completed" || percent >= 100;
+      const isCompleted = status === "completed";
       return isMandatory && !isCompleted;
     }).map((course) => {
       const courseProgress = isApiObject(course.progress) ? course.progress : {};
@@ -136,10 +136,16 @@ export function MandatoryCourseListScreen({ onBack }: { onBack?: () => void }) {
               Bạn đã hoàn thành toàn bộ khóa học bắt buộc. Chức năng Gặp khách và Dẫn khách đã được mở khóa.
             </Text>
             <Pressable
-              onPress={() => router.replace("/employee/(tabs)/check-in" as Href)}
+              onPress={() => {
+                if (onComplete) {
+                  onComplete();
+                } else {
+                  router.replace("/employee/(tabs)/learning" as Href);
+                }
+              }}
               style={({ pressed }) => [styles.mandatoryContinueBtn, pressed && styles.pressed]}
             >
-              <Text style={styles.mandatoryContinueBtnText}>Về trang chủ</Text>
+              <Text style={styles.mandatoryContinueBtnText}>Học tập & Phát triển</Text>
             </Pressable>
           </View>
         ) : (

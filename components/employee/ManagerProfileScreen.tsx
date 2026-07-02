@@ -31,7 +31,7 @@ import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { ApiRequestError } from "@/libs/api";
-import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole } from "@/services/auth/roles";
+import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole, hasEmployeeListAccess } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
@@ -47,6 +47,12 @@ export function ManagerProfileScreen() {
   const c = useCopy().tabs;
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
+  const { session } = useAuth();
+  const user = session?.user;
+
+  const showLeaveApproval = isManagerAccessRole(user?.role, user?.permissions);
+  const showTransferApproval = isDepartmentTransferApproverRole(user?.role, user?.permissions);
+  const showEmployeeList = hasEmployeeListAccess(user?.role, user?.permissions);
 
   return (
     <EmployeePage title={c.managerTitle} subtitle={c.managerSubtitle} back={handleBack}>
@@ -54,24 +60,30 @@ export function ManagerProfileScreen() {
         <EmployeeMetric value="24" label="Nhân viên" tone="red" />
         <EmployeeMetric value="92%" label="KPI phòng" tone="green" />
       </View>
-      <EmployeeListRow
-        icon="people-outline"
-        title="Nhân viên phòng ban"
-        description="Danh sách và hiệu suất đội nhóm"
-        onPress={() => router.push({ pathname: "/employee/department-staff", params: { from: "profile" } })}
-      />
-      <EmployeeListRow
-        icon="calendar-outline"
-        title="Duyệt nghỉ phép"
-        description="3 yêu cầu đang chờ xử lý"
-        onPress={() => router.push({ pathname: "/employee/leave-requests", params: { from: "profile" } })}
-      />
-      <EmployeeListRow
-        icon="swap-horizontal-outline"
-        title="Duyệt chuyển phòng ban"
-        description="2 yêu cầu cần xem xét"
-        onPress={() => router.push({ pathname: "/employee/transfer-requests", params: { from: "profile" } })}
-      />
+      {showEmployeeList ? (
+        <EmployeeListRow
+          icon="people-outline"
+          title="Nhân viên phòng ban"
+          description="Danh sách và hiệu suất đội nhóm"
+          onPress={() => router.push({ pathname: "/employee/department-staff", params: { from: "profile" } })}
+        />
+      ) : null}
+      {showLeaveApproval ? (
+        <EmployeeListRow
+          icon="calendar-outline"
+          title="Duyệt nghỉ phép"
+          description="3 yêu cầu đang chờ xử lý"
+          onPress={() => router.push({ pathname: "/employee/leave-requests", params: { from: "profile" } })}
+        />
+      ) : null}
+      {showTransferApproval ? (
+        <EmployeeListRow
+          icon="swap-horizontal-outline"
+          title="Duyệt chuyển phòng ban"
+          description="2 yêu cầu cần xem xét"
+          onPress={() => router.push({ pathname: "/employee/transfer-requests", params: { from: "profile" } })}
+        />
+      ) : null}
     </EmployeePage>
   );
 }

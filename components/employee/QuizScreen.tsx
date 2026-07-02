@@ -53,7 +53,7 @@ export function QuizScreen() {
     (Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId) ||
     (Array.isArray(rawLessonId) ? rawLessonId[0] : rawLessonId) ||
     "019e640c-8acd-71f8-82e4-e40aa5caad2e";
-  const { data } = useEmployeeApiData(() => employeeApi.courseQuiz(courseId), [courseId]);
+  const { data, loading, failed, error } = useEmployeeApiData(() => employeeApi.courseQuiz(courseId), [courseId]);
   const questions = useMemo(() => apiList(isApiObject(data) ? (data.questions ?? data) : data), [data]);
   const attempt = useMemo(() => (isApiObject(data) && isApiObject(data.attempt) ? data.attempt : {}), [data]);
   const multipleChoiceQuestions = useMemo(
@@ -275,6 +275,64 @@ export function QuizScreen() {
 
     return () => clearInterval(timer);
   }, [remainingSeconds, submitQuiz]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.quizSafe}>
+        <View style={styles.quizHeader}>
+          <Pressable accessibilityRole="button" onPress={leaveQuiz} style={styles.quizBackButton}>
+            <Ionicons name="arrow-back" size={24} color="#111111" />
+          </Pressable>
+          <Text style={styles.quizHeaderTitle} numberOfLines={1}>
+            Bài kiểm tra kiến thức
+          </Text>
+        </View>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fff5f3" }}>
+          <ActivityIndicator size="large" color={employeePalette.red} />
+          <Text style={{ marginTop: 12, color: "#5b403c", fontFamily: appFonts.regular }}>Đang tải bài kiểm tra...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (failed || questions.length === 0) {
+    const errorMsg = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+    const displayMsg = errorMsg || (failed ? "Đã có lỗi xảy ra khi tải bài kiểm tra. Vui lòng thử lại sau." : "Khóa học này hiện chưa có câu hỏi kiểm tra.");
+    return (
+      <SafeAreaView style={styles.quizSafe}>
+        <View style={styles.quizHeader}>
+          <Pressable accessibilityRole="button" onPress={leaveQuiz} style={styles.quizBackButton}>
+            <Ionicons name="arrow-back" size={24} color="#111111" />
+          </Pressable>
+          <Text style={styles.quizHeaderTitle} numberOfLines={1}>
+            Bài kiểm tra kiến thức
+          </Text>
+        </View>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24, backgroundColor: "#fff5f3" }}>
+          <Ionicons name="alert-circle-outline" size={64} color={employeePalette.red} />
+          <Text style={{ marginTop: 16, fontSize: 18, fontFamily: appFonts.bold, color: "#3b2c2a", textAlign: "center" }}>
+            Bài kiểm tra không khả dụng
+          </Text>
+          <Text style={{ marginTop: 8, fontSize: 14, color: "#8f706b", textAlign: "center", lineHeight: 20 }}>
+            {displayMsg}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={leaveQuiz}
+            style={{
+              marginTop: 24,
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              backgroundColor: employeePalette.red,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ color: "#ffffff", fontFamily: appFonts.bold, fontSize: 16 }}>Quay lại</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.quizSafe}>

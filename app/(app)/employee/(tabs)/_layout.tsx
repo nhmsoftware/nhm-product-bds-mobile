@@ -5,6 +5,7 @@ import { Path, Svg } from "react-native-svg";
 
 import { employeePalette } from "@/libs/employee-theme";
 import { appFonts } from "@/libs/typography";
+import { useAuth } from "@/services/auth/store";
 
 /** Icon khu đất — hình bản đồ vị trí + đất nền */
 function LandAreaTabIcon({ color, size = 24 }: { color: string; size?: number }) {
@@ -32,6 +33,14 @@ function LandAreaTabIcon({ color, size = 24 }: { color: string; size?: number })
 export default function EmployeeTabsLayout() {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 10);
+  const { session } = useAuth();
+
+  const permissions = session?.user?.permissions || [];
+  const isSuperAdmin = permissions.includes("manage_all");
+
+  const hasLearning = isSuperAdmin || permissions.includes("mobile_learning");
+  const hasCheckIn = isSuperAdmin || permissions.includes("mobile_checkin");
+  const hasWarehouse = isSuperAdmin || permissions.includes("mobile_warehouse");
 
   return (
     <Tabs
@@ -72,21 +81,24 @@ export default function EmployeeTabsLayout() {
         name="learning"
         options={{
           title: "Học tập",
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="school-outline" size={size} />
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="school-outline" size={size} />,
+          href: hasLearning ? undefined : null
         }}
       />
       <Tabs.Screen
         name="check-in"
         options={{
           title: "Check-in",
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="location-outline" size={size} />
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="location-outline" size={size} />,
+          href: hasCheckIn ? undefined : null
         }}
       />
       <Tabs.Screen
         name="news"
         options={{
           title: "Khu đất",
-          tabBarIcon: ({ color, size }) => <LandAreaTabIcon color={color} size={size} />
+          tabBarIcon: ({ color, size }) => <LandAreaTabIcon color={color} size={size} />,
+          href: hasWarehouse ? undefined : null
         }}
       />
       <Tabs.Screen

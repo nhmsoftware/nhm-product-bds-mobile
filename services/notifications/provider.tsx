@@ -1,7 +1,8 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { router, type Href } from "expo-router";
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform, type AppStateStatus } from "react-native";
 import { io, type Socket } from "socket.io-client";
 
 import { EAS_PROJECT_ID, REALTIME_URL } from "@/libs/env";
@@ -322,12 +323,13 @@ function joinRealtimeRoom(room: string) {
   };
 }
 
-function subscribeRealtime(userId: string, setUnreadCount: NotificationState["setUnreadCount"]) {
+function subscribeRealtime(userId: string, token: string, setUnreadCount: NotificationState["setUnreadCount"]) {
   activeRealtimeSocket?.removeAllListeners();
   activeRealtimeSocket?.disconnect();
 
   let socket: Socket | null = io(REALTIME_URL, {
     transports: ["websocket"],
+    auth: { token },
     reconnection: true,
     reconnectionAttempts: 10,
     reconnectionDelay: 1000,
@@ -499,7 +501,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       appLogger.warn("notifications.token", "Không thể đăng ký push token.", { error });
     });
 
-    return subscribeRealtime(userId, setUnreadCount);
+    return subscribeRealtime(userId, session.accessToken, setUnreadCount);
   }, [refreshUnreadCount, session, signedIn, userId]);
 
   useEffect(() => {
@@ -529,6 +531,25 @@ export function NotificationProvider({ children }: PropsWithChildren) {
 
     return () => subscription.remove();
   }, []);
+
+  useEffect(() => {
+    if (!signedIn || !session || isDemoSession(session)) {
+      return undefined;
+    }
+
+    function handleAppState(state: AppStateStatus) {
+      if (state === "active") {
+        subscribeRealtime(userId, session!.accessToken, setUnreadCount);
+      } else if (state.match(/inactive|background/)) {
+        activeRealtimeSocket?.removeAllListeners();
+        activeRealtimeSocket?.disconnect();
+        activeRealtimeSocket = null;
+      }
+    }
+
+    const sub = AppState.addEventListener("change", handleAppState);
+    return () => sub.remove();
+  }, [signedIn, session, userId]);
 
   return (
     <NotificationContext.Provider value={contextValue}>

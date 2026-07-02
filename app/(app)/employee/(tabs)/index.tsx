@@ -263,7 +263,7 @@ function learningTargetFromCoursePayload(value: unknown): EmployeeHomeRoute {
   const status = dashboardText(progress.status ?? course.status, "").toLowerCase();
   const percent = Number(progress.percent ?? course.progress_percent ?? course.progressPercent ?? 0);
 
-  return status === "completed" || (Number.isFinite(percent) && percent >= 100)
+  return status === "completed"
     ? "/employee/learning"
     : "/employee/required-learning";
 }
@@ -450,7 +450,7 @@ export default function EmployeeHomeScreen() {
                     {isPointCard ? pointTotal : newsCount}
                   </Text>
                   <Text style={[styles.statHint, { color: hintColor }]}>
-                    {isPointCard && pointRank ? pointRank : t(copy.helperKey)}
+                    {isPointCard ? "Xem chi tiết" : t(copy.helperKey)}
                   </Text>
                 </View>
                 <View style={[styles.statIcon, { backgroundColor: softColor }]}>

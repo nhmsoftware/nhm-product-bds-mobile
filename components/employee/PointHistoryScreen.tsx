@@ -117,10 +117,6 @@ export function PointHistoryScreen() {
           <View style={styles.pointHistoryHeroGlowBottom} />
           <Text style={styles.pointHistoryHeroEyebrow}>THÀNH TÍCH TÍCH LŨY</Text>
           <Text style={styles.pointHistoryHeroValue}>{totalPoints}</Text>
-          <View style={styles.pointHistoryRankPill}>
-            <ProfileRankIcon />
-            <Text style={styles.pointHistoryRankText}>{rankLabel}</Text>
-          </View>
         </View>
 
         <View style={styles.pointHistoryStatsGrid}>

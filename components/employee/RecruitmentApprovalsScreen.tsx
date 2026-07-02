@@ -69,6 +69,29 @@ export type RecruitmentApplicationData = {
 };
 
 export function RecruitmentApprovalsScreen() {
+  const { session } = useAuth();
+  const handleBack = () => router.back();
+
+  if (!isRecruitmentApproverRole(session?.user.role, session?.user.permissions)) {
+    return (
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.staffSafe}>
+        <View style={styles.staffHeader}>
+          <Pressable accessibilityRole="button" onPress={handleBack} style={styles.staffHeaderButton}>
+            <Ionicons name="arrow-back" size={22} color="#191c1d" />
+          </Pressable>
+          <Text style={styles.staffHeaderTitle}>Duyệt đơn ứng tuyển</Text>
+          <View style={styles.staffHeaderButton} />
+        </View>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
+          <Ionicons name="lock-closed-outline" size={48} color="#d4a09a" />
+          <Text style={{ marginTop: 16, fontSize: 16, color: "#191c1d", textAlign: "center", fontFamily: appFonts.regular }}>
+            Bạn không có quyền truy cập duyệt đơn ứng tuyển.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const [applications, setApplications] = useState<RecruitmentApplicationData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

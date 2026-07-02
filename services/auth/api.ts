@@ -24,6 +24,7 @@ type BackendUser = {
   role?: AuthRole | null;
   is_active?: boolean | number;
   email_verified_at?: string | null;
+  permissions?: string[];
 };
 
 type BackendLoginResponse = {
@@ -47,7 +48,8 @@ function mapUser(user: BackendUser): AuthUser {
     jobPosition: user.job_position ?? null,
     role: mapBackendRole(user.role),
     isActive: user.is_active === undefined ? true : Boolean(user.is_active),
-    emailVerified: Boolean(user.email_verified_at)
+    emailVerified: Boolean(user.email_verified_at),
+    permissions: user.permissions ?? []
   };
 }
 

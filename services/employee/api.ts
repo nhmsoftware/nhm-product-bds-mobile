@@ -423,6 +423,10 @@ export const employeeApi = {
     return getData<JsonRecord>("/api/v1/leave/history");
   },
 
+  leaveApprovers() {
+    return getData<JsonRecord>("/api/v1/leave/approvers");
+  },
+
   createLeaveRequest(input: JsonRecord) {
     return postData<JsonRecord>("/api/v1/leave/requests", input);
   },
@@ -515,6 +519,10 @@ export const employeeApi = {
     return getData<JsonRecord>("/api/v1/auth/team/ranking/departments");
   },
 
+  departmentKpiDetails(department: string) {
+    return getData<JsonRecord>(`/api/v1/auth/team/ranking/departments/${encodeURIComponent(department)}`);
+  },
+
   customerReferralQr() {
     return getData<JsonRecord>("/api/v1/employee-referrals/customer-qr");
   },
@@ -535,61 +543,20 @@ export const employeeApi = {
     try {
       const response = await this.courses();
       const course = response.data.course as (JsonRecord & { progress?: unknown }) | null;
-      const progress = isJsonRecord(course?.progress) ? course.progress : {};
-      const quiz = isJsonRecord(course?.quiz) ? course.quiz : null;
-      const courseId = typeof course?.id === "string" ? course.id : "";
-      const isMandatory = boolValue(course?.isMandatory ?? course?.is_mandatory, false);
-      const hasAccessFlag = course
-        ? course.canAccessPremiumLearning !== undefined || course.can_access_premium_learning !== undefined
-        : false;
-      const canAccessPremiumLearning = boolValue(
-        course?.canAccessPremiumLearning ?? course?.can_access_premium_learning,
-        false
-      );
-      const hasQuizFlag = boolValue(quiz?.hasQuiz ?? quiz?.has_quiz, false);
-      const quizStatus = typeof quiz?.status === "string" ? quiz.status : "";
-      const quizPassed = boolValue(quiz?.isPassed ?? quiz?.is_passed, false);
-      const totalLessons = numValue(progress.totalLessons ?? progress.total_lessons, 0);
-      const completedLessons = numValue(progress.completedLessons ?? progress.completed_lessons, 0);
-      const status = typeof progress.status === "string" ? progress.status : "";
-      const lessonsCompleted = status === "completed" || (totalLessons > 0 && completedLessons >= totalLessons);
-
       if (!course) {
-        return { mandatoryLearningCompleted: false };
+        return { mandatoryLearningCompleted: true };
       }
 
+      const isMandatory = boolValue(course.isMandatory ?? course.is_mandatory, false);
       if (!isMandatory) {
         return { mandatoryLearningCompleted: true };
       }
 
-      if (hasAccessFlag && canAccessPremiumLearning) {
-        return { mandatoryLearningCompleted: canAccessPremiumLearning };
-      }
-
-      if (!lessonsCompleted) {
-        return { mandatoryLearningCompleted: false };
-      }
-
-      if (hasQuizFlag) {
-        return { mandatoryLearningCompleted: quizStatus === "passed" || quizPassed };
-      }
-
-      if (!courseId) {
-        return { mandatoryLearningCompleted: status === "completed" };
-      }
-
-      const quizAvailability = await this.courseQuizAvailability(courseId).catch(() => null);
-
-      if (quizAvailability?.status === 404) {
-        return { mandatoryLearningCompleted: true };
-      }
-
-      if (quizAvailability?.status === 200 || quizAvailability?.status === 403) {
-        return { mandatoryLearningCompleted: false };
-      }
+      const progress = isJsonRecord(course.progress) ? course.progress : {};
+      const status = typeof progress.status === "string" ? progress.status : "";
 
       return {
-        mandatoryLearningCompleted: false
+        mandatoryLearningCompleted: status === "completed"
       };
     } catch {
       return {

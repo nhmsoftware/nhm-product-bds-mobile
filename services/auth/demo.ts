@@ -76,6 +76,38 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
     }
   };
   const profile = demoProfiles[role];
+  const demoPermissions: Record<DemoLoginRole, string[]> = {
+    customer: [],
+    employee: [
+      "access_mobile",
+      "mobile_learning",
+      "mobile_checkin",
+      "mobile_warehouse",
+      "mobile_approve_leave"
+    ],
+    employee2: ["access_mobile", "mobile_learning", "mobile_warehouse"],
+    candidate: ["access_mobile"],
+    manager: [
+      "access_mobile",
+      "mobile_learning",
+      "mobile_checkin",
+      "mobile_warehouse",
+      "mobile_approve_leave",
+      "mobile_employee_list"
+    ],
+    director: [
+      "access_mobile",
+      "mobile_learning",
+      "mobile_checkin",
+      "mobile_warehouse",
+      "mobile_approve_leave",
+      "mobile_approve_transfer",
+      "mobile_approve_recruitment",
+      "mobile_employee_list"
+    ],
+    ceo: ["manage_all", "manage_all_mobile", "access_mobile"],
+    super_admin: ["manage_all", "manage_all_mobile", "access_mobile"]
+  };
 
   return {
     accessToken: "demo-local-session",
@@ -89,6 +121,7 @@ export function createDemoSession(role: DemoLoginRole = "customer"): AuthSession
       role: demoRole,
       isActive: true,
       emailVerified: true,
+      permissions: demoPermissions[role],
       department:
         role === "employee"
           ? "Đào tạo"

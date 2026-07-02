@@ -31,7 +31,7 @@ import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { ApiRequestError } from "@/libs/api";
-import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole } from "@/services/auth/roles";
+import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole, hasEmployeeListAccess } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
@@ -42,9 +42,9 @@ import { RichText, Toolbar, DEFAULT_TOOLBAR_ITEMS, useEditorBridge, useBridgeSta
 import RenderHtml from "react-native-render-html";
 import { styles } from "@/components/employee/utils/styles";
 import { useEmployeeApiData } from "./hooks/useEmployeeApiData";
-import { apiText, avatarInitial, isApiObject } from "./utils/apiNormalizers";
+import { apiList, apiText, avatarInitial, isApiObject } from "./utils/apiNormalizers";
 import { profileImages, showProfileRewardHistoryShortcut } from "./utils/constants";
-import { normalizeRewardRank, rewardRankName } from "./utils/formatters";
+import { normalizeRewardRank } from "./utils/formatters";
 import { useCopy } from "./utils/i18n";
 import { employeeApplicationStatusText, hasApprovedEmployeeProfile, loadLearningCertificateData } from "./utils/sharedHelpers";
 
@@ -78,6 +78,83 @@ function ReferralQrCode() {
   );
 }
 
+function apiNumber(value: unknown, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function apiOptionalNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function apiObjectList(value: unknown) {
+  return Array.isArray(value) ? value.filter(isApiObject) : [];
+}
+
+function normalizedText(value: unknown) {
+  return apiText(value, "").trim().toLocaleLowerCase("vi-VN");
+}
+
+function profileDepartmentName(profileUser: Record<string, unknown>, user?: AuthUser) {
+  const departmentRel = isApiObject(profileUser.departmentRel) ? profileUser.departmentRel : {};
+  return apiText(
+    departmentRel.name ??
+      profileUser.department_name ??
+      profileUser.departmentName ??
+      profileUser.department ??
+      user?.department,
+    ""
+  ).trim();
+}
+
+function profileRankingCards(
+  departmentRankingData: unknown,
+  departmentDetailsData: unknown,
+  profileUser: Record<string, unknown>,
+  user?: AuthUser
+) {
+  const departmentName = profileDepartmentName(profileUser, user);
+  const departmentRows = apiList(departmentRankingData);
+  const departmentTotal = apiNumber(isApiObject(departmentRankingData) ? departmentRankingData.total : undefined, departmentRows.length);
+
+  const departmentDetails = isApiObject(departmentDetailsData)
+    ? (isApiObject(departmentDetailsData.data) ? departmentDetailsData.data : departmentDetailsData)
+    : {};
+
+  const currentDepartment =
+    departmentRows.find((row) => normalizedText(row.department ?? row.name) === normalizedText(departmentName)) ??
+    departmentRows[0];
+
+  const employeeRows = apiObjectList(departmentDetails.employee_ranking ?? departmentDetails.employeeRanking);
+  const userId = apiText(profileUser.id ?? user?.id, "");
+  const userName = normalizedText(profileUser.name ?? profileUser.full_name ?? user?.fullName);
+  const currentEmployee =
+    employeeRows.find((row) => apiText(row.id, "") === userId) ??
+    employeeRows.find((row) => normalizedText(row.name ?? row.full_name) === userName);
+
+  const internalTotal = employeeRows.length;
+  const internalRank = apiOptionalNumber(currentEmployee?.rank);
+  const departmentRank = apiOptionalNumber(currentDepartment?.rank);
+
+  return {
+    internal: {
+      rank: internalRank === null ? "#NaN" : `#${internalRank}`,
+      suffix: `/ ${internalTotal} nhân viên`,
+      progress: internalRank === null || internalTotal <= 0
+        ? 0
+        : Math.max(0.08, Math.min(0.93, 1 - (internalRank - 1) / internalTotal))
+    },
+    department: {
+      rank: departmentRank === null ? "#NaN" : `#${departmentRank}`,
+      suffix: `/ ${departmentTotal} phòng ban`,
+      progress: departmentRank === null || departmentTotal <= 0
+        ? 0
+        : Math.max(0.08, Math.min(0.93, 1 - (departmentRank - 1) / departmentTotal))
+    }
+  };
+}
+
 export function ProfileOverviewScreen() {
   const qrCopy = useCopy().qr;
   const { session, signOut } = useAuth();
@@ -97,26 +174,33 @@ export function ProfileOverviewScreen() {
   );
   const [activeProfileQr, setActiveProfileQr] = useState<"recruitment" | "customer">("customer");
   const profile = isApiObject(profileData) ? profileData : {};
+  const profileUser = isApiObject(profile.user) ? profile.user : {};
   const rewardOverview = isApiObject(rewardOverviewData) ? rewardOverviewData : {};
-  const isManager = isManagerAccessRole(user?.role);
-  const canApproveDepartmentTransfers = isDepartmentTransferApproverRole(user?.role);
+  const currentDepartmentName = profileDepartmentName(profileUser, user);
+  const { data: departmentRankingData } = useEmployeeApiData(
+    () => skipPersonalAchievementApi ? Promise.resolve({ data: null }) : employeeApi.departmentRanking(),
+    [skipPersonalAchievementApi]
+  );
+  const { data: departmentDetailsData } = useEmployeeApiData(
+    () => skipPersonalAchievementApi || !currentDepartmentName
+      ? Promise.resolve({ data: null })
+      : employeeApi.departmentKpiDetails(currentDepartmentName),
+    [skipPersonalAchievementApi, currentDepartmentName]
+  );
+  const isManager = isManagerAccessRole(user?.role, user?.permissions);
+  const canApproveDepartmentTransfers = isDepartmentTransferApproverRole(user?.role, user?.permissions);
   const fullName = apiText(profile.full_name ?? profile.name ?? user?.fullName, "Chưa cập nhật tên");
   const jobTitle = apiText(profile.job_position ?? profile.position ?? user?.jobPosition, "Chưa có chức danh");
   const approvedEmployeeProfile = hasApprovedEmployeeProfile(user);
-  const profileRankValue = rewardOverview.rank ?? rewardOverview.rank_label ?? rewardOverview.tier ?? profile.rank ?? profile.rank_label ?? profile.tier;
-  const profileRankName = rewardRankName(profileRankValue);
-  const profileRankText = normalizeRewardRank(profileRankValue);
-  const profileRewardPoints = apiText(
-    rewardOverview.total_points ?? rewardOverview.reward_points ?? rewardOverview.points ?? profile.reward_points ?? profile.total_points,
-    "0"
-  );
-  const profileRankSummary = `${profileRankName === "Chưa xếp hạng" ? profileRankName : `Hạng ${profileRankName}`} hiện tại với ${profileRewardPoints} điểm tích lũy.`;
+  const rawPoints = Number(rewardOverview.total_points ?? rewardOverview.points ?? rewardOverview.balance ?? profile.total_points ?? profile.points ?? profile.balance);
+  const formattedPoints = Number.isFinite(rawPoints) ? new Intl.NumberFormat("vi-VN").format(rawPoints) : "0";
+  const profileRankText = `TỔNG ĐIỂM: ${formattedPoints}`;
+  const profileRankings = profileRankingCards(departmentRankingData, departmentDetailsData, profileUser, user);
   const customerQr = referralQrValue(customerQrData);
   const activeProfileQrValue = customerQr;
   const activeProfileReferralCode = isApiObject(customerQrData) ? apiText(customerQrData.referral_code ?? customerQrData.referralCode ?? customerQrData.code, "") : "";
   const profileCertificates = learningCertificateData?.certificates ?? [];
   const profileQuizRows = learningCertificateData?.quizRows ?? [];
-  const profileUser = isApiObject(profile.user) ? profile.user : {};
   const profileAvatarUri = mediaUrl(user?.avatar ?? profileUser.avatar ?? profile.avatar);
   const profileInitial = avatarInitial(user?.fullName ?? profileUser.name ?? profile.name);
 
@@ -172,7 +256,22 @@ export function ProfileOverviewScreen() {
       {hidePersonalAchievementSections ? null : (
         <>
           <Text style={styles.profileSectionTitle}>Xếp hạng</Text>
-          <Text style={styles.bodyText}>{profileRankSummary}</Text>
+          <ProfileRankingCard
+            icon="trophy"
+            label="Nội bộ phòng ban"
+            progress={profileRankings.internal.progress}
+            rank={profileRankings.internal.rank}
+            suffix={profileRankings.internal.suffix}
+            tone="green"
+          />
+          <ProfileRankingCard
+            icon="trophy"
+            label="Xếp hạng phòng ban"
+            progress={profileRankings.department.progress}
+            rank={profileRankings.department.rank}
+            suffix={profileRankings.department.suffix}
+            tone="red"
+          />
           {showProfileRewardHistoryShortcut ? <ProfileRewardHistoryButton /> : null}
 
           <View style={styles.profileSectionHeader}>
@@ -212,7 +311,7 @@ export function ProfileOverviewScreen() {
         </>
       )}
 
-      {isManager ? <ProfileManagerActions canApproveDepartmentTransfers={canApproveDepartmentTransfers} userRole={user?.role} /> : <ProfileEmployeeActions />}
+      {isManager ? <ProfileManagerActions canApproveDepartmentTransfers={canApproveDepartmentTransfers} user={user} /> : <ProfileEmployeeActions />}
 
       {approvedEmployeeProfile ? (
         <View style={styles.profileQrSection}>
@@ -257,15 +356,21 @@ function ProfileEmployeeActions() {
   );
 }
 
-function ProfileManagerActions({ canApproveDepartmentTransfers, userRole }: { canApproveDepartmentTransfers: boolean; userRole?: any }) {
+function ProfileManagerActions({ canApproveDepartmentTransfers, user }: { canApproveDepartmentTransfers: boolean; user?: any }) {
+  const showLeaveApproval = isManagerAccessRole(user?.role, user?.permissions);
+  const showRecruitmentApproval = isRecruitmentApproverRole(user?.role, user?.permissions);
+  const showEmployeeList = hasEmployeeListAccess(user?.role, user?.permissions);
+
   return (
     <View style={styles.profileActionCard}>
-      <Pressable
-        onPress={() => router.push({ pathname: "/(app)/employee/leave-requests", params: { from: "profile" } })}
-        style={({ pressed }) => [styles.profileLeaveButton, pressed && styles.pressed]}
-      >
-        <Text style={styles.profileLeaveButtonText}>Duyệt đơn xin nghỉ phép</Text>
-      </Pressable>
+      {showLeaveApproval ? (
+        <Pressable
+          onPress={() => router.push({ pathname: "/(app)/employee/leave-requests", params: { from: "profile" } })}
+          style={({ pressed }) => [styles.profileLeaveButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.profileLeaveButtonText}>Duyệt đơn xin nghỉ phép</Text>
+        </Pressable>
+      ) : null}
       <Pressable
         onPress={() => router.push({ pathname: "/(app)/employee/transfer-requests", params: { from: "profile" } })}
         style={({ pressed }) => [styles.profileTransferButton, pressed && styles.pressed]}
@@ -275,7 +380,7 @@ function ProfileManagerActions({ canApproveDepartmentTransfers, userRole }: { ca
           {canApproveDepartmentTransfers ? "Duyệt đơn xin chuyển phòng ban" : "Xin phép chuyển phòng ban"}
         </Text>
       </Pressable>
-      {isRecruitmentApproverRole(userRole) ? (
+      {showRecruitmentApproval ? (
         <Pressable
           onPress={() => router.push({ pathname: "/(app)/employee/recruitment-approvals", params: { from: "profile" } })}
           style={({ pressed }) => [styles.profileLeaveButton, { backgroundColor: "#795900", borderColor: "#795900", marginTop: 8 }, pressed && styles.pressed]}
@@ -283,13 +388,15 @@ function ProfileManagerActions({ canApproveDepartmentTransfers, userRole }: { ca
           <Text style={[styles.profileLeaveButtonText, { color: "#FFD700" }]}>Duyệt đơn ứng tuyển</Text>
         </Pressable>
       ) : null}
-      <Pressable
-        onPress={() => router.push({ pathname: "/(app)/employee/department-staff", params: { from: "profile" } })}
-        style={({ pressed }) => [styles.profileReceiveTransferButton, pressed && styles.pressed]}
-      >
-        <Ionicons name="send" size={17} color="#ffffff" />
-        <Text style={styles.profileTransferButtonText}>Danh sách nhân viên</Text>
-      </Pressable>
+      {showEmployeeList ? (
+        <Pressable
+          onPress={() => router.push({ pathname: "/(app)/employee/department-staff", params: { from: "profile" } })}
+          style={({ pressed }) => [styles.profileReceiveTransferButton, pressed && styles.pressed]}
+        >
+          <Ionicons name="send" size={17} color="#ffffff" />
+          <Text style={styles.profileTransferButtonText}>Danh sách nhân viên</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -533,4 +640,3 @@ function ReferralQrPanel({
     </View>
   );
 }
-

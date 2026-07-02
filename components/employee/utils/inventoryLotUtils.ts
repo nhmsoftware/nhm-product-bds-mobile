@@ -3,14 +3,53 @@ import type { ApiObject } from "./apiNormalizers";
 import { apiText, apiBoolean, apiNullableNumber, isApiObject } from "./apiNormalizers";
 import { formatVietnamPriceAmount, parsePriceNumber } from "./formatters";
 
-export type InventoryLotStatus = "available" | "held" | "sold" | "unavailable";
+export enum LotStatus {
+  AVAILABLE = "available",
+  HELD = "held",
+  SOLD = "sold",
+  UNAVAILABLE = "unavailable",
+}
 
-export function normalizeInventoryLotStatus(value: unknown): InventoryLotStatus {
+export enum LotDepositRequestStatus {
+  PENDING = 1,
+  APPROVED = 2,
+  REJECTED = 3,
+  COMPLETED = 4,
+}
+
+export enum LotStatusLabel {
+  AVAILABLE = "ĐANG MỞ BÁN",
+  HELD = "ĐANG GIỮ CHỖ",
+  SOLD = "ĐÃ BÁN",
+  UNAVAILABLE = "KHÔNG KHẢ DỤNG",
+  LOCKED = "ĐÃ LOCK",
+  LOCK_REQUESTED = "ĐANG ĐỢI DUYỆT LOCK",
+  DEPOSIT_PENDING = "ĐANG ĐỢI DUYỆT CỌC",
+  DEPOSIT_APPROVED = "ĐÃ DUYỆT CỌC",
+  DEPOSIT_COMPLETED = "ĐÃ BÁN",
+  LOCKED_BY_ADMIN = "ĐÃ KHÓA",
+}
+
+export enum LotActionButtonText {
+  LOCK = "LOCK",
+  LOCKING = "ĐANG GỬI",
+  LOCKED = "ĐÃ LOCK",
+  DEPOSIT = "CỌC",
+  DEPOSITING = "ĐANG GỬI",
+  DEPOSIT_PENDING = "CHỜ DUYỆT CỌC",
+  DEPOSIT_APPROVED = "ĐÃ DUYỆT CỌC",
+  DEPOSIT_COMPLETED = "ĐÃ BÁN",
+  DEPOSITED = "ĐÃ CỌC",
+}
+
+export type InventoryLotStatus = LotStatus;
+
+export function normalizeInventoryLotStatus(value: unknown): LotStatus {
   if (typeof value === "number") {
-    if (value === 2) return "sold";
-    if (value === 3) return "held";
-    if (value === 4) return "unavailable";
-    return "available";
+    if (value === 2) return LotStatus.SOLD;
+    if (value === 3) return LotStatus.HELD;
+    if (value === 4) return LotStatus.UNAVAILABLE;
+    return LotStatus.AVAILABLE;
   }
 
   if (typeof value === "string" && /^\d+$/.test(value.trim())) {
@@ -25,7 +64,7 @@ export function normalizeInventoryLotStatus(value: unknown): InventoryLotStatus 
     status.includes("da ban") ||
     status.includes("ban")
   ) {
-    return "sold";
+    return LotStatus.SOLD;
   }
 
   if (
@@ -37,7 +76,7 @@ export function normalizeInventoryLotStatus(value: unknown): InventoryLotStatus 
     status.includes("cọc") ||
     status.includes("coc")
   ) {
-    return "held";
+    return LotStatus.HELD;
   }
 
   if (
@@ -48,18 +87,18 @@ export function normalizeInventoryLotStatus(value: unknown): InventoryLotStatus 
     status.includes("không bán") ||
     status.includes("khong ban")
   ) {
-    return "unavailable";
+    return LotStatus.UNAVAILABLE;
   }
 
-  return "available";
+  return LotStatus.AVAILABLE;
 }
 
 export function inventoryLotStatusLabel(status: InventoryLotStatus, isLocked?: unknown) {
-  if (apiBoolean(isLocked)) return "ĐÃ KHÓA";
-  if (status === "sold") return "ĐÃ BÁN";
-  if (status === "held") return "ĐANG GIỮ CHỖ";
-  if (status === "unavailable") return "KHÔNG KHẢ DỤNG";
-  return "ĐANG MỞ BÁN";
+  if (apiBoolean(isLocked)) return LotStatusLabel.LOCKED_BY_ADMIN;
+  if (status === LotStatus.SOLD) return LotStatusLabel.SOLD;
+  if (status === LotStatus.HELD) return LotStatusLabel.HELD;
+  if (status === LotStatus.UNAVAILABLE) return LotStatusLabel.UNAVAILABLE;
+  return LotStatusLabel.AVAILABLE;
 }
 
 export function formatSquareMeters(value: unknown, fallback = "100.3 m²") {
@@ -136,12 +175,12 @@ export function inventoryLotStatus(item: ApiObject, fallback?: unknown): Invento
       fallback
   );
 
-  if (status === "sold" || status === "unavailable") {
+  if (status === LotStatus.SOLD || status === LotStatus.UNAVAILABLE) {
     return status;
   }
 
   if (apiBoolean(item.is_locked ?? item.isLocked ?? item.locked ?? item.is_reserved ?? item.isReserved)) {
-    return "held";
+    return LotStatus.HELD;
   }
 
   return status;
@@ -232,7 +271,9 @@ export function imageUrisFromApiValue(value: unknown): string[] {
 
 export function lotImageUris(lot: ApiObject) {
   const primaryImage = mediaUrl(lot.image_url ?? lot.imageUrl);
-  const images = imageUrisFromApiValue(lot.images);
+  const images = imageUrisFromApiValue(lot.images)
+    .map((uri) => mediaUrl(uri))
+    .filter((uri): uri is string => typeof uri === "string");
   const allImages = primaryImage ? [primaryImage, ...images] : images;
 
   if (allImages.length > 0) {

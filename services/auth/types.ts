@@ -31,7 +31,9 @@ export type BackendAuthRole =
   | 3
   | 4
   | 5
-  | 6;
+  | 6
+  | "99"
+  | 99;
 
 export type AuthRole = AppAccessRole | BackendAuthRole;
 
@@ -49,6 +51,7 @@ export type AuthUser = {
   role: AuthRole;
   isActive: boolean;
   emailVerified: boolean;
+  permissions?: string[];
 };
 
 export type AuthResponse = {

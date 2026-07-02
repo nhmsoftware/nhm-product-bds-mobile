@@ -27,7 +27,7 @@ export function RoleGuard({ allowedRoles, children }: RoleGuardProps) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  if (!canAccessRole(session?.user.role, allowedRoles)) {
+  if (!canAccessRole(session?.user.role, allowedRoles, session?.user.permissions)) {
     return <Redirect href={getHomeHrefForSession(session)} />;
   }
 

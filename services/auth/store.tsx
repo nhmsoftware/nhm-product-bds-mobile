@@ -132,7 +132,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const demoSession = createDemoSession(role);
     await signIn(demoSession);
-    router.replace(getHomeHrefForRole(demoSession.user.role));
+    router.replace(getHomeHrefForRole(demoSession.user.role, demoSession.user.permissions));
   }, [signIn]);
 
   const signOut = useCallback(async () => {

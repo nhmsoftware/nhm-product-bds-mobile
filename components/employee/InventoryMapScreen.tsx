@@ -46,8 +46,8 @@ import { useRealtimeAreaComments } from "./hooks/useRealtimeAreaComments";
 import { apiList, apiNumber, apiText, directionUrlFromRecord, isApiObject } from "./utils/apiNormalizers";
 import type { ApiObject } from "./utils/apiNormalizers";
 import { defaultInventoryInfoTabs, inventoryImages, inventoryLotCellSize, inventoryLotGridColumns, inventoryLotGridHorizontalPadding } from "./utils/constants";
-import type { InventoryInfoTabKey } from "./utils/constants";
-import { inventoryLotCode, inventoryLotStatus, inventoryLotStatusLabel, sortInventoryLots } from "./utils/inventoryLotUtils";
+import type { InventoryInfoTab, InventoryInfoTabKey } from "./utils/constants";
+import { inventoryLotCode, inventoryLotStatus, inventoryLotStatusLabel, sortInventoryLots, LotStatus } from "./utils/inventoryLotUtils";
 import { back } from "./utils/navigation";
 
 import { commentInitials, formatApiDateTime } from "./utils/formatters";
@@ -598,16 +598,16 @@ export function InventoryMapScreen() {
               style={[
                 styles.inventoryLotCell,
                 lot.id === activeLotId && styles.inventoryLotSelected,
-                lot.status === "held" && styles.inventoryLotHeld,
-                lot.status === "sold" && styles.inventoryLotSold,
-                lot.status === "unavailable" && styles.inventoryLotUnavailable
+                lot.status === LotStatus.HELD && styles.inventoryLotHeld,
+                lot.status === LotStatus.SOLD && styles.inventoryLotSold,
+                lot.status === LotStatus.UNAVAILABLE && styles.inventoryLotUnavailable
               ]}
             >
               <Text
                 adjustsFontSizeToFit
                 minimumFontScale={0.75}
                 numberOfLines={1}
-                style={[styles.inventoryLotText, lot.status !== "available" && styles.inventoryLotTextLight]}
+                style={[styles.inventoryLotText, lot.status !== LotStatus.AVAILABLE && styles.inventoryLotTextLight]}
               >
                 {lot.code}
               </Text>

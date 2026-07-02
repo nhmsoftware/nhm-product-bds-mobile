@@ -31,7 +31,7 @@ import { mediaSource, mediaUrl } from "@/libs/media";
 import { notifyError, notifySuccess } from "@/libs/notify";
 import { appFonts } from "@/libs/typography";
 import { ApiRequestError } from "@/libs/api";
-import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole } from "@/services/auth/roles";
+import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole, hasEmployeeListAccess } from "@/services/auth/roles";
 import { useAuth } from "@/services/auth/store";
 import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
@@ -47,6 +47,28 @@ import { backWithProfileSource } from "./utils/navigation";
 export function DepartmentStaffScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const handleBack = () => backWithProfileSource(params.from);
+  const { session } = useAuth();
+
+  if (!hasEmployeeListAccess(session?.user.role, session?.user.permissions)) {
+    return (
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.staffSafe}>
+        <View style={styles.staffHeader}>
+          <Pressable accessibilityRole="button" onPress={handleBack} style={styles.staffHeaderButton}>
+            <Ionicons name="arrow-back" size={22} color="#191c1d" />
+          </Pressable>
+          <Text style={styles.staffHeaderTitle}>Danh sách nhân viên</Text>
+          <View style={styles.staffHeaderButton} />
+        </View>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
+          <Ionicons name="lock-closed-outline" size={48} color="#d4a09a" />
+          <Text style={{ marginTop: 16, fontSize: 16, color: "#191c1d", textAlign: "center", fontFamily: appFonts.regular }}>
+            Bạn không có quyền truy cập danh sách nhân viên.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const { data: overviewData } = useEmployeeApiData(() => employeeApi.teamOverview(), []);
   const { data, failed, loading } = useEmployeeApiData(() => employeeApi.teamMembers({ per_page: 100 }), []);
   const [query, setQuery] = useState("");
@@ -331,18 +353,18 @@ function LessonVideoPlayer({
         setDurationSeconds(event.duration);
       }
       const resumeSeconds = latestInitialWatchSecondsRef.current;
-      if (!canSeekVideo && event.duration > 0) {
-        setVideoTime(0);
-        setCurrentSeconds(0);
-        currentSecondsRef.current = 0;
-        setIsEnded(false);
-        restoredInitialWatchRef.current = true;
-      } else if (!restoredInitialWatchRef.current && resumeSeconds > 0) {
+      if (!restoredInitialWatchRef.current && resumeSeconds > 0) {
         const resumeAt = event.duration > 0 ? Math.min(resumeSeconds, event.duration) : resumeSeconds;
         setVideoTime(resumeAt);
         setCurrentSeconds(resumeAt);
         currentSecondsRef.current = resumeAt;
         setIsEnded(event.duration > 0 && resumeAt >= event.duration - 0.5);
+        restoredInitialWatchRef.current = true;
+      } else if (!restoredInitialWatchRef.current) {
+        setVideoTime(0);
+        setCurrentSeconds(0);
+        currentSecondsRef.current = 0;
+        setIsEnded(false);
         restoredInitialWatchRef.current = true;
       }
       setHasError(false);
@@ -541,9 +563,6 @@ function LessonVideoPlayer({
   };
 
   const openFullscreen = () => {
-    if (!canSeekVideo) {
-      return;
-    }
     setNativeControlsEnabled(true);
     setTimeout(() => {
       callVideoAction(() => videoViewRef.current?.enterFullscreen(), "mở toàn màn hình");
@@ -586,15 +605,17 @@ function LessonVideoPlayer({
         <View style={styles.lessonVideoControlRow}>
           <View style={styles.lessonVideoSideSlot} />
           <View style={styles.lessonVideoButtonRow}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!canSeekVideo}
-              onPress={() => seekBy(-10)}
-              style={({ pressed }) => [styles.lessonVideoControlButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
-            >
-              <Ionicons name="play-back" size={18} color="#ffffff" />
-              <Text style={styles.lessonVideoSmallText}>10s</Text>
-            </Pressable>
+            {canSeekVideo ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={!canSeekVideo}
+                onPress={() => seekBy(-10)}
+                style={({ pressed }) => [styles.lessonVideoControlButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
+              >
+                <Ionicons name="play-back" size={18} color="#ffffff" />
+                <Text style={styles.lessonVideoSmallText}>10s</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               onPress={toggleVideo}
@@ -606,22 +627,23 @@ function LessonVideoPlayer({
                 color="#ffffff"
               />
             </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!canSeekVideo}
-              onPress={() => seekBy(10)}
-              style={({ pressed }) => [styles.lessonVideoControlButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
-            >
-              <Text style={styles.lessonVideoSmallText}>10s</Text>
-              <Ionicons name="play-forward" size={18} color="#ffffff" />
-            </Pressable>
+            {canSeekVideo ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={!canSeekVideo}
+                onPress={() => seekBy(10)}
+                style={({ pressed }) => [styles.lessonVideoControlButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
+              >
+                <Text style={styles.lessonVideoSmallText}>10s</Text>
+                <Ionicons name="play-forward" size={18} color="#ffffff" />
+              </Pressable>
+            ) : null}
           </View>
           <View style={styles.lessonVideoSideSlot}>
             <Pressable
               accessibilityRole="button"
-              disabled={!canSeekVideo}
               onPress={openFullscreen}
-              style={({ pressed }) => [styles.lessonVideoFullscreenButton, !canSeekVideo && styles.lessonVideoControlButtonDisabled, pressed && canSeekVideo && styles.pressed]}
+              style={({ pressed }) => [styles.lessonVideoFullscreenButton, pressed && styles.pressed]}
             >
               <Ionicons name="scan-outline" size={20} color="#ffffff" />
             </Pressable>

@@ -50,7 +50,7 @@ import { formatPersonalDateDisplay, parsePersonalDate, personalCalendarCells } f
 export function LeaveRequestsScreen() {
   const { session } = useAuth();
 
-  if (!isManagerAccessRole(session?.user.role)) {
+  if (!isManagerAccessRole(session?.user.role, session?.user.permissions)) {
     return <EmployeeLeaveSelfServiceScreen />;
   }
 
@@ -129,6 +129,7 @@ function LeaveApprovalRequestsScreen() {
 }
 
 type EmployeeLeaveForm = {
+  approver_id: string;
   end_date: string;
   leave_type: string;
   reason: string;
@@ -136,6 +137,7 @@ type EmployeeLeaveForm = {
 };
 
 type EmployeeLeaveHistoryRow = {
+  approverName: string;
   dateRange: string;
   id: string;
   leaveType: string;
@@ -157,6 +159,7 @@ function defaultLeaveForm(): EmployeeLeaveForm {
   const today = formatPersonalDateValue(new Date());
 
   return {
+    approver_id: "",
     end_date: today,
     leave_type: leaveTypeOptions[0].value,
     reason: "",
@@ -186,6 +189,7 @@ function normalizeLeaveHistoryStatus(status: unknown): EmployeeLeaveHistoryRow["
 
 function leaveHistoryRowsFromApi(data: unknown): EmployeeLeaveHistoryRow[] {
   return apiList(data).map((item, index) => ({
+    approverName: apiText(item.approver_name ?? item.approverName, ""),
     dateRange: formatLeaveDateRange(item),
     id: apiText(item.id, `leave-history-${index}`),
     leaveType: leaveTypeLabel(item.leave_type ?? item.leaveType ?? item.type),
@@ -203,9 +207,24 @@ function EmployeeLeaveSelfServiceScreen() {
   const [typeModalVisible, setTypeModalVisible] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [approvers, setApprovers] = useState<{ id: string; name: string }[]>([]);
+  const [approversLoading, setApproversLoading] = useState(true);
+  const [approverPickerVisible, setApproverPickerVisible] = useState(false);
   const { data, failed, loading } = useEmployeeApiData(() => employeeApi.leaveHistory(), [refreshKey]);
   const historyRows = leaveHistoryRowsFromApi(data);
   const selectedLeaveType = leaveTypeLabel(form.leave_type);
+  const selectedApprover = approvers.find((a) => a.id === form.approver_id);
+
+  useEffect(() => {
+    setApproversLoading(true);
+    employeeApi.leaveApprovers()
+      .then((res) => {
+        const list = Array.isArray(res?.data) ? res.data : [];
+        setApprovers(list);
+      })
+      .catch(() => setApprovers([]))
+      .finally(() => setApproversLoading(false));
+  }, []);
 
   function updateForm(key: keyof EmployeeLeaveForm, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -216,6 +235,11 @@ function EmployeeLeaveSelfServiceScreen() {
 
     if (!form.leave_type || !form.start_date || !form.end_date || !normalizedReason) {
       notifyError("Vui lòng nhập đầy đủ thông tin nghỉ phép.");
+      return;
+    }
+
+    if (!form.approver_id) {
+      notifyError("Vui lòng chọn người phê duyệt.");
       return;
     }
 
@@ -232,6 +256,7 @@ function EmployeeLeaveSelfServiceScreen() {
     setSubmitting(true);
     try {
       const response = await employeeApi.createLeaveRequest({
+        approver_id: form.approver_id,
         end_date: form.end_date,
         leave_type: form.leave_type,
         reason: normalizedReason,
@@ -292,9 +317,31 @@ function EmployeeLeaveSelfServiceScreen() {
             value={form.reason}
           />
 
+          <View style={styles.personalField}>
+            <Text style={styles.personalFieldLabel}>Người phê duyệt</Text>
+            {approversLoading ? (
+              <Text style={styles.leaveTypeButtonText}>Đang tải...</Text>
+            ) : approvers.length === 0 ? (
+              <Text style={[styles.leaveTypeButtonText, { color: "#93000a" }]}>
+                Không tìm thấy Trưởng phòng
+              </Text>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setApproverPickerVisible(true)}
+                style={({ pressed }) => [styles.leaveTypeButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.leaveTypeButtonText}>
+                  {selectedApprover ? selectedApprover.name : "Chọn người phê duyệt"}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color="#950100" />
+              </Pressable>
+            )}
+          </View>
+
           <Pressable
             accessibilityRole="button"
-            disabled={submitting}
+            disabled={submitting || approversLoading || approvers.length === 0}
             onPress={submitLeaveRequest}
             style={({ pressed }) => [styles.leaveSubmitButton, (pressed || submitting) && styles.pressed]}
           >
@@ -336,6 +383,16 @@ function EmployeeLeaveSelfServiceScreen() {
           if (dateField) updateForm(dateField, value);
           setDateField(null);
         }}
+      />
+      <ApproverPickerModal
+        approvers={approvers}
+        onClose={() => setApproverPickerVisible(false)}
+        onSelect={(id) => {
+          updateForm("approver_id", id);
+          setApproverPickerVisible(false);
+        }}
+        value={form.approver_id}
+        visible={approverPickerVisible}
       />
     </SafeAreaView>
   );
@@ -418,6 +475,12 @@ function EmployeeLeaveHistoryCard({
             <Text numberOfLines={detailsExpanded ? undefined : 2} style={styles.leaveReasonText}>{request.rejectionReason}</Text>
           </View>
         ) : null}
+        {request.approverName ? (
+          <View style={styles.leaveDetailRow}>
+            <Ionicons name="person-outline" size={16} color="#950100" />
+            <Text numberOfLines={1} style={styles.leaveReasonText}>Phê duyệt: {request.approverName}</Text>
+          </View>
+        ) : null}
       </Pressable>
 
       {isPending ? (
@@ -479,16 +542,73 @@ function LeaveTypePickerModal({
   );
 }
 
+function ApproverPickerModal({
+  approvers,
+  onClose,
+  onSelect,
+  value,
+  visible
+}: {
+  approvers: { id: string; name: string }[];
+  onClose: () => void;
+  onSelect: (id: string) => void;
+  value: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.transferRejectOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.leaveTypeModal}>
+          <View style={styles.leaveTypeModalHeader}>
+            <Text style={styles.leaveTypeModalTitle}>Chọn người phê duyệt</Text>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.personalDateCloseButton}>
+              <Ionicons name="close" size={20} color="#5b403c" />
+            </Pressable>
+          </View>
+          <View style={styles.leaveTypeModalList}>
+            {approvers.map((approver) => {
+              const active = approver.id === value;
+              return (
+                <Pressable
+                  key={approver.id}
+                  accessibilityRole="button"
+                  onPress={() => onSelect(approver.id)}
+                  style={({ pressed }) => [styles.leaveTypeOption, active && styles.leaveTypeOptionActive, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.leaveTypeOptionText, active && styles.leaveTypeOptionTextActive]}>{approver.name}</Text>
+                  {active ? <Ionicons name="checkmark" size={18} color="#950100" /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 type LeaveStatusFilter = "all" | "pending" | "approved" | "rejected";
 
-type LeaveRequestCardData = {
+export type TransferApprovalStep = {
+  currentStep: number;
+  currentManagerName?: string;
+  currentManagerApprovedAt?: string;
+  targetManagerName?: string;
+  targetManagerApprovedAt?: string;
+  directorName?: string;
+  directorApprovedAt?: string;
+};
+
+export type LeaveRequestCardData = {
   id: string;
   name: string;
   department: string;
   dateRange: string;
   reason: string;
-  status: Exclude<LeaveStatusFilter, "all">;
+  status: Exclude<LeaveStatusFilter, "all"> | "cancelled";
   avatar: ImageSourcePropType;
+  transferApproval?: TransferApprovalStep;
 };
 
 const leaveFilterTabs: { label: string; value: LeaveStatusFilter }[] = [
@@ -630,6 +750,7 @@ function transferRowsFromApi(data: unknown): LeaveRequestCardData[] {
       ? `${fromDepartment} → ${toDepartment}`
       : apiText(item.target_department ?? item.to_department ?? item.new_department, "");
     const detailText = apiText(item.reason ?? item.detail ?? item.note, "");
+    const currentStep = apiNumber(item.approval_step ?? item.approvalStep, 1);
 
     return {
       id: apiText(item.id, `transfer-${index}`),
@@ -638,12 +759,21 @@ function transferRowsFromApi(data: unknown): LeaveRequestCardData[] {
       dateRange: formatTransferRequestDate(item),
       reason: detailText ? `${routeText} · ${detailText}` : routeText,
       status,
-      avatar: { uri: "" }
+      avatar: { uri: "" },
+      transferApproval: status === "pending" ? {
+        currentStep,
+        currentManagerName: apiText(item.current_manager_name, undefined),
+        currentManagerApprovedAt: apiText(item.current_manager_approved_at, undefined),
+        targetManagerName: apiText(item.target_manager_name, undefined),
+        targetManagerApprovedAt: apiText(item.target_manager_approved_at, undefined),
+        directorName: apiText(item.director_name, undefined),
+        directorApprovedAt: apiText(item.director_approved_at, undefined),
+      } : undefined,
     };
   });
 }
 
-function LeaveRequestCard({
+export function LeaveRequestCard({
   collapsibleDetails = false,
   onChanged,
   request,
@@ -754,6 +884,36 @@ function LeaveRequestCard({
           <Text numberOfLines={detailsExpanded ? undefined : 1} style={styles.leaveReasonText}>{request.reason}</Text>
         </View>
       </Pressable>
+
+      {request.transferApproval ? (
+        <View style={transferApprovalStyles.container}>
+          <Text style={transferApprovalStyles.title}>Quy trình phê duyệt</Text>
+          <ApprovalStep
+            stepNumber={1}
+            label="Trưởng phòng hiện tại"
+            approverName={request.transferApproval.currentManagerName}
+            approvedAt={request.transferApproval.currentManagerApprovedAt}
+            currentStep={request.transferApproval.currentStep}
+            thisStep={1}
+          />
+          <ApprovalStep
+            stepNumber={2}
+            label="Trưởng phòng phòng mới"
+            approverName={request.transferApproval.targetManagerName}
+            approvedAt={request.transferApproval.targetManagerApprovedAt}
+            currentStep={request.transferApproval.currentStep}
+            thisStep={2}
+          />
+          <ApprovalStep
+            stepNumber={3}
+            label="GDKD / TGD"
+            approverName={request.transferApproval.directorName}
+            approvedAt={request.transferApproval.directorApprovedAt}
+            currentStep={request.transferApproval.currentStep}
+            thisStep={3}
+          />
+        </View>
+      ) : null}
 
       {isPending && showActions ? (
         <View style={styles.leaveActions}>
@@ -1026,4 +1186,115 @@ function PersonalDatePickerModal({
     </Modal>
   );
 }
+
+function ApprovalStep({
+  stepNumber,
+  label,
+  approverName,
+  approvedAt,
+  currentStep,
+  thisStep,
+}: {
+  stepNumber: number;
+  label: string;
+  approverName?: string;
+  approvedAt?: string;
+  currentStep: number;
+  thisStep: number;
+}) {
+  const isDone = currentStep > thisStep || (currentStep === thisStep && thisStep < 3 && approvedAt);
+  const isCurrent = currentStep === thisStep;
+  const isRejected = false;
+
+  let dotColor = "#d1d5db";
+  if (isDone) dotColor = "#16a34a";
+  else if (isCurrent) dotColor = "#950100";
+
+  return (
+    <View style={transferApprovalStyles.stepRow}>
+      <View style={transferApprovalStyles.stepIndicator}>
+        <View style={[transferApprovalStyles.stepDot, { backgroundColor: dotColor }]} />
+        {thisStep < 3 ? <View style={transferApprovalStyles.stepLine} /> : null}
+      </View>
+      <View style={transferApprovalStyles.stepContent}>
+        <Text style={transferApprovalStyles.stepLabel}>
+          {stepNumber}. {label}
+        </Text>
+        {isDone && approvedAt ? (
+          <Text style={transferApprovalStyles.stepApproved}>
+            ✓ {approverName || "Đã xác nhận"} · {formatDisplayDate(approvedAt)}
+          </Text>
+        ) : isCurrent ? (
+          <Text style={transferApprovalStyles.stepPending}>
+            {approverName ? `Đang chờ ${approverName}` : "Đang chờ xử lý"}
+          </Text>
+        ) : (
+          <Text style={transferApprovalStyles.stepWaiting}>Chưa đến bước</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const transferApprovalStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e0db",
+  },
+  title: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#5b403c",
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  stepRow: {
+    flexDirection: "row",
+    marginBottom: 0,
+  },
+  stepIndicator: {
+    width: 20,
+    alignItems: "center",
+  },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 3,
+  },
+  stepLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: "#e5e0db",
+    minHeight: 20,
+  },
+  stepContent: {
+    flex: 1,
+    paddingBottom: 10,
+    paddingLeft: 6,
+  },
+  stepLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#5b403c",
+  },
+  stepApproved: {
+    fontSize: 12,
+    color: "#16a34a",
+    marginTop: 2,
+  },
+  stepPending: {
+    fontSize: 12,
+    color: "#950100",
+    marginTop: 2,
+    fontStyle: "italic",
+  },
+  stepWaiting: {
+    fontSize: 12,
+    color: "#9ca3af",
+    marginTop: 2,
+  },
+});
 

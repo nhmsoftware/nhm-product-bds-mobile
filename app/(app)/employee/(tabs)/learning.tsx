@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useFocusEffect } from "expo-router";
 
 import { LearningHomeScreen, MandatoryCourseListScreen } from "@/components/EmployeeScreens";
 import { LoadingState } from "@/components/LoadingState";
@@ -12,29 +13,31 @@ export default function EmployeeLearningRoute() {
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
 
-  useEffect(() => {
-    if (authLoading) return;
+  useFocusEffect(
+    useCallback(() => {
+      if (authLoading) return;
 
-    if (canUseDemoLearning(session)) {
-      setAllowed(true);
-      setLoading(false);
-      return;
-    }
+      if (canUseDemoLearning(session)) {
+        setAllowed(true);
+        setLoading(false);
+        return;
+      }
 
-    let mounted = true;
-    setLoading(true);
+      let mounted = true;
+      setLoading(true);
 
-    employeeApi
-      .learningAccess()
-      .then((result) => {
-        if (mounted) setAllowed(result.mandatoryLearningCompleted);
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
+      employeeApi
+        .learningAccess()
+        .then((result) => {
+          if (mounted) setAllowed(result.mandatoryLearningCompleted);
+        })
+        .finally(() => {
+          if (mounted) setLoading(false);
+        });
 
-    return () => { mounted = false; };
-  }, [authLoading, session]);
+      return () => { mounted = false; };
+    }, [authLoading, session])
+  );
 
   if (authLoading || loading) {
     return (
@@ -45,7 +48,7 @@ export default function EmployeeLearningRoute() {
   }
 
   if (!allowed) {
-    return <MandatoryCourseListScreen />;
+    return <MandatoryCourseListScreen onComplete={() => setAllowed(true)} />;
   }
 
   return <LearningHomeScreen />;

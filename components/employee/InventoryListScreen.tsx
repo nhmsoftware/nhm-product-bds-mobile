@@ -1,54 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
-import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
-import { VideoView, useVideoPlayer } from "expo-video";
-import { router, useFocusEffect, useLocalSearchParams, type Href } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { router } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator, AppState, Alert, BackHandler, Clipboard, Image, Linking, Modal,
-  KeyboardAvoidingView, Platform, Pressable as RNPressable, RefreshControl, ScrollView, Share,
-  StyleSheet, Text, TextInput, useWindowDimensions,
-  type GestureResponderEvent, type ImageSourcePropType, type LayoutChangeEvent,
-  type NativeScrollEvent, type NativeSyntheticEvent, type TextLayoutEventData, View
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type ImageSourcePropType,
 } from "react-native";
 import { Pressable } from "@/components/SafePressable";
 import { SafeAreaView } from "react-native-safe-area-context";
-import QRCode from "react-native-qrcode-svg";
-import { Path, Svg, SvgUri } from "react-native-svg";
-import {
-  EMPLOYEE_HEADER_HEIGHT, EmployeeAvatarButton, EmployeeBadge, EmployeeButton, EmployeeCard,
-  EmployeeInputPreview, EmployeeListRow, EmployeeMetric, EmployeeNotificationButton,
-  EmployeePage, EmployeeSectionTitle
-} from "@/components/EmployeeUI";
+import { EmployeeNotificationButton } from "@/components/EmployeeUI";
 import { employeePalette } from "@/libs/employee-theme";
-import { API_URL, STORAGE_KEYS } from "@/libs/env";
-import { useI18n } from "@/libs/i18n";
 import { appLogger } from "@/libs/logger";
-import { mediaSource, mediaUrl } from "@/libs/media";
-import { notifyError, notifySuccess } from "@/libs/notify";
-import { appFonts } from "@/libs/typography";
 import { ApiRequestError } from "@/libs/api";
-import { isBaseEmployeeRole, isDepartmentTransferApproverRole, isExecutiveAdminRole, isManagerAccessRole, isRecruitmentApproverRole } from "@/services/auth/roles";
-import { useAuth } from "@/services/auth/store";
-import type { AuthSession, AuthUser } from "@/services/auth/types";
 import { employeeApi } from "@/services/employee/api";
-import { useNotificationState, useRealtimeEvent, useRealtimeRoom } from "@/services/notifications/provider";
-import type { LearningLessonAttachment, LearningLessonDetail, LearningLessonProgressUpdate, MandatoryLearningCourse, MandatoryLearningLesson, MandatoryLearningQuiz } from "@/services/employee/types";
-import WebView from "react-native-webview";
-import { RichText, Toolbar, DEFAULT_TOOLBAR_ITEMS, useEditorBridge, useBridgeState, ImageBridge, TenTapStartKit } from "@10play/tentap-editor";
-import RenderHtml from "react-native-render-html";
 import { styles } from "@/components/employee/utils/styles";
-import { apiList } from "./utils/apiNormalizers";
-import type { ApiObject } from "./utils/apiNormalizers";
-import { inventoryAreaFilterOptions } from "./utils/constants";
-import type { InventoryAreaFilterValue } from "./utils/constants";
+import { apiList, apiBoolean, apiText, type ApiObject } from "./utils/apiNormalizers";
+import { inventoryAreaFilterOptions, inventoryImages, type InventoryAreaFilterValue } from "./utils/constants";
 import { back } from "./utils/navigation";
-import { apiBoolean } from "./utils/apiNormalizers";
-
-import { apiText } from "./utils/apiNormalizers";
 
 
 // ---- Local helpers extracted from original monolith ----
@@ -98,10 +71,11 @@ interface InventoryAreaCardItem {
   name: string;
   total: string;
   type: string;
+  lotId?: string;
 }
 
 function inventoryAreaCardFromRecord(area: ApiObject, index: number): InventoryAreaCardItem {
-  const recordType = apiText(area.record_type ?? area.recordType ?? area.entity_type ?? area.entityType ?? area.item_type ?? area.itemType ?? area.kind, "area");
+  const recordType = apiText(area.record_type ?? area.recordType ?? area.type ?? area.entity_type ?? area.entityType ?? area.item_type ?? area.itemType ?? area.kind, "area");
   const name = apiText(area.name ?? area.title ?? area.label ?? area.area_name ?? area.areaName, `Khu đất ${index + 1}`);
   const remainingLots = inventoryAreaLotCount(area.remaining_lots ?? area.remainingLots);
   const totalLots = inventoryAreaLotCount(area.total_lots ?? area.totalLots);
@@ -110,6 +84,7 @@ function inventoryAreaCardFromRecord(area: ApiObject, index: number): InventoryA
     : apiText(area.available_label ?? area.available ?? area.available_count, "Còn hàng");
   const total = totalLots !== null ? `Tổng: ${totalLots} lô` : apiText(area.total, "Tổng: --");
   const cover = apiText(area.cover_url ?? area.coverUrl ?? area.image ?? area.thumbnail ?? area.thumb ?? area.image_url ?? area.imageUrl, "");
+  const lotId = area.lot_id ? apiText(area.lot_id) : (area.lotId ? apiText(area.lotId) : undefined);
 
   return {
     available,
@@ -118,7 +93,8 @@ function inventoryAreaCardFromRecord(area: ApiObject, index: number): InventoryA
     image: cover,
     name,
     total,
-    type: recordType
+    type: recordType,
+    lotId
   };
 }
 
@@ -317,29 +293,41 @@ function InventoryZoneCard({
   image,
   lotId,
   name,
-  total
+  total,
+  type
 }: {
   available: string;
   hot?: boolean;
   id?: string;
-  image: ImageSourcePropType;
+  image: string | ImageSourcePropType;
   lotId?: string;
   name: string;
   total: string;
+  type?: string;
 }) {
+  const resolvedImage = typeof image === "string"
+    ? (image ? { uri: image } : inventoryImages.planningArea)
+    : image;
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={() =>
-        router.push({
-          pathname: "/employee/inventory-map",
-          params: id ? { areaId: id, ...(lotId ? { lotId } : {}) } : undefined
-        })
-      }
+      onPress={() => {
+        if (type === "lot") {
+          router.push({
+            pathname: "/employee/lot-detail",
+            params: id ? { lotId: id } : undefined
+          });
+        } else {
+          router.push({
+            pathname: "/employee/inventory-map",
+            params: id ? { areaId: id, ...(lotId ? { lotId } : {}) } : undefined
+          });
+        }
+      }}
       style={({ pressed }) => [styles.inventoryAreaCard, pressed && styles.pressed]}
     >
       <View style={styles.inventoryAreaCardImageWrap}>
-        <Image source={image} style={styles.inventoryAreaCardImage} />
+        <Image source={resolvedImage} style={styles.inventoryAreaCardImage} />
         {hot ? (
           <View style={styles.inventoryAreaHotPill}>
             <Text style={styles.inventoryAreaHotText}>HOT</Text>

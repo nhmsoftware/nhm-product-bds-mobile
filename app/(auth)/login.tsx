@@ -77,7 +77,7 @@ export default function LoginScreen() {
       const response = await authApi.login({ username: identity, password, remember });
       await signIn(response.data);
       notifySuccess({ message: response.message || t("notifications.loginSuccess") });
-      router.replace(getHomeHrefForRole(response.data.user.role));
+      router.replace(getHomeHrefForRole(response.data.user.role, response.data.user.permissions));
     } catch (error) {
       notifyError(error, t("notifications.loginError"));
     } finally {
@@ -91,14 +91,18 @@ export default function LoginScreen() {
       const credentials = apiDemoCredentials[role];
 
       if (credentials) {
-        const response = await authApi.login({
-          ...credentials,
-          remember: true
-        });
-        await signIn(response.data);
-        notifySuccess({ message: response.message || t("notifications.loginSuccess") });
-        router.replace(getHomeHrefForRole(response.data.user.role));
-        return;
+        try {
+          const response = await authApi.login({
+            ...credentials,
+            remember: true
+          });
+          await signIn(response.data);
+          notifySuccess({ message: response.message || t("notifications.loginSuccess") });
+          router.replace(getHomeHrefForRole(response.data.user.role, response.data.user.permissions));
+          return;
+        } catch (apiError) {
+          console.log("API login failed for demo user, falling back to local demo session", apiError);
+        }
       }
 
       await signInWithDemo(role);

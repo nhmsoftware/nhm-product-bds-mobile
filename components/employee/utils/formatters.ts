@@ -76,6 +76,65 @@ export function formatVietnamRealEstatePrice(value: unknown, fallback = "3,7 T�
   return `${formatVietnamPriceAmount(number)} Tỷ VND`;
 }
 
+export function formatFullPriceVnd(value: unknown, fallback = "Chưa thiết lập") {
+  if (value === null || value === undefined || value === "") return fallback;
+  const rawText = apiText(value, "").trim();
+  const normalizedText = rawText.toLowerCase();
+  let number = parsePriceNumber(value);
+
+  if (number === null) {
+    return rawText ? `${rawText} VNĐ` : fallback;
+  }
+
+  if (normalizedText.includes("tỷ") || normalizedText.includes("ty") || normalizedText.includes("billion")) {
+    number = number * 1_000_000_000;
+  } else if (
+    normalizedText.includes("tr") ||
+    normalizedText.includes("triệu") ||
+    normalizedText.includes("trieu") ||
+    normalizedText.includes("million")
+  ) {
+    number = number * 1_000_000;
+  } else {
+    if (number < 100) {
+      number = number * 1_000_000_000;
+    } else if (number < 1_000_000) {
+      number = number * 1_000_000;
+    }
+  }
+
+  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(number)} VNĐ`;
+}
+
+export function formatFullUnitPriceVnd(value: unknown, fallback = "Chưa thiết lập") {
+  if (value === null || value === undefined || value === "") return fallback;
+  const rawText = apiText(value, "").trim();
+  const normalizedText = rawText.toLowerCase();
+  let number = parsePriceNumber(value);
+
+  if (number === null) {
+    return rawText ? `${rawText} VNĐ/m²` : fallback;
+  }
+
+  if (normalizedText.includes("tỷ") || normalizedText.includes("ty") || normalizedText.includes("billion")) {
+    number = number * 1_000_000_000;
+  } else if (
+    normalizedText.includes("tr") ||
+    normalizedText.includes("triệu") ||
+    normalizedText.includes("trieu") ||
+    normalizedText.includes("million")
+  ) {
+    number = number * 1_000_000;
+  } else {
+    if (number < 1_000_000) {
+      number = number * 1_000_000;
+    }
+  }
+
+  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(number)} VNĐ/m²`;
+}
+
+
 export function formatSquareMeters(value: unknown, fallback = "100.3 m²") {
   const text = apiText(value, "").trim();
   const number = Number(value);
